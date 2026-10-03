@@ -1,0 +1,65 @@
+    # Dependencies
+node_modules/
+
+# Sensitive config
+config.json
+.env
+.env.*
+!.env.example
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
+
+# Temp files
+*.log
+*.tmp
+*.swp
+node.err
+logs/
+
+config.local.json
+config.production.json
+
+turn_host.txt
+tunnel_url.txt
+dev_otp.log
+node.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+
+# Tunnel files (regenerated)
+tunnel_url.txt
+turn_host.txt
+
+# Bore executable
+**/bore.exe
+**/bore.zip
+
+# SSH logs
+ssh-*.log
+
+# Tools (large binaries)
+tools/cloudflared.exe
+bin/cloudflared.exe
+
+# SQLite database (Node version)
+black_meet.db
+black_meet.db-*
+*.db-journal
+
+# Smoke-test artifacts
+node-smoke.*
+
+# One-shot MySQL snapshot (import tool)
+tools/mysql_dump/

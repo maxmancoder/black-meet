@@ -1,0 +1,73 @@
+<%- include('head.ejs') %>
+</head>
+<body class="bg-background text-on-background font-body-md h-screen overflow-hidden flex flex-col">
+
+<header class="relative z-10 bg-background/80 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
+    <a href="<%- url('home') %>" class="flex items-center gap-3">
+        <%- icon('arrow_forward', 'text-on-surface-variant') %>
+        <span class="font-display-md text-display-md font-bold text-primary">Black Meet</span>
+    </a>
+    <span class="font-headline-md text-headline-md text-on-surface"><%- isManager ? 'پیام‌ها (مدیر)' : 'پیام‌ها' %></span>
+</header>
+
+<main id="msg-main" class="relative z-10 flex-1 flex min-h-0">
+    <!-- Left: conversations -->
+    <aside class="conv-panel w-72 md:w-80 flex-shrink-0 bg-surface-container-low border-l border-outline-variant/20 flex flex-col">
+        <div class="p-md <%- isManager ? '' : 'hidden' %>">
+            <input id="conv-search" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-2 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="جستجوی کاربر..." oninput="filterConvs()"/>
+        </div>
+        <div id="conv-list" class="flex-1 overflow-y-auto custom-scrollbar p-md pt-0 flex flex-col gap-1"></div>
+    </aside>
+
+    <!-- Center: chat -->
+    <section class="chat-panel flex-1 flex flex-col min-w-0 bg-surface-container-lowest">
+        <!-- profile header -->
+        <div id="profile-header" class="hidden items-center gap-3 px-md py-md border-b border-outline-variant/20 bg-surface-container-low cursor-pointer" onclick="openProfileModal()">
+            <button id="chat-back" data-no-loader onclick="backToConvs(event)" class="md:hidden text-on-surface-variant hover:text-on-surface p-1 rounded-full flex-shrink-0"><%- icon('arrow_forward') %></button>
+            <div id="ph-avatar" class="w-11 h-11 rounded-full overflow-hidden border border-outline-variant flex-shrink-0"></div>
+            <div class="min-w-0">
+                <h3 id="ph-name" class="font-headline-md text-headline-md text-on-surface truncate"></h3>
+                <p id="ph-status" class="font-label-sm text-on-surface-variant text-[11px]"></p>
+            </div>
+        </div>
+
+        <div id="chat-area" class="flex-1 overflow-y-auto custom-scrollbar p-md flex flex-col gap-3">
+            <div class="m-auto text-center text-on-surface-variant font-body-sm">یک گفتگو را انتخاب کنید</div>
+        </div>
+
+        <div class="p-md border-t border-outline-variant/20 bg-surface-container-low">
+            <div class="flex items-center gap-2">
+                <input id="msg-input" class="flex-1 bg-surface-container rounded-lg border border-outline-variant/30 py-3 px-4 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="پیام خود را بنویسید..." onkeydown="if(event.key==='Enter')sendMessage()"/>
+                <button class="bg-secondary-container text-on-secondary-container px-4 py-3 rounded-lg" onclick="sendMessage()"><%- icon('send') %></button>
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- Profile modal -->
+<div id="profile-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-xl max-w-[420px] w-full text-center relative">
+        <button class="absolute top-3 left-3 text-on-surface-variant hover:text-on-surface" onclick="closeProfileModal()"><%- icon('close') %></button>
+        <div id="pm-avatar" class="w-24 h-24 mx-auto rounded-full overflow-hidden border border-outline-variant mb-4"></div>
+        <h3 id="pm-name" class="font-headline-md text-headline-md text-on-surface"></h3>
+        <p id="pm-username" class="font-label-sm text-on-surface-variant text-[12px] mt-1"></p>
+        <p id="pm-email" class="font-label-sm text-on-surface-variant text-[12px] mt-1" dir="ltr"></p>
+    </div>
+</div>
+
+<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+    <%- icon('error') %><span id="toast-message"></span></div></div>
+
+<style>
+/* mobile: list and chat take the full width, one at a time */
+@media (max-width: 767px) {
+  #msg-main .conv-panel { width: 100%; }
+  #msg-main.chat-open .conv-panel { display: none; }
+  #msg-main:not(.chat-open) .chat-panel { display: none; }
+}
+</style>
+
+<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>; window.__IS_MANAGER = <%- json(isManager) %>; window.MS_ID = <%- Number(me.id) %>;</script>
+<script src="<%- asset('assets/js/messages.js') %>"></script>
+</body>
+</html>

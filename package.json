@@ -1,0 +1,25 @@
+{
+  "name": "black-meet",
+  "version": "2.0.0",
+  "description": "Black Meet - Persian group video chat (Node.js: Express + Socket.IO + SQLite)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:turn": "node turn.js",
+    "start:turn-proxy": "node turn-proxy.js",
+    "tailwind:build": "tailwindcss -c tailwind.config.js -i tools/tailwind.src.css -o assets/css/tailwind.css --minify"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "multer": "^2.4.0",
+    "node-turn": "^0.0.6",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.11",
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^3.4.19"
+  }
+}

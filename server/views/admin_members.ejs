@@ -1,0 +1,206 @@
+<%- include('head.ejs') %>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col relative overflow-x-hidden">
+
+<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+
+<header class="relative z-50 bg-background/80 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
+    <a href="<%- url('home') %>" class="flex items-center gap-3">
+        <%- icon('arrow_forward', 'text-on-surface-variant') %>
+        <span class="font-display-md text-display-md font-bold text-primary">Black Meet</span>
+    </a>
+    <span class="font-headline-md text-headline-md text-on-surface">مدیریت اعضا</span>
+    <button id="side-toggle" data-no-loader onclick="toggleSidePanel()" title="منو" class="md:hidden text-on-surface-variant hover:bg-surface-variant/20 p-2 rounded-full">
+        <%- icon('menu') %>
+    </button>
+</header>
+
+<div class="relative z-10 flex-1 flex flex-col md:flex-row">
+
+    <!-- ===== Left sidebar: section switcher (stacked; hidden on mobile until toggled) ===== -->
+    <aside id="side-panel" class="hidden flex flex-col static md:fixed md:inset-y-0 md:left-0 md:w-64 md:z-[60] bg-surface-container-low md:border-r md:border-white/5 md:shadow-2xl gap-2 md:gap-1 md:pt-6 p-3">
+        <div class="hidden md:flex items-center gap-2 px-3 mb-4">
+            <span class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center"><%- icon('shield_person', '', true) %></span>
+            <div class="min-w-0">
+                <p class="font-body-sm text-body-sm text-on-surface truncate"><%- esc(me.display_name) %></p>
+                <p class="font-label-sm text-on-surface-variant text-[11px]"><%- esc(rankLabel) %></p>
+            </div>
+        </div>
+
+        <% if (canMembers) { %>
+        <button id="nav-members" data-no-loader onclick="switchSection('members')" class="flex items-center gap-3 md:mx-1 px-4 py-3 rounded-lg font-body-md text-body-md transition-all bg-primary-container text-on-primary-container">
+            <%- icon('group', '', true) %> نمایش اعضا
+        </button>
+        <% } %>
+        <% if (canRequests) { %>
+        <button id="nav-requests" data-no-loader onclick="switchSection('requests')" class="flex items-center gap-3 md:mx-1 px-4 py-3 rounded-lg font-body-md text-body-md transition-all text-on-surface-variant hover:bg-surface-container-high <%- canMembers ? '' : 'bg-primary-container text-on-primary-container' %>">
+            <%- icon('person', '', true) %> درخواست ایجاد حساب
+            <% if (pendingCount > 0) { %>
+            <span class="req-badge mr-auto bg-error-container text-on-error-container text-[11px] px-2 py-0.5 rounded-full"><%- toFaDigits(pendingCount) %></span>
+            <% } %>
+        </button>
+        <% } %>
+    </aside>
+
+    <!-- ===== Main content ===== -->
+    <main class="flex-1 md:pl-64 p-grid-margin">
+
+        <!-- ================= SECTION: member list ================= -->
+        <% if (canMembers) { %>
+        <section id="section-members" class="glass-panel rounded-2xl shadow-2xl p-lg sm:p-xl w-full">
+            <div class="flex items-center gap-3 mb-md">
+                <%- icon('group', 'text-[36px] text-primary', true) %>
+                <div>
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">نمایش اعضا</h1>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant">اطلاعات کاربران را ببینید و ویرایش کنید؛ کاربر محدود‌شده نمی‌تواند تماس جدید ایجاد کند.</p>
+                </div>
+            </div>
+
+            <!-- signup mode dropdown (above the user list) -->
+            <% if (canChangeMode) { %>
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-md p-4 rounded-xl bg-surface-container-low border border-outline-variant/30">
+                <div class="flex items-center gap-2 min-w-0">
+                    <%- icon('person', 'text-primary flex-shrink-0') %>
+                    <span class="font-body-sm text-body-sm text-on-surface whitespace-nowrap">حالت ایجاد حساب:</span>
+                </div>
+                <div class="relative flex-1 min-w-[220px]">
+                    <button id="mode-btn" data-no-loader onclick="toggleModeMenu(event)" class="w-full flex items-center justify-between gap-2 bg-surface-container border border-outline-variant/40 rounded-lg px-4 py-2.5 font-body-sm text-body-sm text-on-surface hover:border-primary-container transition-colors" aria-haspopup="true" aria-expanded="false">
+                        <span class="flex items-center gap-2 min-w-0">
+                            <span id="mode-dot" class="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-secondary"></span>
+                            <span id="mode-label" class="truncate">—</span>
+                        </span>
+                        <span class="bm-caret text-on-surface-variant"></span>
+                    </button>
+                    <div id="mode-menu" class="hidden absolute top-full right-0 left-0 mt-2 glass-panel rounded-xl shadow-2xl border border-outline-variant/30 p-2 z-40">
+                        <button class="mode-opt" data-mode="open" onclick="setSignupMode('open')">
+                            <span class="mode-opt-icon text-secondary"><%- icon('login', '', true) %></span>
+                            <span class="min-w-0 text-right">
+                                <span class="block font-body-sm text-body-sm text-on-surface">ایجاد حساب آزاد</span>
+                                <span class="block font-label-sm text-on-surface-variant text-[11px]">هر کاربری می‌تواند بدون محدودیت حساب بسازد</span>
+                            </span>
+                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                        <button class="mode-opt" data-mode="approval" onclick="setSignupMode('approval')">
+                            <span class="mode-opt-icon text-primary"><%- icon('shield_person', '', true) %></span>
+                            <span class="min-w-0 text-right">
+                                <span class="block font-body-sm text-body-sm text-on-surface">فقط با تایید مدیر</span>
+                                <span class="block font-label-sm text-on-surface-variant text-[11px]">درخواست‌ها ثبت و پس از تایید شما فعال می‌شوند</span>
+                            </span>
+                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                        <button class="mode-opt" data-mode="closed" onclick="setSignupMode('closed')">
+                            <span class="mode-opt-icon text-error"><%- icon('block', '', true) %></span>
+                            <span class="min-w-0 text-right">
+                                <span class="block font-body-sm text-body-sm text-on-surface">غیرفعال</span>
+                                <span class="block font-label-sm text-on-surface-variant text-[11px]">ایجاد حساب جدید برای همه متوقف است</span>
+                            </span>
+                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+
+            <!-- Toolbar: live search + page size -->
+            <div class="flex flex-col md:flex-row md:items-center gap-md mb-md">
+                <div class="relative flex-1">
+                    <%- icon('search', 'absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]') %>
+                    <input id="member-search" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-11 pl-4 text-body-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="جستجوی نام نمایشی، نام کاربری، ایمیل یا شماره تلفن..." type="text" autocomplete="off"/>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="font-body-sm text-on-surface-variant whitespace-nowrap">نمایش</span>
+                    <select id="page-size" class="bg-surface-container rounded-lg border border-outline-variant/30 py-3 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container transition-all">
+                        <option value="25">۲۵ کاربر</option>
+                        <option value="50">۵۰ کاربر</option>
+                        <option value="100">۱۰۰ کاربر</option>
+                    </select>
+                </div>
+            </div>
+            <p id="result-count" class="font-body-sm text-on-surface-variant mb-md"></p>
+
+            <div id="user-cards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start"></div>
+        </section>
+        <% } %>
+
+        <!-- ================= SECTION: account creation requests ================= -->
+        <% if (canRequests) { %>
+        <section id="section-requests" class="glass-panel rounded-2xl shadow-2xl p-lg sm:p-xl w-full <%- canMembers ? 'hidden' : '' %>">
+            <div class="flex items-center gap-3 mb-md">
+                <%- icon('person', 'text-[36px] text-primary', true) %>
+                <div>
+                    <h1 class="font-headline-lg text-headline-lg text-on-surface">درخواست ایجاد حساب</h1>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant">درخواست‌های ثبت‌نام کاربران جدید را بررسی کنید؛ پس از تایید، حساب فعال و قابل ورود می‌شود.</p>
+                </div>
+            </div>
+            <div id="request-list" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"></div>
+        </section>
+        <% } %>
+    </main>
+</div>
+
+<!-- ===== Edit user modal ===== -->
+<div id="edit-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-5 w-full max-w-[340px] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <div class="flex items-center gap-3 mb-4">
+            <%- icon('badge', 'text-[24px] text-primary', true) %>
+            <div class="min-w-0">
+                <h2 class="font-body-lg text-body-lg font-semibold text-on-surface">ویرایش اطلاعات کاربر</h2>
+                <p id="edit-target" class="font-label-sm text-on-surface-variant truncate"></p>
+            </div>
+        </div>
+
+        <label class="font-label-sm text-on-surface-variant block mb-1.5">نام کاربری</label>
+        <input id="ed-username" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="text" dir="ltr" autocomplete="off"/>
+
+        <label class="font-label-sm text-on-surface-variant block mb-1.5">ایمیل</label>
+        <input id="ed-email" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="email" dir="ltr" autocomplete="off"/>
+
+        <label class="font-label-sm text-on-surface-variant block mb-1.5">شماره تلفن</label>
+        <input id="ed-phone" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="tel" dir="ltr" autocomplete="off"/>
+
+        <label class="font-label-sm text-on-surface-variant block mb-1.5">رمز عبور</label>
+        <input id="ed-password" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface outline-none focus:border-primary-container" type="text" placeholder="خالی بگذارید تا تغییر نکند" maxlength="128" autocomplete="new-password"/>
+        <p class="font-label-sm text-on-surface-variant text-[11px] mt-1 mb-2.5">برای تغییر رمز، مقدار جدید (حداقل ۶ کاراکتر) را وارد کنید.</p>
+
+        <label class="font-label-sm text-on-surface-variant block mb-1.5">درجه</label>
+        <select id="ed-rank" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-1">
+            <option value="user">کاربر عادی</option>
+            <option value="admin">ادمین</option>
+            <option value="premium">ادمین پریمیوم</option>
+        </select>
+        <p id="ed-rank-lock" class="font-label-sm text-on-surface-variant text-[11px] mt-1 hidden">درجه مدیر اصلی قابل تغییر نیست.</p>
+
+        <div class="flex gap-2 mt-4">
+            <button onclick="submitEdit()" class="flex-1 bg-primary text-white rounded-lg py-2.5 font-label-md hover:bg-primary-fixed transition-colors bm-soft">ذخیره</button>
+            <button onclick="closeEditModal()" class="flex-1 bg-surface-container-high text-on-surface rounded-lg py-2.5 font-label-md hover:opacity-80 transition-opacity bm-soft">انصراف</button>
+        </div>
+    </div>
+</div>
+
+<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+    <%- icon('error') %><span id="toast-message"></span></div></div>
+
+<style>
+.bm-caret { width: 8px; height: 8px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .2s; flex-shrink: 0; }
+#mode-btn[aria-expanded="true"] .bm-caret { transform: rotate(135deg); }
+.mode-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 8px; transition: background .15s; }
+.mode-opt:hover { background: rgba(45, 52, 73, .7); }
+.mode-opt.active { background: rgba(79, 70, 229, .18); }
+.mode-opt-icon { display: flex; align-items: center; }
+.req-thread { max-height: 180px; overflow-y: auto; }
+.rank-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 180px; z-index: 40; }
+</style>
+
+<script>
+window.CSRF = <%- json(csrf) %>;
+window.BASE = <%- json(base) %>;
+window.ME_ID = <%- Number(me.id) %>;
+window.ME_IS_MANAGER = <%- json(!!me.is_manager) %>;
+window.INIT_USERS = <%- json(users) %>;
+window.INIT_REQUESTS = <%- json(requests) %>;
+window.SIGNUP_MODE = <%- json(signupMode) %>;
+window.PERM = { members: <%- json(canMembers) %>, requests: <%- json(canRequests) %>, decide: <%- json(canDecide) %>, changeMode: <%- json(canChangeMode) %> };
+</script>
+<script src="<%- asset('assets/js/admin_members.js') %>"></script>
+</body>
+</html>

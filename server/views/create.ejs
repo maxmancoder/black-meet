@@ -1,0 +1,74 @@
+<%- include('head.ejs') %>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col relative overflow-hidden">
+
+<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+
+<header class="relative z-10 bg-background/80 backdrop-blur-md flex items-center justify-between px-lg py-md">
+    <button onclick="goBack()" title="بازگشت" class="flex items-center gap-2 text-on-surface-variant hover:bg-surface-container-high rounded-full px-3 py-2 transition-colors bm-soft">
+        <%- icon('arrow_forward') %>
+        <span class="font-body-sm font-medium">بازگشت</span>
+    </button>
+</header>
+
+<main class="relative z-10 flex-1 flex items-center justify-center p-grid-margin">
+    <div class="glass-panel rounded-2xl shadow-2xl p-xl w-full max-w-[520px]">
+        <div class="flex items-center gap-3 mb-lg">
+            <%- icon('video_call', 'text-[40px] text-primary', true) %>
+            <div>
+                <h1 class="font-headline-lg text-headline-lg text-on-surface">ایجاد تماس جدید</h1>
+                <p class="font-body-sm text-body-sm text-on-surface-variant">عنوان تماس را وارد کنید</p>
+            </div>
+        </div>
+
+        <div class="input-glow rounded-lg bg-surface-container-low border border-outline-variant transition-all">
+            <input id="meeting-title" class="w-full bg-transparent border-none focus:ring-0 text-body-lg text-on-surface placeholder-on-surface-variant/50 px-4 py-4 outline-none" placeholder="مثال: جلسه هفتگی تیم" type="text" maxlength="120"/>
+        </div>
+
+        <!-- Media-default toggle: state 1 = arrive with mic+cam on; state 2 = arrive muted, admin can enable -->
+        <div class="mt-lg flex items-center justify-between gap-4 p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 bm-soft">
+            <div class="flex items-center gap-3 min-w-0">
+                <%- icon('record_voice_over', 'text-primary flex-shrink-0', true, 'id="media-icon"') %>
+                <div class="min-w-0">
+                    <h3 id="media-title" class="font-body-sm font-semibold text-on-surface">ورود با صدا و تصویر</h3>
+                    <p id="media-hint" class="font-label-sm text-on-surface-variant text-[12px] leading-5">بعد از تایید ادمین، میکروفون و دوربین به‌صورت خودکار روشن می‌شوند</p>
+                </div>
+            </div>
+            <label class="bm-switch flex-shrink-0">
+                <input type="checkbox" id="default-media" checked/>
+                <span class="bm-switch-slider"></span>
+            </label>
+        </div>
+
+        <% if (quotaText) { %>
+        <div class="mt-md flex items-center justify-between gap-2 p-3 rounded-lg bg-surface-container-low border border-outline-variant/30">
+            <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2"><%- icon('calendar_add_on', 'text-[18px] text-primary') %> سقف تماس امروز شما</span>
+            <span class="font-label-md text-on-surface <%- quotaFull ? 'text-error-container' : '' %>"><%- quotaText %></span>
+        </div>
+        <% } %>
+
+        <button id="create-btn" class="btn-primary mt-lg flex items-center justify-center gap-2" onclick="createMeeting()" <% if (limited || quotaFull) { %>disabled<% } %>>
+            <%- icon('arrow_back') %> ادامه
+        </button>
+
+        <% if (limited) { %>
+        <div class="mt-lg flex items-center gap-2 bg-error-container/80 text-on-error-container rounded-lg px-4 py-3">
+            <%- icon('block') %>
+            <span class="font-body-sm">حساب کاربری شما محدود شده است؛ امکان ایجاد تماس جدید وجود ندارد، فقط می‌توانید به تماس‌های دیگر بپیوندید.</span>
+        </div>
+        <% } else if (quotaFull) { %>
+        <div class="mt-lg flex items-center gap-2 bg-error-container/80 text-on-error-container rounded-lg px-4 py-3">
+            <%- icon('block') %>
+            <span class="font-body-sm">به سقف تماس امروز خود رسیده‌اید؛ فردا دوباره می‌توانید تماس جدید ایجاد کنید.</span>
+        </div>
+        <% } %>
+    </div>
+</main>
+
+<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+    <%- icon('error') %><span id="toast-message"></span></div></div>
+
+<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>;</script>
+<script src="<%- url('assets/js/create.js') %>"></script>
+</body>
+</html>

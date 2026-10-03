@@ -1,0 +1,115 @@
+﻿<%- include('head.ejs') %>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden flex">
+
+<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+
+<nav aria-label="Sidebar" class="hidden md:flex flex-col py-lg bg-surface-container-low border-r border-white/5 shadow-2xl fixed inset-y-0 left-0 w-80 z-[60]">
+        <div class="flex items-center gap-sm px-lg mb-8">
+            <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center font-display-md text-display-md text-white" style="background:<%- esc(me.avatar_color) %>">
+                <% if (av) { %><img src="<%- esc(av) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %>
+            </div>
+        <div class="flex flex-col">
+            <span class="font-headline-md text-headline-md text-primary"><%- esc(me.display_name) %></span>
+            <span class="font-body-sm text-body-sm text-on-surface-variant"><%- rankLabel %></span>
+        </div>
+    </div>
+    <ul class="flex-1 space-y-2 font-body-md text-body-md">
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('home') %>"><%- icon('video_library') %> تماس‌ها</a></li>
+        <li><a class="flex items-center gap-4 py-3 px-4 bg-primary-container text-on-primary-container rounded-lg mx-2" href="<%- url('profile') %>"><%- icon('person', '', true) %> پروفایل</a></li>
+        <% if (canMembers || canRequests) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('members') %>"><%- icon('group_off') %> مدیریت اعضا</a></li>
+        <% } %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="#" onclick="logout(event)"><%- icon('logout') %> خروج</a></li>
+    </ul>
+</nav>
+
+<div class="flex-1 flex flex-col min-h-screen relative z-10 w-full md:pl-80">
+    <header class="bg-background/80 backdrop-blur-md fixed top-0 w-full z-50 flex items-center justify-between px-lg py-md">
+        <a href="<%- url('home') %>" class="font-display-md text-display-md font-bold text-primary">Black Meet</a>
+        <a href="<%- url('home') %>" class="text-on-surface-variant hover:text-on-surface"><%- icon('close') %></a>
+    </header>
+
+    <main class="flex-1 pt-24 pb-20 px-4 md:px-lg max-w-3xl mx-auto w-full">
+        <div class="glass-panel rounded-2xl shadow-2xl p-xl">
+            <!-- Avatar + identity -->
+            <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 mb-lg">
+                <div class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center font-display-lg text-display-lg text-white shrink-0" style="background:<%- esc(me.avatar_color) %>; box-shadow:0 0 18px rgba(99,102,241,.55), 0 0 40px rgba(59,130,246,.35), inset 0 0 0 2px rgba(255,255,255,.25);">
+                    <% if (av) { %><img src="<%- esc(av) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %>
+                </div>
+                <div class="text-center sm:text-right flex-1 min-w-0">
+                    <div class="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                        <h1 class="font-display-md text-display-md text-on-surface"><%- esc(me.display_name) %></h1>
+                        <% if (me.is_manager) { %>
+                        <span class="manager-badge font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1">
+                            <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
+                        </span>
+                        <% } else if (rankLabel !== 'کاربر عادی') { %>
+                        <span class="font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1 bg-primary-container text-on-primary-container">
+                            <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
+                        </span>
+                        <% } %>
+                    </div>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant">@<%- esc(me.username) %></p>
+                    <div class="mt-3">
+                        <input id="avatar-input" type="file" accept="image/*" class="hidden" onchange="uploadAvatar()"/>
+                        <button type="button" data-no-loader onclick="document.getElementById('avatar-input').click()" class="text-[12px] px-3 py-1.5 rounded-md bg-surface-container-high text-on-surface hover:opacity-80 transition">تغییر تصویر پروفایل</button>
+                        <p class="font-label-sm text-on-surface-variant text-[11px] mt-1">فرمت‌های مجاز تصویر (حداکثر ۲ مگابایت).</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Steel info boxes: glowing blue metallic edges -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="bm-infobox"><span class="bm-infobox-title">نام کامل</span><span class="bm-infobox-val"><%- esc(me.full_name) %></span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">نام کاربری</span><span class="bm-infobox-val" dir="ltr">@<%- esc(me.username) %></span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">نام نمایشی</span><span class="bm-infobox-val"><%- esc(me.display_name) %></span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">ایمیل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.email) %></span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">رمز هش شده</span><span class="bm-infobox-val"><%- icon('lock', 'text-[16px] align-middle', true) %> هش شده</span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">شماره موبایل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.phone) %></span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">نقش</span><span class="bm-infobox-val"><%- rankLabel %></span></div>
+            </div>
+
+            <div class="mt-md rounded-lg bg-surface-container-low border border-outline-variant/30 px-4 py-3 text-body-sm text-on-surface-variant">
+                برای تغییر رمز عبور به صفحه فراموشی رمز مراجعه کنید.
+            </div>
+
+            <% if (me.is_manager) { %>
+            <!-- Manager's extra key card -->
+            <div class="bm-adminkey mt-lg p-5 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-4 min-w-0">
+                    <span class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-300 shrink-0" style="background:linear-gradient(150deg,rgba(251,191,36,.28),rgba(251,191,36,.06)); box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 0 14px rgba(251,191,36,.35);">
+                        <%- icon('key', 'text-[30px]', true) %>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="font-label-md text-white flex items-center gap-2">کلید مدیر <span class="font-label-sm text-amber-300">(دسترسی ویژه)</span></p>
+                        <p class="font-body-sm text-body-sm text-[#cfd3ff]">شما به‌عنوان مدیر، کلید مدیریت اعضا و پیام‌ها را در اختیار دارید.</p>
+                    </div>
+                </div>
+                <a href="<%- url('members') %>" class="shrink-0 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl px-4 py-2.5 font-label-md hover:opacity-90 transition flex items-center gap-2">
+                    <%- icon('shield_person', '', true) %> مدیریت اعضا
+                </a>
+            </div>
+            <% } %>
+        </div>
+    </main>
+</div>
+
+<!-- Avatar upload progress -->
+<div id="av-progress" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-5 w-full max-w-[300px] text-center">
+        <div id="av-prog-pct" class="font-display-md text-display-md text-primary mb-2">۰٪</div>
+        <div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden mb-3">
+            <div id="av-prog-bar" class="h-full bg-primary rounded-full transition-all duration-150" style="width:0%"></div>
+        </div>
+        <p class="font-label-sm text-on-surface-variant">در حال آپلود تصویر پروفایل...</p>
+    </div>
+</div>
+
+<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+    <%- icon('error') %><span id="toast-message"></span></div></div>
+
+<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>;</script>
+<script src="<%- asset('assets/js/profile.js') %>"></script>
+</body>
+</html>
