@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Flux - Login/Signup</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "outline-variant": "#464555",
+                      "background": "#0b1326",
+                      "surface-container-highest": "#2d3449",
+                      "tertiary-container": "#bf0f3c",
+                      "on-surface": "#dae2fd",
+                      "surface-container-lowest": "#060e20",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "inverse-primary": "#4d44e3",
+                      "on-tertiary-fixed": "#40000d",
+                      "primary-container": "#4f46e5",
+                      "on-tertiary-container": "#ffd0d2",
+                      "error": "#ffb4ab",
+                      "inverse-surface": "#dae2fd",
+                      "primary": "#c3c0ff",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "surface-dim": "#0b1326",
+                      "on-secondary-container": "#00311f",
+                      "secondary-container": "#00a572",
+                      "on-surface-variant": "#c7c4d8",
+                      "secondary": "#4edea3",
+                      "outline": "#918fa1",
+                      "tertiary-fixed": "#ffdadb",
+                      "error-container": "#93000a",
+                      "on-secondary": "#003824",
+                      "primary-fixed": "#e2dfff",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary": "#67001b",
+                      "on-secondary-fixed-variant": "#005236",
+                      "surface-variant": "#2d3449",
+                      "inverse-on-surface": "#283044",
+                      "on-secondary-fixed": "#002113",
+                      "surface-bright": "#31394d",
+                      "on-background": "#dae2fd",
+                      "on-error": "#690005",
+                      "tertiary-fixed-dim": "#ffb2b7",
+                      "surface-container-low": "#131b2e",
+                      "surface": "#0b1326",
+                      "secondary-fixed": "#6ffbbe",
+                      "tertiary": "#ffb2b7",
+                      "on-tertiary-fixed-variant": "#92002a",
+                      "secondary-fixed-dim": "#4edea3",
+                      "on-primary-fixed": "#0f0069",
+                      "surface-tint": "#c3c0ff",
+                      "surface-container": "#171f33",
+                      "on-primary": "#1d00a5",
+                      "surface-container-high": "#222a3d",
+                      "on-primary-container": "#dad7ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "grid-margin": "24px",
+                      "base": "4px",
+                      "xl": "40px",
+                      "lg": "24px",
+                      "grid-gutter": "16px",
+                      "xs": "4px",
+                      "sm": "8px",
+                      "md": "16px"
+              },
+              "fontFamily": {
+                      "headline-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "display-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "headline-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "body-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "body-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "body-sm": [
+                              "Be Vietnam Pro"
+                      ],
+                      "label-md": [
+                              "JetBrains Mono"
+                      ],
+                      "display-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "label-sm": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "headline-lg": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-md": [
+                              "36px",
+                              {
+                                      "lineHeight": "44px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "56px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body { font-family: 'Be Vietnam Pro', sans-serif; }
+        .glass-panel {
+            background: rgba(45, 52, 73, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .form-input {
+            @apply w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all;
+        }
+        .btn-primary {
+            @apply w-full bg-primary-container text-white rounded-lg px-4 py-3 font-headline-md text-headline-md hover:bg-inverse-primary transition-all duration-300;
+        }
+        .btn-secondary {
+            @apply w-full bg-surface-container-highest text-on-surface rounded-lg px-4 py-3 font-headline-md text-headline-md hover:bg-surface-bright transition-all duration-300 border border-outline-variant;
+        }
+        
+        /* Transitions */
+        .fade-enter { opacity: 0; transform: translateY(10px); }
+        .fade-enter-active { opacity: 1; transform: translateY(0); transition: opacity 300ms, transform 300ms; }
+        .fade-exit { opacity: 1; }
+        .fade-exit-active { opacity: 0; transition: opacity 300ms; }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex items-center justify-center overflow-hidden relative">
+<!-- Immersive Background Placeholder -->
+<div class="absolute inset-0 bg-cover bg-center z-0 opacity-50" data-alt="A highly detailed, immersive abstract dark mode background for a high-tech communication platform. Deep navy blue depths (hex #0b1326) with subtle, glowing, ethereal light trails and soft geometric refractions in primary accent indigo (#4f46e5). The aesthetic is 'digital sanctuary', secure, authoritative, and hyper-modern, featuring smooth gradients and glass-like spatial depth, completely devoid of text." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBwNIbFM4TtjWrcVMcw83UhQgtkykUjWs6LvTy8IleoEPpBkXAw9xkNi0WHc9OLN_RI6aes2EGJa0dvSb8koaKenP9HQ-a4qAS8wwKilU9TxzT0NQLaHa16A1x8PaPu0eTtkcwzvcmdJFH7-s_ywk6i0382f7W-jTSoJVDu-x6T41CGT-KuJB4BYegSyvwlZS_48CXcUR3bH1qL5u5OX5kAibvVhEiq9pO6muDDHJV8eatpbJkNNoZ0')"></div>
+<div class="absolute inset-0 bg-gradient-to-b from-background/40 to-background z-0"></div>
+<!-- Main Container -->
+<div class="relative z-10 w-full max-w-[480px] p-grid-margin">
+<!-- Header -->
+<div class="text-center mb-xl">
+<h1 class="font-display-lg text-display-lg text-primary tracking-tight mb-2">Obsidian Flux</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant">پناهگاه دیجیتال شما</p>
+</div>
+<!-- Glass Panel -->
+<div class="glass-panel rounded-2xl shadow-2xl p-lg relative overflow-hidden" id="auth-container">
+<!-- Login View -->
+<div class="space-y-md fade-enter-active" id="view-login-options">
+<h2 class="font-headline-lg text-headline-lg text-center mb-md">ورود به سیستم</h2>
+<button class="btn-primary flex items-center justify-center gap-2" onclick="switchView('view-login-phone')">
+<span class="material-symbols-outlined">phone_iphone</span>
+                    ورود با شماره موبایل
+                </button>
+<button class="btn-secondary flex items-center justify-center gap-2" onclick="switchView('view-login-email')">
+<span class="material-symbols-outlined">mail</span>
+                    ورود با ایمیل
+                </button>
+<div class="text-center mt-md">
+<button class="text-primary hover:text-primary-fixed transition-colors font-body-sm text-body-sm" onclick="switchView('view-signup')">
+                        حساب کاربری ندارید؟ ثبت نام کنید
+                    </button>
+</div>
+</div>
+<!-- Login Email View -->
+<div class="hidden space-y-md" id="view-login-email">
+<div class="flex items-center mb-md">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ورود با ایمیل</h2>
+</div>
+<input class="form-input" dir="ltr" placeholder="ایمیل" type="email"/>
+<input class="form-input" dir="ltr" placeholder="رمز عبور" type="password"/>
+<button class="btn-primary" onclick="showToast('خطا: حساب کاربری یافت نشد')">ورود</button>
+</div>
+<!-- Login Phone View -->
+<div class="hidden space-y-md" id="view-login-phone">
+<div class="flex items-center mb-md">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ورود با موبایل</h2>
+</div>
+<input class="form-input" dir="ltr" placeholder="شماره موبایل" type="tel"/>
+<button class="btn-primary" onclick="switchView('view-otp')">ارسال کد تایید</button>
+</div>
+<!-- Signup View -->
+<div class="hidden space-y-md" id="view-signup">
+<div class="flex items-center mb-md">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ثبت نام</h2>
+</div>
+<input class="form-input" placeholder="نام و نام خانوادگی" type="text"/>
+<input class="form-input" dir="ltr" placeholder="نام کاربری (یکتا)" type="text"/>
+<input class="form-input" dir="ltr" placeholder="ایمیل (یکتا)" type="email"/>
+<input class="form-input" dir="ltr" placeholder="شماره موبایل (یکتا)" type="tel"/>
+<input class="form-input" dir="ltr" placeholder="رمز عبور" type="password"/>
+<button class="btn-primary" onclick="switchView('view-otp')">ادامه</button>
+</div>
+<!-- OTP View -->
+<div class="hidden space-y-md" id="view-otp">
+<div class="flex items-center mb-md">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">تایید شماره</h2>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-center mb-4">کد ارسال شده به شماره خود را وارد کنید</p>
+<input class="form-input text-center tracking-widest text-lg" dir="ltr" maxlength="6" placeholder="کد تایید ۶ رقمی" type="text"/>
+<button class="btn-primary">تایید و ورود</button>
+<div class="text-center mt-4">
+<p class="font-body-sm text-body-sm text-on-surface-variant" id="timer-text">ارسال مجدد کد تا <span id="countdown">۳۰</span> ثانیه دیگر</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Toast Notification -->
+<div class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 z-50" id="toast">
+<div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+<span class="material-symbols-outlined">error</span>
+<span class="font-body-md text-body-md" id="toast-message">پیام خطا</span>
+</div>
+</div>
+<script>
+        function switchView(viewId) {
+            // Hide all views
+            const views = ['view-login-options', 'view-login-email', 'view-login-phone', 'view-signup', 'view-otp'];
+            views.forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.add('hidden');
+                el.classList.remove('fade-enter-active');
+            });
+
+            // Show target view
+            const target = document.getElementById(viewId);
+            target.classList.remove('hidden');
+            // Small delay to allow display:block to apply before animating opacity
+            setTimeout(() => {
+                target.classList.add('fade-enter-active');
+            }, 10);
+
+            if(viewId === 'view-otp') {
+                startTimer();
+            }
+        }
+
+        let timerInterval;
+        function startTimer() {
+            clearInterval(timerInterval);
+            let timeLeft = 30;
+            const timerSpan = document.getElementById('countdown');
+            const timerText = document.getElementById('timer-text');
+            
+            // Persian digits map
+            const farsiDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+            const toFarsiNumber = (n) => n.toString().replace(/\d/g, x => farsiDigits[x]);
+
+            timerSpan.innerText = toFarsiNumber(timeLeft);
+            
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerSpan.innerText = toFarsiNumber(timeLeft);
+                if(timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerText.innerHTML = `<button class="text-primary hover:text-primary-fixed" onclick="startTimer()">ارسال مجدد کد</button>`;
+                }
+            }, 1000);
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            toastMsg.innerText = message;
+            
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body></html>

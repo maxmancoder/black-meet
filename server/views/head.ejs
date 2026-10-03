@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html class="dark" dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title><%- esc(title) %></title>
+<link rel="icon" type="image/svg+xml" href="<%- asset('icons/favicon.svg') %>"/>
+<!-- warm up fonts + icon sprite before first paint -->
+<link rel="preload" href="<%- url('fonts/Entezar.v1.00.ttf') %>" as="font" type="font/ttf" crossorigin/>
+<link rel="preload" href="<%- url('fonts/Digi Ghaf Bold.ttf') %>" as="font" type="font/ttf" crossorigin/>
+<link rel="preload" href="<%- asset('icons/sprite.svg') %>" as="fetch" crossorigin/>
+<link rel="stylesheet" href="<%- asset('assets/css/styles.css') %>"/>
+<link rel="stylesheet" href="<%- asset('assets/css/tailwind.css') %>"/>
+<link rel="stylesheet" href="<%- url('theme.css') %>"/>
+<script>window.__BM_SKIP_BUTTON_LOADER = (window.__BM_SKIP_BUTTON_LOADER || []);window.__BM_LIVE_URL = <%- (typeof me !== 'undefined' && me) ? "''" : 'null' %>;window.BASE = <%- json(base) %>;window.BM_SPRITE = '<%- asset('icons/sprite.svg') %>';<% if (typeof pageName !== 'undefined' && pageName === 'call') { %>window.__BM_SKIP_BUTTON_LOADER.push('call');<% } %></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="<%- asset('shared/socket-events.js') %>"></script>
+<script src="<%- asset('assets/js/icons.js') %>"></script>
+<script src="<%- asset('assets/js/live.js') %>"></script>
+<script src="<%- asset('assets/js/interactions.js') %>"></script>

@@ -1,0 +1,173 @@
+<%- include('head.ejs') %>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden flex">
+
+<!-- ambient background -->
+<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+
+<!-- Sidebar (desktop) -->
+<nav aria-label="Sidebar" class="hidden md:flex flex-col py-lg bg-surface-container-low border-r border-white/5 shadow-2xl fixed inset-y-0 left-0 w-80 z-[60]">
+    <div class="flex items-center gap-sm px-lg mb-8">
+        <div class="w-12 h-12 rounded-full overflow-hidden border border-outline-variant flex items-center justify-center font-display-md text-display-md text-white" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %></div>
+        <div class="flex flex-col">
+            <span class="font-headline-md text-headline-md text-primary"><%- esc(me.display_name) %></span>
+            <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2">
+                <%- rankLabel %>
+                <span class="w-2 h-2 rounded-full bg-secondary"></span> آنلاین
+            </span>
+        </div>
+    </div>
+    <ul class="flex-1 space-y-2 font-body-md text-body-md">
+        <li><a class="flex items-center gap-4 py-3 px-4 bg-primary-container text-on-primary-container rounded-lg mx-2" href="<%- url('home') %>">
+            <%- icon('video_library', '', true) %> تماس‌ها</a></li>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('profile') %>">
+            <%- icon('person') %> پروفایل</a></li>
+        <% if (isManager) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>">
+            <%- icon('forum') %> پیام‌ها</a></li>
+        <% } else if (canMessages) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>?chat=admin">
+            <%- icon('forum') %> ارتباط با ادمین</a></li>
+        <% } %>
+        <% if (canMembers || canRequests) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('members') %>">
+            <%- icon('group_off') %> مدیریت اعضا</a></li>
+        <% } %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="#" onclick="logout(event)">
+            <%- icon('logout') %> خروج</a></li>
+    </ul>
+</nav>
+
+<!-- Main -->
+<div class="flex-1 flex flex-col min-h-screen relative z-10 w-full md:pl-80">
+    <!-- Top bar -->
+    <header class="bg-background/80 backdrop-blur-md fixed top-0 w-full z-50 flex items-center justify-between px-lg py-md">
+        <div class="flex items-center gap-3">
+            <a href="<%- url('home') %>"><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></a>
+        </div>
+            <div class="flex items-center gap-3">
+            <button id="bell-btn" class="relative text-on-surface-variant hover:bg-surface-variant/20 p-2 rounded-full" onclick="toggleNotifications()" title="اعلان‌ها">
+                <%- icon('notifications') %>
+                <span id="bell-dot" class="hidden absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+            </button>
+            <a href="<%- url('profile') %>" title="پروفایل" class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant flex items-center justify-center font-headline-md text-white hover:opacity-90 transition" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %></a>
+            <button class="text-on-surface-variant hover:bg-surface-variant/20 p-2 rounded-full" onclick="logout(event)"><%- icon('logout') %></button>
+        </div>
+    </header>
+
+    <!-- Dashboard -->
+    <main class="flex-1 pt-24 pb-28 px-4 md:px-lg max-w-7xl mx-auto w-full flex flex-col gap-8">
+        <div class="flex items-center gap-4 mt-4 flex-wrap">
+            <h1 class="font-display-md text-display-md text-on-surface">خوش آمدی <%- esc(firstName) %></h1>
+            <% if (isManager) { %>
+            <span class="manager-badge font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
+            </span>
+            <% } else if (rankLabel !== 'کاربر عادی') { %>
+            <span class="font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1 bg-primary-container text-on-primary-container">
+                <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
+            </span>
+            <% } %>
+            <% if (quotaText) { %>
+            <span class="font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1 bg-surface-container-high text-on-surface-variant" title="سقف ایجاد تماس در روز">
+                <%- icon('calendar_add_on', 'text-[16px]') %> تماس امروز: <%- quotaText %>
+            </span>
+            <% } %>
+        </div>
+
+        <!-- Core actions -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+            <% if (limited) { %>
+            <button class="hero-glow group relative overflow-hidden bg-primary-container text-on-primary-container rounded-xl p-8 flex flex-col items-center justify-center min-h-[200px] opacity-60 cursor-not-allowed" onclick="document.getElementById('toast-message').textContent='حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد';document.getElementById('toast').classList.remove('hidden');setTimeout(()=>document.getElementById('toast').classList.add('hidden'),4000)">
+                <div class="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <%- icon('block', 'text-[64px] mb-4 drop-shadow-md', true) %>
+                <h2 class="font-headline-lg text-headline-lg font-semibold">ایجاد تماس جدید</h2>
+                <p class="font-body-sm text-body-sm text-on-primary-container/80 mt-2">شروع یک تماس ویدیویی امن</p>
+            </button>
+            <% } else { %>
+            <button class="hero-glow group relative overflow-hidden bg-primary-container text-on-primary-container rounded-xl p-8 flex flex-col items-center justify-center min-h-[200px] transition-transform duration-300 hover:scale-[1.02]" onclick="location.href='<%- url('create') %>'">
+                <div class="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <%- icon('video_call', 'text-[64px] mb-4 drop-shadow-md', true) %>
+                <h2 class="font-headline-lg text-headline-lg font-semibold">ایجاد تماس جدید</h2>
+                <p class="font-body-sm text-body-sm text-on-primary-container/80 mt-2">شروع یک تماس ویدیویی امن</p>
+            </button>
+            <% } %>
+
+            <div class="glass-panel rounded-xl p-8 flex flex-col justify-center min-h-[200px] shadow-lg">
+                <h2 class="font-headline-md text-headline-md text-on-surface mb-6 flex items-center gap-2">
+                    <%- icon('link', 'text-secondary') %> پیوستن با لینک
+                </h2>
+                <form id="join-form" class="flex flex-col sm:flex-row gap-4 w-full">
+                    <div class="relative flex-1">
+                        <input id="join-input" class="w-full bg-surface-container-highest text-on-surface border border-outline-variant rounded-lg px-4 py-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-on-surface-variant/50" placeholder="آدرس لینک یا کد تماس را وارد کنید..." type="text"/>
+                    </div>
+                    <button type="submit" class="bg-surface-variant text-on-surface-variant hover:bg-secondary hover:text-on-secondary px-6 py-3 rounded-lg font-label-md text-label-md transition-colors duration-200 flex items-center justify-center gap-2 whitespace-nowrap">
+                        <%- icon('login') %> پیوستن
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent meetings -->
+        <section class="flex flex-col gap-4 mt-4">
+            <h3 class="font-headline-md text-headline-md text-on-surface mb-2">جلسات اخیر</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <% if (recent.length === 0) { %>
+                <div class="border border-dashed border-outline-variant rounded-lg p-5 flex flex-col items-center justify-center text-center opacity-70 min-h-[140px]">
+                    <%- icon('calendar_add_on', 'text-outline mb-2 text-[32px]') %>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant">هنوز جلسه‌ای ایجاد نکرده‌اید</p>
+                </div>
+                <% } else { %>
+                <% recent.forEach(function (m) { %>
+                <div class="glass-panel rounded-lg p-5 transition-colors group relative cursor-not-allowed opacity-80">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="bg-surface-variant rounded-md p-2 text-primary"><%- icon('groups') %></div>
+                        <span class="font-label-sm text-label-sm text-on-surface-variant"><%- esc(timeAgo(m.created_at)) %></span>
+                    </div>
+                    <h4 class="font-body-lg text-body-lg text-on-surface font-medium mb-1"><%- esc(m.title) %></h4>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant"><%- Number(m.members) %> عضو</p>
+                    <%- icon('lock', 'absolute top-3 left-3 text-outline-variant', false, 'title="عضو خصوصی"') %>
+                </div>
+                <% }); }
+                %>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Notifications popup (manager only) -->
+<div id="notif-popup" class="hidden fixed top-16 left-auto right-4 z-[70] w-80 max-h-[70vh] glass-panel rounded-2xl shadow-2xl p-4 flex flex-col">
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="font-headline-md text-headline-md text-on-surface">اعلان‌ها</h3>
+        <button onclick="toggleNotifications()" class="text-on-surface-variant hover:text-on-surface"><%- icon('close') %></button>
+    </div>
+    <div class="flex items-center gap-2 mb-3">
+        <span class="font-label-sm text-on-surface-variant">مرتب‌سازی:</span>
+        <button id="sort-old" class="text-[12px] px-2 py-1 rounded-md bg-surface-container-high text-on-surface" onclick="setNotifSort('old')">قدیمی</button>
+        <button id="sort-new" class="text-[12px] px-2 py-1 rounded-md bg-secondary-container text-on-secondary-container" onclick="setNotifSort('new')">جدید</button>
+    </div>
+    <div id="notif-list" class="overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-2"></div>
+</div>
+
+<!-- Mobile bottom nav -->
+<nav class="md:hidden bg-surface-container/60 fixed bottom-0 w-full z-50 rounded-t-xl backdrop-blur-xl border-t border-white/10 shadow-xl flex justify-around items-center h-20 px-md">
+    <a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1" href="<%- url('home') %>">
+        <%- icon('home', '', true) %><span class="font-label-md text-label-md mt-1">خانه</span></a>
+    <% if (limited) { %>
+    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="#" onclick="document.getElementById('toast-message').textContent='حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد';document.getElementById('toast').classList.remove('hidden');setTimeout(()=>document.getElementById('toast').classList.add('hidden'),4000);return false;">
+        <%- icon('video_call') %><span class="font-label-md text-label-md mt-1">تماس</span></a>
+    <% } else { %>
+    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="<%- url('create') %>">
+        <%- icon('video_call') %><span class="font-label-md text-label-md mt-1">تماس</span></a>
+    <% } %>
+    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="<%- url('profile') %>">
+        <%- icon('person') %><span class="font-label-md text-label-md mt-1">پروفایل</span></a>
+</nav>
+
+<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+    <%- icon('error') %><span id="toast-message"></span></div></div>
+
+<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>; window.__isManager = <%- json(isManager) %>;</script>
+<script src="<%- asset('assets/js/home.js') %>"></script>
+</body>
+</html>
