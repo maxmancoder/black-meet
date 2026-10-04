@@ -127,6 +127,7 @@
     box.appendChild(el);
     box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
+    return el;
   }
 
   function renderChat(messages, type) {
@@ -192,6 +193,7 @@
 
     // public announcements stream into the open public thread
     BMLive.on(EV.NOTIF_NEW, a => {
+      if (a && Number(a.fromUserId) === Number(window.MS_ID)) return; // my own send — already appended optimistically
       if (view && view.type === 'public' && a && a.body) {
         appendMessage({ id: a.id, body: a.body, from_manager: 1 }, true);
       }
@@ -227,13 +229,13 @@
     const body = inp.value.trim();
     if (!body) return;
     if (view.type === 'public') {
+      // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
+      const el = appendMessage({ id: null, body, from_manager: 1 }, true);
+      inp.value = '';
       fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body }) })
         .then(r => r.json()).then(d => {
-          if (!d.ok) return showToast(d.msg || 'خطا');
-          inp.value = '';
-          appendMessage({ id: null, body, from_manager: 1 }, true);
-          showToast('اعلان ارسال شد');
-        }).catch(() => showToast('خطا'));
+          if (!d.ok) { el.remove(); showToast(d.msg || 'خطا'); }
+        }).catch(() => { el.remove(); showToast('خطا'); });
       return;
     }
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
@@ -273,11 +275,20 @@
   };
   window.closeProfileModal = function () { document.getElementById('profile-modal').classList.add('hidden'); };
 
-  loadConvs(function () {
-    // /messages?chat=admin — jump straight into the admin chat
-    if (new URLSearchParams(location.search).get('chat') === 'admin') {
-      const row = convs.find(c => c.admin_chat);
-      if (row) openUser(row);
-    }
-  });
+  // entering the messages page clears the home badge (server-side seen flags),
+  // then the conversation list is loaded with fresh unread counts
+  function bootstrap() {
+    loadConvs(function () {
+      // /messages?chat=admin — jump straight into the admin chat
+      if (new URLSearchParams(location.search).get('chat') === 'admin') {
+        const row = convs.find(c => c.admin_chat);
+        if (row) openUser(row);
+      }
+    });
+  }
+  fetch('api/messages/read-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ csrf: CSRF }),
+  }).then(() => bootstrap()).catch(() => bootstrap());
 })();

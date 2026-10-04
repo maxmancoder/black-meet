@@ -17,33 +17,38 @@
 
 <div class="relative z-10 flex-1 flex flex-col md:flex-row">
 
-    <!-- ===== Left sidebar: section switcher (stacked; hidden on mobile until toggled) ===== -->
-    <aside id="side-panel" class="hidden flex flex-col static md:fixed md:inset-y-0 md:left-0 md:w-64 md:z-[60] bg-surface-container-low md:border-r md:border-white/5 md:shadow-2xl gap-2 md:gap-1 md:pt-6 p-3">
-        <div class="hidden md:flex items-center gap-2 px-3 mb-4">
-            <span class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center"><%- icon('shield_person', '', true) %></span>
-            <div class="min-w-0">
-                <p class="font-body-sm text-body-sm text-on-surface truncate"><%- esc(me.display_name) %></p>
-                <p class="font-label-sm text-on-surface-variant text-[11px]"><%- esc(rankLabel) %></p>
+    <!-- ===== Left sidebar: same look as home's, only the two section switchers ===== -->
+    <aside id="side-panel" class="hidden md:flex flex-col static md:fixed md:inset-y-0 md:left-0 md:w-80 md:z-[60] bg-surface-container-low md:border-r md:border-white/5 md:shadow-2xl p-3 md:py-lg">
+        <div class="hidden md:flex items-center gap-sm px-lg mb-8">
+            <div class="w-12 h-12 rounded-full overflow-hidden border border-outline-variant flex items-center justify-center font-display-md text-display-md text-white" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %></div>
+            <div class="flex flex-col">
+                <span class="font-headline-md text-headline-md text-primary"><%- esc(me.display_name) %></span>
+                <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2">
+                    <%- rankLabel %>
+                    <span class="w-2 h-2 rounded-full bg-secondary"></span> آنلاین
+                </span>
             </div>
         </div>
 
+        <ul class="flex-1 space-y-2 font-body-md text-body-md">
         <% if (canMembers) { %>
-        <button id="nav-members" data-no-loader onclick="switchSection('members')" class="flex items-center gap-3 md:mx-1 px-4 py-3 rounded-lg font-body-md text-body-md transition-all bg-primary-container text-on-primary-container">
-            <%- icon('group', '', true) %> نمایش اعضا
-        </button>
+            <li><button id="nav-members" data-no-loader onclick="switchSection('members')" class="w-full flex items-center gap-4 py-3 px-4 rounded-lg mx-2 transition-all bg-primary-container text-on-primary-container">
+                <%- icon('group', '', true) %> نمایش اعضا
+            </button></li>
         <% } %>
         <% if (canRequests) { %>
-        <button id="nav-requests" data-no-loader onclick="switchSection('requests')" class="flex items-center gap-3 md:mx-1 px-4 py-3 rounded-lg font-body-md text-body-md transition-all text-on-surface-variant hover:bg-surface-container-high <%- canMembers ? '' : 'bg-primary-container text-on-primary-container' %>">
-            <%- icon('person', '', true) %> درخواست ایجاد حساب
-            <% if (pendingCount > 0) { %>
-            <span class="req-badge mr-auto bg-error-container text-on-error-container text-[11px] px-2 py-0.5 rounded-full"><%- toFaDigits(pendingCount) %></span>
-            <% } %>
-        </button>
+            <li><button id="nav-requests" data-no-loader onclick="switchSection('requests')" class="w-full flex items-center gap-4 py-3 px-4 rounded-lg mx-2 transition-all text-on-surface-variant hover:bg-surface-container-high <%- canMembers ? '' : 'bg-primary-container text-on-primary-container' %>">
+                <%- icon('person', '', true) %> درخواست ایجاد حساب
+                <% if (pendingCount > 0) { %>
+                <span class="req-badge mr-auto bg-error-container text-on-error-container text-[11px] px-2 py-0.5 rounded-full"><%- toFaDigits(pendingCount) %></span>
+                <% } %>
+            </button></li>
         <% } %>
+        </ul>
     </aside>
 
     <!-- ===== Main content ===== -->
-    <main class="flex-1 md:pl-64 p-grid-margin">
+    <main class="flex-1 md:pl-80 p-grid-margin">
 
         <!-- ================= SECTION: member list ================= -->
         <% if (canMembers) { %>

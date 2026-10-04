@@ -84,8 +84,30 @@
     dot.classList.toggle('hidden', maxNotifId(window._notifs) <= seen);
   }
 
+  // ---- unread private messages badge (next to the messages sidebar link) ----
+  // shown from the server count on load, bumped live, cleared by visiting /messages
+  let msgUnread = 0;
+  function setMsgBadge(n) {
+    msgUnread = Math.max(0, Number(n) || 0);
+    const b = document.getElementById('msg-unread-badge');
+    if (!b) return;
+    try { b.textContent = msgUnread.toLocaleString('fa-IR'); } catch (e) { b.textContent = String(msgUnread); }
+    b.classList.toggle('hidden', msgUnread <= 0);
+  }
+  if (document.getElementById('msg-unread-badge')) {
+    fetch('api/messages/unread')
+      .then(r => r.json())
+      .then(d => { if (d && d.ok) setMsgBadge(d.count); })
+      .catch(() => {});
+  }
+
   // realtime: new announcements arrive via notif:new (pushed by PHP internal API)
   if (window.BMLive && EV) {
+    // live bump of the unread-messages badge
+    BMLive.on(EV.PV_NEW_MESSAGE, m => {
+      const bumpsMe = window.__isManager ? !m.fromManager : !!m.fromManager;
+      if (bumpsMe && Number(m.fromUserId) !== Number(window.MS_ID || 0)) setMsgBadge(msgUnread + 1);
+    });
     BMLive.on(EV.NOTIF_NEW, a => {
       const list = window._notifs || [];
       if (a && a.body && !list.some(x => x.id === a.id || x.body === a.body)) {
@@ -95,7 +117,7 @@
         updateBellDot();
         const p = document.getElementById('notif-popup');
         if (p && !p.classList.contains('hidden')) markNotifsSeen(); // already reading it
-        else showToast('اعلان جدید: ' + a.body);
+        else showToast('پیام عمومی جدید: ' + a.body);
       }
     });
     BMLive.on('live:connected', () => loadNotifications()); // catch-up bootstrap after reconnect

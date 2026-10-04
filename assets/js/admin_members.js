@@ -55,7 +55,10 @@
   // ------------------------------------------------------------------
   window.toggleSidePanel = function () {
     const sp = $('side-panel');
-    if (sp) sp.classList.toggle('hidden');
+    if (!sp) return;
+    const show = sp.classList.contains('hidden');
+    sp.classList.toggle('hidden', !show);
+    sp.classList.toggle('flex', show); // mobile needs an explicit flex (base is hidden md:flex)
   };
 
   window.switchSection = function (name) {
@@ -64,7 +67,7 @@
     // mobile: close the panel after picking a section
     if (window.innerWidth < 768) {
       const sp = $('side-panel');
-      if (sp) sp.classList.add('hidden');
+      if (sp) { sp.classList.add('hidden'); sp.classList.remove('flex'); }
     }
     ['members', 'requests'].forEach(s => {
       const sec = $('section-' + s);

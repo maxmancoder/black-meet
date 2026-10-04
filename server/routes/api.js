@@ -741,7 +741,8 @@ router.all('/announcements', (req, res) => {
     if (body === '') return bad(res, { ok: false, msg: 'متن خالی است' });
 
     const r = dbm.run('INSERT INTO announcements (body, created_at) VALUES (?,?)', [body, sqlNow()]);
-    const notif = { id: r.lastInsertRowid, body, created_at: sqlNow() };
+    // fromUserId lets the sender's own tabs skip the echo (no double bubble)
+    const notif = { id: r.lastInsertRowid, body, created_at: sqlNow(), fromUserId: Number(me.id) };
     bus.notifyNew(notif);
     return ok(res, { ok: true });
   }
@@ -874,9 +875,41 @@ router.all('/messages/conversations', (req, res) => {
     return ok(res, { ok: true, id: payload.id });
   }
 
-  dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, created_at) VALUES (?,1,?,?)', [uid, body, sqlNow()]);
-  bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts: sqlNow() });
+  const ts = sqlNow();
+  const r2 = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, created_at) VALUES (?,1,?,?)', [uid, body, ts]);
+  // push live to the recipient (HTTP fallback path; socket PV_SEND does the same)
+  bus.pvNew(uid, { id: r2.lastInsertRowid, fromUserId: Number(me.id), fromName: me.display_name, body, fromManager: 1, ts });
+  bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts });
   return ok(res, { ok: true });
+});
+
+// ------------------------------------------------------------------
+// home sidebar unread badge (seen flags live in pv_messages)
+// ------------------------------------------------------------------
+function unreadCountFor(me) {
+  if (me.is_manager) {
+    const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE from_manager=0 AND seen=0');
+    return Number((row && row.c) || 0);
+  }
+  const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=1 AND seen=0', [me.id]);
+  return Number((row && row.c) || 0);
+}
+
+router.get('/messages/unread', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  return ok(res, { ok: true, count: unreadCountFor(me) });
+});
+
+router.post('/messages/read-all', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (!checkCsrf(req, res)) return;
+  if (me.is_manager) dbm.run('UPDATE pv_messages SET seen=1 WHERE from_manager=0');
+  else dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
+  return ok(res, { ok: true, count: 0 });
 });
 
 // ------------------------------------------------------------------

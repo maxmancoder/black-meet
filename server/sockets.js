@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { Server } = require('socket.io');
 const EV = require('../shared/socket-events');
 const state = require('./lib/state');
+const dbm = require('./lib/db');
 const internalRaw = require('./lib/internal');
 const internal = {};
 for (const k of Object.keys(internalRaw)) {
@@ -87,6 +88,14 @@ function attach(httpServer) {
 
   io.on('connection', (socket) => {
     const uid = socket.data.userId;
+    // manager flag is SERVER-derived (DB) at connect time — it gates PV_SEND,
+    // pvToManagers and pvConversationUpdated. Never trust a client payload for it.
+    try {
+      const u = dbm.get('SELECT is_manager FROM users WHERE id=?', [uid]);
+      socket.data.isManager = !!(u && u.is_manager);
+    } catch (err) {
+      socket.data.isManager = false;
+    }
     addGlobalSocket(uid, socket.id);
 
     const firstConn = userSockets.get(uid) && userSockets.get(uid).size === 1;
@@ -157,7 +166,6 @@ function attach(httpServer) {
         };
         socket.data.room = room;
         socket.data.is_admin = info.is_admin;
-        socket.data.isManager = !!(user.is_manager);
         socket.join(room);
         r.sockets.set(socket.id, info);
         if (!r.userSockets.has(uid)) r.userSockets.set(uid, new Set());

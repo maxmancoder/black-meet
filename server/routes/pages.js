@@ -201,6 +201,7 @@ router.get('/members', (req, res) => {
     canDecide,
     canChangeMode: ranks.canChangeSignupMode(me),
     rankLabel: ranks.rankLabel(me),
+    initials: initials(me.display_name),
   }));
 });
 

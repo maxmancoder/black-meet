@@ -116,17 +116,38 @@
         updateSelfVideo();
         updateControlUI();
         if (approved) applyDefaultMedia();
-        pcMap.forEach(({ pc }) => addLocalTracks(pc));
+        pcMap.forEach((st) => addLocalTracks(st));
       })
       .catch(() => { micOn = false; camOn = false; renderSelf(); updateControlUI(); });
   }
 
-  function addLocalTracks(pc) {
-    if (!localStream) return;
-    localStream.getTracks().forEach(t => {
-      const exists = pc.getSenders().some(s => s.track && s.track.kind === t.kind);
-      if (!exists) pc.addTrack(t, localStream);
-    });
+  // the outgoing VIDEO track currently being sent (camera, or screen while sharing)
+  function outgoingVideoTrack() {
+    if (sharing && screenTrack) return screenTrack;
+    return cameraTrack || null;
+  }
+
+  // exactly ONE video sender per peer, kept in st.videoSender: replaceTrack needs a
+  // pre-existing video sender, and it is missing whenever the camera was never
+  // captured (denied/no device) — that case silently broke screen share.
+  function ensureVideoSender(st) {
+    if (st.videoSender) return st.videoSender;
+    const t = outgoingVideoTrack();
+    if (!t) return null;
+    st.videoSender = st.pc.addTrack(t, localStream || new MediaStream([t]));
+    return st.videoSender;
+  }
+
+  function addLocalTracks(st) {
+    const pc = st.pc;
+    if (localStream) {
+      localStream.getTracks().forEach(t => {
+        if (t.kind === 'video') return; // video sender is managed by ensureVideoSender
+        const exists = pc.getSenders().some(s => s.track && s.track.kind === t.kind);
+        if (!exists) pc.addTrack(t, localStream);
+      });
+    }
+    ensureVideoSender(st);
   }
 
   function updateSelfVideo() {
@@ -251,10 +272,11 @@
       makingOffer: false,
       ignoreOffer: false,
       srdAnswerPending: false,
+      videoSender: null,
     };
     const pc = st.pc;
     pcMap.set(peer.userId, st);
-    addLocalTracks(pc);
+    addLocalTracks(st);
 
     pc.onicecandidate = e => {
       if (e.candidate && socket) socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'ice', candidate: e.candidate } });
@@ -344,9 +366,15 @@
 
   function replaceOutgoingVideo(track) {
     currentVideoTrack = track;
-    pcMap.forEach(({ pc }) => {
-      const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) sender.replaceTrack(track).catch(() => {});
+    pcMap.forEach((st) => {
+      const sender = st.videoSender || st.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender) {
+        st.videoSender = sender;
+        sender.replaceTrack(track || null).catch(() => {});
+      } else if (track) {
+        // no video sender ever existed (camera denied) — create one and renegotiate
+        st.videoSender = st.pc.addTrack(track, new MediaStream([track]));
+      }
     });
     updateSelfVideo();
   }
@@ -915,7 +943,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     const st = memberStatus.get(userId) || {};
     v.muted = !!(blk.audio || la.muted);
     v.volume = (la.volume !== undefined) ? la.volume : 1;
-    const hideVideo = blk.video || st.cam === false;
+    const hideVideo = blk.video || (st.cam === false && !st.sharing);
     if (hideVideo) { v.style.display = 'none'; if (av) av.style.display = 'flex'; }
     else { v.style.display = ''; if (av) av.style.display = 'none'; }
   }

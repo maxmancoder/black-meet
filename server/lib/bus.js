@@ -17,6 +17,7 @@ function notifyNew(data) {
 }
 
 function pvNew(toUserId, data) {
+  if (!ioRef) return;
   const targets = state.userSockets.get(toUserId);
   if (!targets) return;
   targets.forEach((sid) => ioRef.to(sid).emit(EV.PV_NEW_MESSAGE, data));
