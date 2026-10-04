@@ -547,6 +547,7 @@
     socket.on(EV.CHAT_NEW_MESSAGE, d => {
       memberNames.set(d.userId, d.name);
       appendMessage(d.userId, d.name, d.body, d.userId === I.me.id);
+      if (d.userId !== I.me.id) showChatToast(d.name, d.body);
     });
     socket.on(EV.CHAT_ACK, d => {
       if (!d.ok) showToast('ارسال پیام ناموفق: ' + (d.error || ''));
@@ -717,6 +718,40 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     } else {
       showToast('اتصال زنده قطع است');
     }
+  };
+
+  // ---------- Chat toast: bubble rises from bottom for others' messages ----------
+  let chatToastTimer = null;
+  let chatToastFadeTimer = null;
+  function showChatToast(name, body) {
+    const el = $('chat-toast');
+    if (!el) return;
+    $('ct-name').textContent = name || 'بدون نام';
+    $('ct-body').textContent = body || '';
+    el.classList.remove('hidden', 'fading', 'show');
+    void el.offsetWidth; // restart the rise animation
+    el.classList.add('show');
+    clearTimeout(chatToastTimer);
+    clearTimeout(chatToastFadeTimer);
+    chatToastTimer = setTimeout(() => {
+      el.classList.add('fading');
+      chatToastFadeTimer = setTimeout(() => {
+        el.classList.add('hidden');
+        el.classList.remove('show', 'fading');
+      }, 350);
+    }, 5000);
+  }
+  window.openChatFromToast = function () {
+    clearTimeout(chatToastTimer);
+    clearTimeout(chatToastFadeTimer);
+    const el = $('chat-toast');
+    if (el) { el.classList.add('hidden'); el.classList.remove('show', 'fading'); }
+    toggleSidebar(true);
+    switchTab('chat');
+    const box = $('chat-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+    const inp = $('chat-input');
+    if (inp) inp.focus({ preventScroll: true });
   };
 
   // ---------- Emoji ----------

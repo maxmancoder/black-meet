@@ -121,6 +121,15 @@
     <div class="grid grid-cols-6 gap-2" id="emoji-grid"></div>
 </div>
 
+<!-- Chat message bubble: rises from bottom for other members, fades after 5s, click opens chat -->
+<button type="button" id="chat-toast" class="hidden fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[55] max-w-[calc(100vw-32px)] flex items-center gap-3 bg-surface-container-highest/95 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full pl-4 pr-3 py-2.5 cursor-pointer" onclick="openChatFromToast()">
+    <span class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shrink-0"><%- icon('forum', 'text-[18px]', true) %></span>
+    <span class="min-w-0 text-right">
+        <span id="ct-name" class="block font-label-sm text-primary truncate max-w-[160px] sm:max-w-[240px]"></span>
+        <span id="ct-body" class="block font-body-sm text-body-sm text-on-surface truncate max-w-[180px] sm:max-w-[320px]"></span>
+    </span>
+</button>
+
 <!-- Member info panel (glowing steel boxes) -->
 <div id="member-info" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
     <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[560px]">

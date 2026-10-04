@@ -59,6 +59,22 @@
                 </div>
             </div>
 
+            <!-- Mobile quick keys: پیام‌ها / مدیریت اعضا (gated by rank) -->
+            <% if (isManager || canMessages || canMembers || canRequests) { %>
+            <div class="md:hidden flex flex-col gap-3 mt-lg" id="mobile-profile-keys">
+                <% if (isManager || canMessages) { %>
+                <a id="key-messages" href="<%- url('messages') %><%- isManager ? '' : '?chat=admin' %>" class="flex items-center gap-3 bg-surface-container-high hover:bg-surface-container-highest text-on-surface px-4 py-3 rounded-xl font-label-md transition">
+                    <%- icon('forum') %> پیام‌ها
+                </a>
+                <% } %>
+                <% if (canMembers || canRequests) { %>
+                <a id="key-members" href="<%- url('members') %>" class="flex items-center gap-3 bg-surface-container-high hover:bg-surface-container-highest text-on-surface px-4 py-3 rounded-xl font-label-md transition">
+                    <%- icon('group_off') %> مدیریت اعضا
+                </a>
+                <% } %>
+            </div>
+            <% } %>
+
             <!-- Steel info boxes: glowing blue metallic edges -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کامل</span><span class="bm-infobox-val"><%- esc(me.full_name) %></span></div>

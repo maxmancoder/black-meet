@@ -131,6 +131,8 @@ router.get('/profile', (req, res) => {
     title: 'پروفایل - Black Meet',
     av: avatarUrl(me.avatar, req),
     rankLabel: ranks.rankLabel(me),
+    isManager: !!me.is_manager,
+    canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
     canRequests: ranks.canViewRequests(me),
     initials: initials(me.display_name),

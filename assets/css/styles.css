@@ -182,6 +182,15 @@ body { font-family: 'Entezar','Tahoma','Arial',sans-serif; }
   z-index: 100;
 }
 
+/* Call chat bubble (#chat-toast): rises from bottom, auto-hides after 5s */
+#chat-toast { transition: opacity .35s ease, transform .35s ease; }
+#chat-toast.show { animation: bm-chat-pop .4s cubic-bezier(.2, .9, .3, 1.15) both; }
+#chat-toast.fading { opacity: 0; transform: translate(-50%, 16px); pointer-events: none; }
+@keyframes bm-chat-pop {
+  from { opacity: 0; transform: translate(-50%, 32px) scale(.92); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 /* Video tile active speaker */
 .tile-active { border-color: rgb(var(--bm-secondary)) !important; box-shadow: 0 0 0 2px rgb(var(--bm-secondary)); }
 
