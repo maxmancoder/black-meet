@@ -236,11 +236,19 @@ router.get('/meeting', (req, res) => {
 
   const participants = dbm.all(
     `SELECT p.id, p.user_id, p.display_name, p.username, p.status, p.role, p.muted, p.cam_on, p.sharing,
-            u.avatar_color, u.avatar, u.full_name, u.email, u.phone, u.is_manager
+            u.avatar_color, u.avatar, u.full_name, u.email, u.phone, u.is_manager, u.rank
      FROM meeting_participants p LEFT JOIN users u ON u.id = p.user_id
      WHERE p.meeting_id=? AND p.status<>? ORDER BY p.id`,
     [meeting.id, 'removed']
   );
+  // Privacy: the manager's / an admin's phone, email and username are never shown to
+  // non-managers on the call page (same rule as info_hidden on /members).
+  const safeParticipants = participants.map((p) => {
+    if (me.is_manager || p.user_id === me.id) return p;
+    const protectedTarget = !!p.is_manager || p.rank === 'admin' || p.role === 'admin';
+    if (!protectedTarget) return p;
+    return Object.assign({}, p, { email: null, phone: null, username: null, redacted: 1 });
+  });
 
   const messages = dbm.all(
     'SELECT user_id, display_name, body, created_at FROM messages WHERE meeting_id=? ORDER BY id DESC LIMIT 50',
@@ -257,12 +265,13 @@ router.get('/meeting', (req, res) => {
     me: {
       id: Number(me.id), name: me.display_name, username: me.username,
       avatar_color: me.avatar_color, avatar: String(me.avatar || ''), is_admin: isAdmin, status: myStatus,
+      is_manager: !!me.is_manager,
     },
     token: makeSocketToken(me.id, meeting.id),
     socketUrl: '',
     iceServers: turnConfig(),
     base: baseUrl(req),
-    participants,
+    participants: safeParticipants,
     messages,
     emojis,
     csrf: sessions.csrfToken(req, res),
@@ -275,7 +284,7 @@ router.get('/meeting', (req, res) => {
     isAdmin,
     init,
     me,
-    participants,
+    participants: safeParticipants,
     initials: initials(me.display_name),
     isManager: !!me.is_manager,
   }));

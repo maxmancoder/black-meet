@@ -28,6 +28,9 @@
   const memberNames = new Map();  // userId -> display name
   const localBlock = {};          // userId -> {audio,video,screen} (per-viewer local blocks)
   const localAudio = {};          // userId -> {muted, volume}
+  // admin-applied LOCKS on MY controls: locked = admin disabled it and only the
+  // admin can re-enable (their "روشن" = unlock, it never turns things on for me)
+  const locks = { audio: false, video: false, screen: false };
   const remoteStreams = new Map();
   let menuUserId = null;
   let currentList = [];
@@ -46,6 +49,7 @@
       avatar_color: m.avatar_color, avatar: String(m.avatar || ''),
       is_admin: !!m.is_admin, status: m.status === 'approved' ? 'approved' : 'pending',
       muted: !!m.muted, cam: m.cam !== false, sharing: !!m.sharing,
+      locks: m.locks || null,
     };
   }
   function upsertMember(m) {
@@ -97,6 +101,32 @@
   // ---------- Media ----------
   // Audio and camera are requested SEPARATELY so a missing or denied camera
   // never kills the microphone. Local tracks are added to each peer after both.
+  function looksVirtual(label) {
+    return /vcam|virtual|obs|manycam|droidcam|snap\s?camera|iriun|epoccam|ndi|camlink|dummy/i.test(label || '');
+  }
+  function listCameras() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return Promise.resolve([]);
+    return navigator.mediaDevices.enumerateDevices()
+      .then(ds => ds.filter(d => d.kind === 'videoinput'))
+      .catch(() => []);
+  }
+  // a virtual camera (VCam/OBS/…) can be the OS default — prefer a real one
+  function preferRealCamera() {
+    return listCameras().then(cams => {
+      const real = cams.find(d => d.deviceId && !looksVirtual(d.label));
+      if (!real) return null;
+      return navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, deviceId: { exact: real.deviceId } }
+      }).then(s => s.getVideoTracks()[0] || null).catch(() => null);
+    }).catch(() => null);
+  }
+  function pickCameraConstraint() {
+    return listCameras().then(cams => {
+      const real = cams.find(d => d.deviceId && !looksVirtual(d.label));
+      if (real) return { width: { ideal: 1280 }, height: { ideal: 720 }, deviceId: { exact: real.deviceId } };
+      return { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
+    }).catch(() => ({ width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }));
+  }
   function startMedia() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { renderSelf(); return Promise.resolve(); }
     return navigator.mediaDevices.getUserMedia({ audio: true })
@@ -105,9 +135,14 @@
         micOn = true;
         return navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } })
           .then(videoStream => {
-            cameraTrack = videoStream.getVideoTracks()[0] || null;
-            if (cameraTrack) localStream.addTrack(cameraTrack);
-            camOn = !!cameraTrack;
+            const first = videoStream.getVideoTracks()[0] || null;
+            if (!first) { cameraTrack = null; camOn = false; return; }
+            const keep = () => { cameraTrack = first; localStream.addTrack(first); camOn = true; };
+            if (!looksVirtual(first.label)) { keep(); return; }
+            return preferRealCamera().then(real => {
+              if (real) { try { first.stop(); } catch (e) {} cameraTrack = real; localStream.addTrack(real); camOn = true; }
+              else keep();
+            }).catch(keep);
           })
           .catch(() => { camOn = false; cameraTrack = null; });
       })
@@ -167,6 +202,17 @@
     setBMIcon($('ic-cam'), camOn ? 'videocam' : 'videocam_off', true);
     $('btn-cam').classList.toggle('ctrl-off', !camOn);
     $('btn-share').classList.toggle('ctrl-live', sharing);
+    // lock badge: the admin locked this control (it stays off until they unlock)
+    ['btn-mic', 'btn-cam', 'btn-share'].forEach((id, i) => {
+      const el = $(id);
+      if (el) {
+        el.classList.toggle('ctrl-locked', !!locks[['audio', 'video', 'screen'][i]]);
+        el.setAttribute('aria-disabled', locks[['audio', 'video', 'screen'][i]] ? 'true' : 'false');
+      }
+    });
+    // the camera-source (⋮) button only shows while the camera is live
+    const more = $('btn-cam-more');
+    if (more) more.classList.toggle('hidden', !(camOn && !sharing && !locks.video));
   }
 
   // Joining with media off (create-page toggle, state 2): arrive muted + cam off,
@@ -390,7 +436,11 @@
       const mm = upsertMember(m);
       memberNames.set(mm.userId, mm.name);
       peerMeta.set(mm.userId, { name: mm.name, avatar_color: mm.avatar_color, avatar: mm.avatar || '' });
-      memberStatus.set(mm.userId, { muted: !!mm.muted, cam: mm.cam !== false, sharing: !!mm.sharing });
+      const prevSt = memberStatus.get(mm.userId) || {};
+      memberStatus.set(mm.userId, {
+        muted: !!mm.muted, cam: mm.cam !== false, sharing: !!mm.sharing,
+        locks: mm.locks || prevSt.locks || null,
+      });
       if (mm.full_name || mm.email || mm.phone || mm.is_manager != null || mm.role != null) {
         memberInfo.set(mm.userId, {
           full_name: mm.full_name, username: mm.username, display_name: mm.name,
@@ -471,6 +521,12 @@
     socket.on(EV.CALL_WELCOME, (d) => {
       // authoritative initial room state — merged, keeps SELF + SSR entries
       adoptMembers(d.members, true);
+      // my own admin locks (server also replays FORCE_DISABLE as catch-up)
+      if (d.you && d.you.locks) {
+        ['audio', 'video', 'screen'].forEach((k) => {
+          if (d.you.locks[k]) { locks[k] = true; updateControlUI(); }
+        });
+      }
     });
     socket.on(EV.MEMBER_JOINED, ({ member }) => {
       adoptMembers([member], true);
@@ -489,6 +545,7 @@
       if (d.muted !== undefined) cur.muted = d.muted;
       if (d.cam !== undefined) cur.cam = d.cam;
       if (d.sharing !== undefined) cur.sharing = d.sharing;
+      if (d.locks !== undefined) cur.locks = d.locks;
       memberStatus.set(d.userId, cur);
       const m = currentList.find(x => x.userId === d.userId);
       if (m) Object.assign(m, d);
@@ -520,16 +577,27 @@
     });
     socket.on(EV.FORCE_DISABLE, d => {
       if (d.kind === 'audio') {
-        if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !d.off);
-        micOn = !d.off; updateControlUI(); broadcastStatus();
+        if (d.off) {
+          locks.audio = true;
+          if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
+          micOn = false; updateControlUI(); broadcastStatus();
+        } else {
+          // unlock only — the mic stays off until the user turns it back on
+          locks.audio = false; updateControlUI();
+        }
       } else if (d.kind === 'video') {
-        if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = !d.off);
-        camOn = !d.off;
-        if (camOn && !sharing) currentVideoTrack = cameraTrack;
-        else if (!camOn && !sharing) currentVideoTrack = null;
-        updateSelfVideo(); updateControlUI(); broadcastStatus();
+        if (d.off) {
+          locks.video = true;
+          if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = false);
+          camOn = false;
+          if (!sharing) currentVideoTrack = null;
+          updateSelfVideo(); updateControlUI(); broadcastStatus();
+        } else {
+          locks.video = false; updateControlUI();
+        }
       } else if (d.kind === 'screen') {
-        if (d.off) stopShare();
+        if (d.off) { locks.screen = true; if (sharing) stopShare(); else updateControlUI(); }
+        else { locks.screen = false; updateControlUI(); }
       }
     });
     socket.on(EV.YOU_REJECTED, () => { showToast('درخواست شما رد شد'); setTimeout(() => location.href = I.base + '/home', 1500); });
@@ -652,14 +720,12 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       card.className = 'bg-surface-container border border-outline-variant/30 rounded-xl p-3 mb-3';
       const ctrl = (kind, label) => {
         const selfOn = localBlock[m.userId] && localBlock[m.userId][kind];
-        const allOff = kind === 'audio' ? st.muted
-                     : kind === 'video' ? (st.cam === false)
-                     : (st.sharing === false);
+        const locked = !!(st.locks && st.locks[kind]); // locked = disabled by admin
         return `<div class="flex flex-col items-center gap-1">
           <span class="font-label-sm text-on-surface-variant text-[11px]">${label}</span>
           <div class="flex gap-1">
             <button class="text-[11px] px-2 py-1 rounded-md ${selfOn ? 'bg-error-container text-on-error-container' : 'bg-surface-container-high text-on-surface'} hover:opacity-80" onclick="adminBlockSelf(${m.userId},'${kind}')">برای من</button>
-            <button class="text-[11px] px-2 py-1 rounded-md ${allOff ? 'bg-error-container text-on-error-container' : 'bg-secondary-container text-on-secondary-container'} hover:opacity-80" onclick="adminDisableAll(${m.userId},'${kind}')">${allOff ? 'روشن همه' : 'قطع همه'}</button>
+            <button class="text-[11px] px-2 py-1 rounded-md ${locked ? 'bg-error-container text-on-error-container' : 'bg-secondary-container text-on-secondary-container'} hover:opacity-80" onclick="adminDisableAll(${m.userId},'${kind}')">${locked ? 'روشن همه' : 'قطع همه'}</button>
           </div>
         </div>`;
       };
@@ -785,6 +851,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
 
   // ---------- Controls ----------
   window.toggleMic = function () {
+    if (locks.audio) { showToast('میکروفون توسط ادمین قفل شده است'); return; }
     if (!localStream) { showToast('دسترسی به میکروفون وجود ندارد'); return; }
     micOn = !micOn;
     localStream.getAudioTracks().forEach(t => t.enabled = micOn);
@@ -792,6 +859,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     broadcastStatus();
   };
   window.toggleCam = function () {
+    if (locks.video) { showToast('دوربین توسط ادمین قفل شده است'); return; }
     if (!localStream) { showToast('دسترسی به دوربین وجود ندارد'); return; }
     camOn = !camOn;
     localStream.getVideoTracks().forEach(t => t.enabled = camOn);
@@ -803,10 +871,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   };
   window.toggleShare = function () {
     if (sharing) { stopShare(); return; }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      showToast('اشتراک صفحه در این مرورگر/دستگاه پشتیبانی نمی‌شود');
-      return;
-    }
+    if (locks.screen) { showToast('اشتراک صفحه توسط ادمین قفل شده است'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { startCameraAsShare(); return; }
     navigator.mediaDevices.getDisplayMedia({ video: true }).then(screenStream => {
       screenTrack = screenStream.getVideoTracks()[0];
       screenTrack.onended = stopShare;
@@ -817,10 +883,38 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     }).catch(err => {
       const name = err && err.name;
       if (name === 'NotAllowedError' || name === 'SecurityError') showToast('دسترسی به اشتراک صفحه داده نشد');
-      else if (name === 'NotSupportedError') showToast('اشتراک صفحه در این دستگاه پشتیبانی نمی‌شود');
+      else if (name === 'NotSupportedError') { startCameraAsShare(); return; }
       else if (name !== 'AbortError') showToast('اشتراک صفحه ممکن نشد');
     });
   };
+  // Fallback when the device can't share its screen (most mobile browsers):
+  // share the camera instead, so the user still broadcasts live video.
+  function startCameraAsShare() {
+    const useTrack = (t) => {
+      if (!t) return false;
+      if (!cameraTrack) {
+        cameraTrack = t;
+        if (localStream) localStream.addTrack(t);
+      }
+      camOn = true;
+      if (localStream) localStream.getVideoTracks().forEach(x => x.enabled = true);
+      screenTrack = null; // camera-fallback: stopShare must not stop the camera
+      sharing = true;
+      replaceOutgoingVideo(cameraTrack);
+      updateSelfVideo(); updateControlUI(); broadcastStatus();
+      showToast('اشتراک صفحه پشتیبانی نمی‌شود؛ دوربین به‌عنوان اشتراک فعال شد');
+      return true;
+    };
+    if (cameraTrack) { useTrack(cameraTrack); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('اشتراک صفحه در این مرورگر/دستگاه پشتیبانی نمی‌شود');
+      return;
+    }
+    pickCameraConstraint()
+      .then(c => navigator.mediaDevices.getUserMedia({ video: c }))
+      .then(s => { if (!useTrack(s.getVideoTracks()[0])) showToast('اشتراک صفحه در این مرورگر/دستگاه پشتیبانی نمی‌شود'); })
+      .catch(() => showToast('اشتراک صفحه در این مرورگر/دستگاه پشتیبانی نمی‌شود'));
+  }
   function stopShare() {
     if (screenTrack) { screenTrack.stop(); screenTrack = null; }
     sharing = false;
@@ -829,6 +923,114 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     updateControlUI();
     broadcastStatus();
   }
+
+  // ---------- Camera source menu (⋮ next to the cam button) ----------
+  let camSources = [];
+  function closeCamMenu() {
+    const m = $('cam-menu');
+    if (m) m.classList.add('hidden');
+  }
+  function switchCamera(constraint) {
+    if (locks.video) { showToast('دوربین توسط ادمین قفل شده است'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    const want = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (constraint && constraint.deviceId) want.deviceId = { exact: constraint.deviceId };
+    else if (constraint && constraint.facingMode) want.facingMode = constraint.facingMode;
+    else want.facingMode = 'user';
+    navigator.mediaDevices.getUserMedia({ video: want }).then(vs => {
+      const nt = vs.getVideoTracks()[0];
+      if (!nt) return;
+      const old = cameraTrack;
+      if (old && localStream) { try { localStream.removeTrack(old); } catch (e) {} }
+      cameraTrack = nt;
+      if (localStream) localStream.addTrack(nt);
+      nt.enabled = camOn;
+      if (sharing && screenTrack) {
+        // screen share owns the outgoing video — swap takes effect after stopShare
+      } else {
+        replaceOutgoingVideo(camOn ? nt : null);
+      }
+      updateSelfVideo();
+      updateControlUI();
+      if (old) { try { old.stop(); } catch (e) {} }
+      showToast('دوربین تغییر کرد');
+    }).catch(() => showToast('تغییر دوربین ممکن نشد'));
+  }
+  function renderCamMenu(menu) {
+    camSources = [
+      { label: 'دوربین جلو', constraint: { facingMode: 'user' } },
+      { label: 'دوربین عقب', constraint: { facingMode: 'environment' } },
+    ];
+    const rows = () => camSources.map((c, i) => `
+      <button class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-right text-on-surface hover:bg-surface-container-high transition text-body-sm" onclick="__pickCam(${i})">
+        ${bmIcon(c.constraint && c.constraint.deviceId ? 'videocam' : 'switch_camera', 'text-[18px] text-secondary', false)}
+        <span class="truncate">${escapeHtml(c.label)}</span>
+      </button>`).join('');
+    menu.innerHTML = `
+      <p class="font-label-sm text-on-surface-variant px-3 pb-1">منبع تصویر</p>
+      ${rows()}
+      <div class="h-px bg-white/10 my-1"></div>
+      <div id="cam-menu-devices"><p class="font-label-sm text-on-surface-variant px-3 py-1 text-[11px]">در حال جستجوی دوربین…</p></div>`;
+    listCameras().then(cams => {
+      const box = menu.querySelector('#cam-menu-devices');
+      if (!box) return;
+      const virtLabels = [];
+      const items = [];
+      cams.forEach((d, i) => {
+        const virt = looksVirtual(d.label);
+        if (virt) virtLabels.push(d.label);
+        camSources.push({ label: d.label || ('دوربین ' + (i + 1)), constraint: { deviceId: d.deviceId } });
+        const idx = camSources.length - 1;
+        items.push(`
+          <button class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-right text-on-surface hover:bg-surface-container-high transition text-body-sm" onclick="__pickCam(${idx})">
+            ${bmIcon('videocam', 'text-[18px] ' + (virt ? 'text-error' : 'text-secondary'), false)}
+            <span class="truncate">${escapeHtml((d.label || 'دوربین ' + (i + 1)) + (virt ? ' (مجازی)' : ''))}</span>
+          </button>`);
+      });
+      box.innerHTML = items.join('') || '<p class="font-label-sm text-on-surface-variant px-3 py-1 text-[11px]">دستگاهی یافت نشد</p>';
+      menu.innerHTML = `
+        <p class="font-label-sm text-on-surface-variant px-3 pb-1">منبع تصویر</p>
+        ${rows()}
+        <div class="h-px bg-white/10 my-1"></div>
+        <div id="cam-menu-devices">${box.innerHTML}</div>`;
+    }).catch(() => {});
+  }
+  window.__pickCam = function (i) {
+    const src = camSources[i];
+    closeCamMenu();
+    if (src) switchCamera(src.constraint);
+  };
+  window.toggleCamMenu = function (e) {
+    if (e) e.stopPropagation();
+    const menu = $('cam-menu');
+    if (!menu) return;
+    if (!menu.classList.contains('hidden')) { closeCamMenu(); return; }
+    renderCamMenu(menu);
+    menu.classList.remove('hidden');
+    const btn = $('btn-cam-more');
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      menu.style.visibility = 'hidden';
+      menu.style.left = '0px';
+      menu.style.top = '0px';
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      let left = r.left + r.width / 2 - mw / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+      let top = r.top - mh - 10;
+      if (top < 8) top = r.bottom + 10;
+      menu.style.left = left + 'px';
+      menu.style.top = top + 'px';
+      menu.style.visibility = 'visible';
+    }
+  };
+  document.addEventListener('click', (e) => {
+    const menu = $('cam-menu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    const btn = $('btn-cam-more');
+    if (btn && btn.contains(e.target)) return;
+    if (menu.contains(e.target)) return;
+    closeCamMenu();
+  });
 
   window.copyLink = function () {
     const url = I.publicUrl || location.href;
@@ -861,8 +1063,9 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   };
   window.adminDisableAll = function (userId, kind) {
     const st = memberStatus.get(userId) || {};
-    const off = kind === 'audio' ? !st.muted : kind === 'video' ? (st.cam !== false) : (st.sharing !== false);
-    socket && socket.emit(EV.CALL_DISABLE, { userId, kind, off });
+    const lk = st.locks || {};
+    // off = !locked → press toggles between "disable+lock" and "unlock only"
+    socket && socket.emit(EV.CALL_DISABLE, { userId, kind, off: !lk[kind] });
   };
 
   // ---------- Tabs ----------
@@ -931,16 +1134,20 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       }
     }
     $('mi-name').textContent = name;
-    $('mi-sub').textContent = '@' + (info.username || (member && member.username) || '');
+    // Privacy: manager/admin contact info is hidden from non-managers
+    const viewerIsManager = !!(I.me && I.me.is_manager);
+    const redacted = !!info.redacted ||
+      (!viewerIsManager && userId !== I.me.id && (info.is_manager || info.role === 'admin'));
+    $('mi-sub').textContent = redacted ? roleLabel(info) : '@' + (info.username || (member && member.username) || '');
     $('mi-grid').innerHTML = [
       infoBox('نام کامل', info.full_name),
-      infoBox('نام کاربری', info.username, 1),
+      redacted ? '' : infoBox('نام کاربری', info.username, 1),
       infoBox('نام نمایشی', info.display_name),
-      infoBox('ایمیل', info.email, 1),
+      redacted ? infoBox('اطلاعات تماس', 'محرمانه') : infoBox('ایمیل', info.email, 1),
       infoBox('رمز هش شده', info.has_password ? 'هش شده' : 'ندارد'),
-      infoBox('شماره موبایل', info.phone, 1),
+      redacted ? '' : infoBox('شماره موبایل', info.phone, 1),
       infoBox('نقش', roleLabel(info)),
-    ].join('');
+    ].filter(Boolean).join('');
     $('member-info').classList.remove('hidden');
   }
 
@@ -959,6 +1166,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
             full_name: u.full_name, username: u.username, display_name: u.display_name,
             email: u.email, phone: u.phone, is_manager: !!u.is_manager,
             role: (memberInfo.get(userId) || {}).role || '', has_password: !!u.has_password,
+            redacted: !!u.redacted,
           });
           renderMemberInfoModal(Number(userId));
         }
@@ -1063,7 +1271,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
           memberInfo.set(m.userId, {
             full_name: p.full_name, username: p.username, display_name: p.display_name,
             email: p.email, phone: p.phone, is_manager: !!p.is_manager,
-            role: p.role, has_password: true,
+            role: p.role, has_password: true, redacted: !!p.redacted,
           });
         }
         if (m.userId !== I.me.id && m.status === 'approved') getOrCreateTile(m.userId, m);

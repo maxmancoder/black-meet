@@ -23,10 +23,10 @@ const ICONS = [
   'arrow_back', 'arrow_forward', 'badge', 'block', 'calendar_add_on', 'call_end',
   'campaign', 'check_circle', 'close', 'email', 'error', 'forum', 'group',
   'group_off', 'groups', 'help', 'home', 'info', 'key', 'link', 'lock', 'login',
-  'logout',   'mail', 'menu', 'mic', 'mic_off', 'mood', 'notifications', 'person',
+  'logout',   'mail', 'menu', 'mic', 'mic_off', 'more_vert', 'mood', 'notifications', 'person',
   'person_remove', 'phone', 'phone_iphone', 'record_voice_over', 'screen_share',
-  'search', 'send', 'shield_person', 'video_call', 'video_library', 'videocam',
-  'videocam_off',
+  'search', 'send', 'shield_person', 'switch_camera', 'video_call', 'video_library',
+  'videocam', 'videocam_off',
 ];
 
 // icons/<file> replaces the FILL=1 variant of <name>

@@ -932,35 +932,42 @@ router.get('/members/:userId', (req, res) => {
   if (uid === 0) return bad(res, { ok: false, msg: 'داده ناقص' });
 
   const shared = dbm.get(
-    `SELECT 1 AS x FROM meetings m
-     WHERE m.active=1
+    `SELECT b.role AS target_role FROM meetings m,
+          meeting_participants b
+     WHERE m.id = b.meeting_id AND m.active=1 AND b.user_id=? AND b.status<>'removed'
        AND EXISTS (SELECT 1 FROM meeting_participants a WHERE a.meeting_id=m.id AND a.user_id=? AND a.status<>'removed')
-       AND EXISTS (SELECT 1 FROM meeting_participants b WHERE b.meeting_id=m.id AND b.user_id=? AND b.status<>'removed')`,
-    [me.id, uid]
+     ORDER BY m.id DESC LIMIT 1`,
+    [uid, me.id]
   );
   const selfInfo = me.id === uid;
   if (!selfInfo && !shared) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
 
   const u = dbm.get(
-    'SELECT id, full_name, username, display_name, email, phone, is_manager, is_limited, avatar_color, avatar, password_hash FROM users WHERE id=?',
+    'SELECT id, full_name, username, display_name, email, phone, is_manager, is_limited, rank, avatar_color, avatar, password_hash FROM users WHERE id=?',
     [uid]
   );
   if (!u) return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
+
+  // Privacy: manager's / admin's phone, email and username stay hidden from
+  // non-managers (manager and self always see everything).
+  const protectedTarget = !!u.is_manager || u.rank === 'admin' || (shared && shared.target_role === 'admin');
+  const full = selfInfo || !!me.is_manager || !protectedTarget;
 
   return ok(res, {
     ok: true,
     user: {
       id: Number(u.id),
       full_name: u.full_name,
-      username: u.username,
+      username: full ? u.username : null,
       display_name: u.display_name,
-      email: u.email,
-      phone: u.phone,
+      email: full ? u.email : null,
+      phone: full ? u.phone : null,
       is_manager: !!u.is_manager,
       is_limited: !!u.is_limited,
       avatar_color: u.avatar_color,
       avatar: u.avatar,
       has_password: !!(u.password_hash && String(u.password_hash) !== ''),
+      redacted: !full,
     },
   });
 });

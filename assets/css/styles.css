@@ -204,6 +204,8 @@ body { font-family: 'Entezar','Tahoma','Arial',sans-serif; }
 /* Control button off state */
 .ctrl-off { background: rgb(var(--bm-tertiary-container)) !important; color: rgb(var(--bm-on-error-container)) !important; }
 .ctrl-live { background: rgb(var(--bm-tertiary-container)) !important; color: rgb(var(--bm-on-error-container)) !important; }
+/* Admin-locked control: red ring, stays off until the admin unlocks it */
+.ctrl-locked { outline: 2px solid rgb(var(--bm-error)); outline-offset: -2px; }
 
 /* Buttons and toggles are controls, not text � never selectable */
 button, .btn-primary, .btn-secondary, .bm-switch {

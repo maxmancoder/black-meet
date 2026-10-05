@@ -55,14 +55,21 @@
     return (list || []).reduce((m, a) => Math.max(m, Number(a.id) || 0), 0);
   }
   function markNotifsSeen() {
-    try { localStorage.setItem(SEEN_KEY, String(maxNotifId(window._notifs))); } catch (e) {}
+    // never regress: only move the seen id forward (stale/empty data can't re-dot the bell)
+    try {
+      const cur = maxNotifId(window._notifs);
+      const prev = Number(localStorage.getItem(SEEN_KEY)) || 0;
+      if (cur > prev) localStorage.setItem(SEEN_KEY, String(cur));
+    } catch (e) {}
     updateBellDot();
   }
   window.toggleNotifications = function () {
     const p = document.getElementById('notif-popup');
     if (!p) return;
+    const opening = p.classList.contains('hidden');
     p.classList.toggle('hidden');
-    if (!p.classList.contains('hidden')) loadNotifications(markNotifsSeen);
+    if (opening) { markNotifsSeen(); loadNotifications(markNotifsSeen); }
+    else markNotifsSeen(); // remember on close too, so the dot stays away
   };
   window.setNotifSort = function (s) {
     notifSort = s;
@@ -127,7 +134,8 @@
     const box = document.getElementById('notif-list');
     if (!box) return;
     const arr = list.slice();
-    if (notifSort === 'new') arr.reverse();
+    // API returns newest-first (ORDER BY id DESC): 'new' needs no reverse, 'old' does
+    if (notifSort === 'old') arr.reverse();
     if (!arr.length) { box.innerHTML = '<p class="text-on-surface-variant font-body-sm text-center py-4">اعلانى وجود ندارد</p>'; return; }
     box.innerHTML = '';
     arr.forEach(a => {

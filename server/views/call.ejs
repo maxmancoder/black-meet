@@ -100,6 +100,9 @@
         <%- icon('videocam', 'text-[24px]', true, 'id="ic-cam"') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Camera</span>
     </button>
+    <button id="btn-cam-more" class="hidden bg-white/5 text-on-surface rounded-full p-2.5 hover:bg-white/10 transition-all active:scale-90 duration-150 flex items-center justify-center self-center shrink-0" onclick="toggleCamMenu(event)" aria-label="منبع تصویر">
+        <%- icon('more_vert', 'text-[20px]') %>
+    </button>
     <div class="w-px h-8 bg-white/10 mx-1"></div>
     <button id="btn-share" class="bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleShare()">
         <%- icon('screen_share', 'text-[24px]') %>
@@ -120,6 +123,9 @@
 <div id="emoji-picker" class="hidden fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-[60] glass-panel rounded-2xl p-3 sm:p-4 shadow-2xl max-w-[calc(100vw-24px)]">
     <div class="grid grid-cols-6 gap-2" id="emoji-grid"></div>
 </div>
+
+<!-- Camera source menu (⋮ next to the cam button): front/back + real devices -->
+<div id="cam-menu" class="hidden fixed z-[70] glass-panel rounded-xl p-1.5 shadow-2xl shadow-black/40 border border-white/10 min-w-[200px] max-w-[260px]" dir="rtl"></div>
 
 <!-- Chat message bubble: rises from bottom for other members, fades after 5s, click opens chat -->
 <button type="button" id="chat-toast" class="hidden fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[55] max-w-[calc(100vw-32px)] flex items-center gap-3 bg-surface-container-highest/95 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full pl-4 pr-3 py-2.5 cursor-pointer" onclick="openChatFromToast()">

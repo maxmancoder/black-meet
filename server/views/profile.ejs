@@ -61,15 +61,20 @@
 
             <!-- Mobile quick keys: پیام‌ها / مدیریت اعضا (gated by rank) -->
             <% if (isManager || canMessages || canMembers || canRequests) { %>
-            <div class="md:hidden flex flex-col gap-3 mt-lg" id="mobile-profile-keys">
+            <% const keyCount = (isManager || canMessages ? 1 : 0) + (canMembers || canRequests ? 1 : 0); %>
+            <div class="md:hidden grid <%= keyCount === 2 ? 'grid-cols-2' : 'grid-cols-1' %> gap-3 mt-lg" id="mobile-profile-keys">
                 <% if (isManager || canMessages) { %>
-                <a id="key-messages" href="<%- url('messages') %><%- isManager ? '' : '?chat=admin' %>" class="flex items-center gap-3 bg-surface-container-high hover:bg-surface-container-highest text-on-surface px-4 py-3 rounded-xl font-label-md transition">
-                    <%- icon('forum') %> پیام‌ها
+                <a id="key-messages" href="<%- url('messages') %><%- isManager ? '' : '?chat=admin' %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-primary/30 bg-gradient-to-b from-primary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
+                    <span class="w-12 h-12 rounded-2xl bg-primary-container text-on-primary-container flex items-center justify-center shadow-md shadow-primary/25 group-hover:shadow-primary/50 transition"><%- icon('forum', 'text-[24px]', true) %></span>
+                    <span class="font-label-md leading-tight">پیام‌ها</span>
+                    <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">گفتگوها و اعلان‌ها</span>
                 </a>
                 <% } %>
                 <% if (canMembers || canRequests) { %>
-                <a id="key-members" href="<%- url('members') %>" class="flex items-center gap-3 bg-surface-container-high hover:bg-surface-container-highest text-on-surface px-4 py-3 rounded-xl font-label-md transition">
-                    <%- icon('group_off') %> مدیریت اعضا
+                <a id="key-members" href="<%- url('members') %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-secondary/30 bg-gradient-to-b from-secondary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
+                    <span class="w-12 h-12 rounded-2xl bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-md shadow-secondary/25 group-hover:shadow-secondary/50 transition"><%- icon('group', 'text-[24px]', true) %></span>
+                    <span class="font-label-md leading-tight">مدیریت اعضا</span>
+                    <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">اعضا و درخواست‌ها</span>
                 </a>
                 <% } %>
             </div>

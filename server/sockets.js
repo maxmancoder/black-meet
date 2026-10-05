@@ -172,8 +172,19 @@ function attach(httpServer) {
         r.userSockets.get(uid).add(socket.id);
 
         const you = memberInfo(info);
-        const members = memberList(room).filter((m) => m.userId !== uid);
+        const members = memberList(room)
+          .filter((m) => m.userId !== uid)
+          .map((m) => Object.assign(m, { locks: (r.locks && r.locks[m.userId]) || null }));
+        you.locks = (r.locks && r.locks[uid]) || null;
         socket.emit(EV.CALL_WELCOME, { meeting: st.meeting, you, members, blocked: Array.from(r.blocked) });
+
+        // re-apply this user's admin locks after (re)join — off=true = locked
+        const myLocks = r.locks && r.locks[uid];
+        if (myLocks) {
+          ['audio', 'video', 'screen'].forEach((k) => {
+            if (myLocks[k]) io.to(socket.id).emit(EV.FORCE_DISABLE, { kind: k, off: true });
+          });
+        }
 
         if (info.approved) {
           socket.emit(EV.YOU_APPROVED, { ok: true });
@@ -334,19 +345,35 @@ r.sockets.forEach((s, sid) => {
       if (!room || !Number.isInteger(targetId) || !['audio', 'video', 'screen'].includes(kind)) return;
       const r = requireRoomAdmin();
       if (!r) { socket.emit(EV.ERR, { ok: false, error: 'NOT_AUTHORIZED' }); return; }
-      const off = !!msg.off;
+      const off = !!msg.off; // true = disable AND lock, false = unlock only (never force-on)
+      if (!r.locks) r.locks = {};
+      const lk = r.locks[targetId] || (r.locks[targetId] = { audio: false, video: false, screen: false });
       (r.userSockets.get(targetId) || new Set()).forEach((sid) => {
         const s = r.sockets.get(sid);
         if (!s) return;
-        if (kind === 'audio') s.muted = off;
-        else if (kind === 'video') s.cam = !off;
-        else if (kind === 'screen') s.sharing = !off;
+        if (off) {
+          // lock: force the control off right now
+          if (kind === 'audio') s.muted = true;
+          else if (kind === 'video') s.cam = false;
+          else if (kind === 'screen') s.sharing = false;
+        }
         io.to(sid).emit(EV.FORCE_DISABLE, { kind, off });
       });
-      const patch = {};
-      if (kind === 'audio') patch.muted = off;
-      else if (kind === 'video') patch.cam = !off;
-      else if (kind === 'screen') patch.sharing = !off;
+      lk[kind] = off;
+      const patch = { locks: Object.assign({}, lk) };
+      if (off) {
+        if (kind === 'audio') patch.muted = true;
+        else if (kind === 'video') patch.cam = false;
+        else if (kind === 'screen') patch.sharing = false;
+      } else {
+        // unlock only: report the user's CURRENT state (we never turn things on for them)
+        const anyS = Array.from(r.userSockets.get(targetId) || []).map((sid) => r.sockets.get(sid)).find(Boolean);
+        if (anyS) {
+          patch.muted = !!anyS.muted;
+          patch.cam = !!anyS.cam;
+          patch.sharing = !!anyS.sharing;
+        }
+      }
       emitMemberUpdated(room, targetId, patch);
     });
 
