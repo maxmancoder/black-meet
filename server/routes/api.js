@@ -13,6 +13,7 @@ const pwd = require('./../lib/pwd');
 const otp = require('./../lib/otp');
 const internal = require('./../lib/internal');
 const bus = require('./../lib/bus');
+const EV = require('./../../shared/socket-events');
 const { broadcastSecret } = require('./../lib/config');
 const themesLib = require('./../lib/themes');
 const ranks = require('./../lib/ranks');
@@ -113,10 +114,11 @@ router.post('/signup', (req, res) => {
     const dupReq = dbm.get("SELECT id FROM signup_requests WHERE status='pending' AND (username=? OR email=?)", [user, email]);
     if (dupReq) return bad(res, { ok: false, msg: 'اطلاعات وارد شده تکراری میباشد' });
 
-    dbm.run(
+    const ins = dbm.run(
       'INSERT INTO signup_requests (full_name, username, email, phone, password, status, created_at) VALUES (?,?,?,?,?,?,?)',
       [full, user, email, phone, pass, 'pending', sqlNow()]
     );
+    bus.srToManagers(EV.SR_NEW_REQUEST, { requestId: Number(ins.lastInsertRowid), name: full, ts: sqlNow() });
     return ok(res, { ok: true, pending: true, phone, msg: PENDING_SIGNUP_MSG });
   }
 
@@ -798,8 +800,12 @@ router.all('/messages/user', (req, res) => {
   if (!u) {
     const pending = findPendingSignup(identifier);
     if (!pending) return ok(res, { ok: false, msg: 'کاربری با این مشخصات یافت نشد' });
-    dbm.run('INSERT INTO signup_request_messages (request_id, body, from_manager, created_at) VALUES (?,?,0,?)',
+    const ins = dbm.run('INSERT INTO signup_request_messages (request_id, body, from_manager, created_at) VALUES (?,?,0,?)',
       [pending.id, body, sqlNow()]);
+    bus.srToManagers(EV.SR_NEW_MESSAGE, {
+      requestId: Number(pending.id),
+      message: { id: Number(ins.lastInsertRowid), from_manager: 0, body, created_at: sqlNow() },
+    });
     return ok(res, { ok: true, pending: true });
   }
 

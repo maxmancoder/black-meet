@@ -57,7 +57,13 @@
     fetch((window.BASE || '') + '/api/socket-token')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.ok || !d.token) { emitLocal('live:error', { error: 'NO_TOKEN' }); return; }
+        if (!d.ok || !d.token) {
+          // transient failure — a dead socket until page refresh would silently
+          // swallow every realtime message, so always retry
+          emitLocal('live:error', { error: 'NO_TOKEN' });
+          setTimeout(connect, 3000);
+          return;
+        }
         openSocket(url, d.token);
       })
       .catch(function () {

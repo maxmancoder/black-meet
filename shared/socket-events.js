@@ -67,6 +67,10 @@
     // ---- notifications ----
     NOTIF_NEW: 'notif:new',
 
+    // ---- signup requests (approval-mode chat with the manager) ----
+    SR_NEW_MESSAGE: 'sr:new-message',
+    SR_NEW_REQUEST: 'sr:new-request',
+
     // ---- announcements broadcast channel (from PHP) ----
     BM_SUBSCRIBE: 'bm:subscribe',
     BM_EVENT: 'bm:event',

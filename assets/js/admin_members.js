@@ -508,12 +508,13 @@
       .catch(() => showToast('خطای شبکه'));
   };
 
-  // live refresh of the request list (new signups / applicant replies) — fast, every 3s,
-  // running even while the members section is active so the badge stays fresh
-  setInterval(() => {
+  // live refresh of the request list (new signups / applicant replies) — interval is only
+  // the fallback; realtime SR_NEW_* events trigger the same poll immediately
+  function pollRequests() {
+    if (Date.now() - lastSendAt < 1500) return; // don't clobber a just-sent optimistic reply
     fetch('api/admin/signup-requests').then(r => r.json()).then(d => {
       if (!d.ok) return;
-      if (Date.now() - lastSendAt < 4000) return; // don't clobber a just-sent optimistic reply
+      if (Date.now() - lastSendAt < 1500) return;
       const next = d.requests || [];
       if (JSON.stringify(next) !== JSON.stringify(allRequests)) {
         const ae = document.activeElement;
@@ -528,7 +529,12 @@
         }
       }
     }).catch(() => {});
-  }, 3000);
+  }
+  setInterval(pollRequests, 3000);
+  if (window.BMLive && window.BMEv) {
+    BMLive.on(BMEv.SR_NEW_MESSAGE, pollRequests); // applicant replied — refresh now, not in 3s
+    BMLive.on(BMEv.SR_NEW_REQUEST, pollRequests); // new signup request — badge instantly
+  }
 
   // ------------------------------------------------------------------
   // boot

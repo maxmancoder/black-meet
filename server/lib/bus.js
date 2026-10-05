@@ -40,4 +40,9 @@ function roomEvent(room, event, data) {
   ioRef.to('bm:' + room).emit(EV.BM_EVENT, { room, event, data: data || {} });
 }
 
-module.exports = { setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, roomEvent };
+// push approval-mode signup activity (new request / applicant reply) to manager consoles
+function srToManagers(event, data) {
+  allSockets().forEach((s) => { if (s.data.isManager) s.emit(event, data || {}); });
+}
+
+module.exports = { setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, srToManagers, roomEvent };

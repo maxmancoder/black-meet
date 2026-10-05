@@ -62,15 +62,35 @@
       if (cur > prev) localStorage.setItem(SEEN_KEY, String(cur));
     } catch (e) {}
     updateBellDot();
+    // while the popup is open, items flip to their "read" styling right away
+    const p = document.getElementById('notif-popup');
+    if (p && !p.classList.contains('hidden') && window._notifs) renderNotifications(window._notifs);
+  }
+  function positionNotifPopup() {
+    const p = document.getElementById('notif-popup');
+    const bell = document.getElementById('bell-btn');
+    if (!p || !bell) return;
+    const r = bell.getBoundingClientRect();
+    const w = p.offsetWidth || 320;
+    p.style.position = 'fixed';
+    p.style.top = Math.round(r.bottom + 10) + 'px';
+    // anchor the popup's right edge to the bell's right edge (RTL), kept on screen
+    const gap = Math.round(window.innerWidth - r.right);
+    p.style.right = Math.min(Math.max(8, gap), Math.max(8, window.innerWidth - w - 8)) + 'px';
+    p.style.left = 'auto';
   }
   window.toggleNotifications = function () {
     const p = document.getElementById('notif-popup');
     if (!p) return;
     const opening = p.classList.contains('hidden');
     p.classList.toggle('hidden');
-    if (opening) { markNotifsSeen(); loadNotifications(markNotifsSeen); }
+    if (opening) { positionNotifPopup(); markNotifsSeen(); loadNotifications(markNotifsSeen); }
     else markNotifsSeen(); // remember on close too, so the dot stays away
   };
+  window.addEventListener('resize', function () {
+    const p = document.getElementById('notif-popup');
+    if (p && !p.classList.contains('hidden')) positionNotifPopup();
+  });
   window.setNotifSort = function (s) {
     notifSort = s;
     document.getElementById('sort-old').className = 'text-[12px] px-2 py-1 rounded-md ' + (s === 'old' ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container-high text-on-surface');
@@ -137,11 +157,23 @@
     // API returns newest-first (ORDER BY id DESC): 'new' needs no reverse, 'old' does
     if (notifSort === 'old') arr.reverse();
     if (!arr.length) { box.innerHTML = '<p class="text-on-surface-variant font-body-sm text-center py-4">اعلانى وجود ندارد</p>'; return; }
+    let seen = 0;
+    try { seen = Number(localStorage.getItem(SEEN_KEY)) || 0; } catch (e) {}
     box.innerHTML = '';
     arr.forEach(a => {
+      const id = Number(a.id) || 0;
+      const isNew = id > seen; // "new" only until the item has actually been viewed
       const el = document.createElement('div');
-      el.className = 'bg-surface-container rounded-lg p-3 border border-outline-variant/20';
-      el.innerHTML = '<p class="font-body-sm text-on-surface">' + escapeHtml(a.body) + '</p><p class="font-label-sm text-on-surface-variant text-[11px] mt-1">' + (a.created_at || '') + '</p>';
+      el.className = 'bg-surface-container rounded-lg p-3 border ' +
+        (isNew ? 'border-primary/50' : 'border-outline-variant/20 opacity-75');
+      el.innerHTML =
+        '<div class="flex items-start justify-between gap-2">' +
+          '<p class="font-body-sm text-on-surface flex-1">' + escapeHtml(a.body) + '</p>' +
+          (isNew
+            ? '<span class="shrink-0 self-start bg-primary text-on-primary font-label-sm text-[10px] px-1.5 py-0.5 rounded-full">جدید</span>'
+            : '<span class="shrink-0 self-start text-secondary" title="خوانده شده">' + bmIcon('check_circle', 'text-[14px]') + '</span>') +
+        '</div>' +
+        '<p class="font-label-sm text-on-surface-variant text-[11px] mt-1">' + (a.created_at || '') + '</p>';
       box.appendChild(el);
     });
   }

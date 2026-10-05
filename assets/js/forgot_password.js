@@ -58,7 +58,9 @@
       })
       .catch(() => {});
   }
-  setInterval(pollUserThread, 4000);
+  setInterval(pollUserThread, 2000); // fallback; manager pushes are instant on his side
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) pollUserThread(); });
+  window.addEventListener('focus', pollUserThread);
 
   window.sendPv = function () {
     const inp = document.getElementById('pv-input');
