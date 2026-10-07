@@ -25,6 +25,20 @@
     CALL_STATUS: 'call:status',
     MEMBER_UPDATED: 'member:updated',
 
+    // per-user round-trip latency (shown on each tile)
+    CALL_PING: 'call:ping',
+    CALL_PONG: 'call:pong',
+    PING_STATS: 'ping:stats',
+
+    // shared web surface: a proxied website or a synced video inside the call
+    CALL_WEB_OPEN: 'call:web-open',
+    CALL_WEB_CLOSE: 'call:web-close',
+    CALL_WEB_RIGHTS: 'call:web-rights',
+    CALL_WEB_SYNC: 'call:web-sync',
+    WEB_STATE: 'web:state',
+    WEB_SYNC: 'web:sync',
+    WEB_ERR: 'web:err',
+
     // member lifecycle
     CALL_APPROVE: 'call:approve',
     CALL_REJECT: 'call:reject',

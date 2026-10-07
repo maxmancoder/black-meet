@@ -16,6 +16,8 @@
   let localStream = null;
   let cameraTrack = null;
   let screenTrack = null;
+  let screenAudioTrack = null;
+  let shareAudio = false;
   let currentVideoTrack = null;
   let micOn = false, camOn = false, sharing = false;
   let approved = (I.me.status === 'approved');
@@ -266,6 +268,14 @@
       <div id="self-avatar" class="hidden absolute inset-0 flex items-center justify-center">
         <div class="w-24 h-24 rounded-full flex items-center justify-center font-display-md text-white" style="background:${escapeHtml(I.me.avatar_color)}">${escapeHtml(initials(I.me.name))}</div>
       </div>
+      <div id="sa-self" class="hidden absolute top-3 left-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10" title="صدای صفحه در حال پخش">
+        ${bmIcon('volume_up', 'text-[14px] text-primary', true)}
+      </div>
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <span id="ping-self" class="ping-pill hidden items-center gap-1 px-2 py-1 rounded-full bg-background/70 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
+          ${bmIcon('network_check', 'text-[14px]', false)}<span class="ping-val">—</span>
+        </span>
+      </div>
       <div class="absolute bottom-3 right-3 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
         <span class="font-label-md text-on-surface">${escapeHtml(I.me.name)} (شما)</span>
       </div>`;
@@ -284,6 +294,14 @@
       <video id="vid-${userId}" autoplay playsinline class="w-full h-full object-cover"></video>
       <div id="av-${userId}" class="hidden absolute inset-0 flex items-center justify-center">
         ${avatarMarkup(meta)}
+      </div>
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <span id="ping-${userId}" class="ping-pill hidden items-center gap-1 px-2 py-1 rounded-full bg-background/70 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
+          ${bmIcon('network_check', 'text-[14px]', false)}<span class="ping-val">—</span>
+        </span>
+      </div>
+      <div id="sa-${userId}" class="hidden absolute top-3 left-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10" title="صدای صفحه در حال پخش">
+        ${bmIcon('volume_up', 'text-[14px] text-primary', true)}
       </div>
       <div class="absolute top-3 right-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10">
         ${bmIcon('mic', 'text-[14px] text-secondary', false, 'id="mic-' + userId + '"')}
@@ -427,7 +445,7 @@
 
   // ---------- Socket ----------
   function broadcastStatus() {
-    if (socket) socket.emit(EV.CALL_STATUS, { muted: !micOn, cam: camOn, sharing });
+    if (socket) socket.emit(EV.CALL_STATUS, { muted: !micOn, cam: camOn, sharing, shareAudio });
   }
 
   // adopt (server-provided) members into the roster; merge, never replace.
@@ -527,6 +545,8 @@
           if (d.you.locks[k]) { locks[k] = true; updateControlUI(); }
         });
       }
+      // an already-running site/video box must appear for late joiners too
+      if (d.web && window.bmWebInit) window.bmWebInit(d.web);
     });
     socket.on(EV.MEMBER_JOINED, ({ member }) => {
       adoptMembers([member], true);
@@ -545,6 +565,7 @@
       if (d.muted !== undefined) cur.muted = d.muted;
       if (d.cam !== undefined) cur.cam = d.cam;
       if (d.sharing !== undefined) cur.sharing = d.sharing;
+      if (d.shareAudio !== undefined) cur.shareAudio = d.shareAudio;
       if (d.locks !== undefined) cur.locks = d.locks;
       memberStatus.set(d.userId, cur);
       const m = currentList.find(x => x.userId === d.userId);
@@ -621,6 +642,18 @@
       if (!d.ok) showToast('ارسال پیام ناموفق: ' + (d.error || ''));
     });
     socket.on(EV.EMOJI, d => spawnEmoji(d.emoji));
+
+    // ---- latency ----
+    socket.on(EV.CALL_PONG, (d) => {
+      if (d && d.t) paintPing('self', Math.max(0, Date.now() - d.t));
+    });
+    socket.on(EV.PING_STATS, (d) => applyPingStats(d && d.pings));
+
+    // ---- shared website / video box ----
+    socket.on(EV.WEB_STATE, d => { if (window.bmWebState) window.bmWebState(d); });
+    socket.on(EV.WEB_SYNC, d => { if (window.bmWebSync) window.bmWebSync(d); });
+    socket.on(EV.WEB_ERR, d => showToast((d && d.msg) || 'خطا'));
+    startPingLoop();
   }
 
   // ---------- Sidebar / members (incremental) ----------
@@ -820,6 +853,49 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     if (inp) inp.focus({ preventScroll: true });
   };
 
+  // ---------- Latency (ping) shown in the middle of every tile ----------
+  const toFa = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+  const pingSeen = new Set();
+
+  function pingPill(userId) {
+    return $('ping-' + userId) || (String(userId) === 'self' ? $('ping-self') : null);
+  }
+  function paintPing(userId, ms) {
+    const pill = pingPill(userId);
+    if (!pill) return;
+    const val = pill.querySelector('.ping-val');
+    if (ms == null) {
+      pill.classList.remove('inline-flex');
+      pill.classList.add('hidden');
+      return;
+    }
+    pill.classList.remove('hidden');
+    pill.classList.add('inline-flex');
+    if (val) val.textContent = toFa(ms) + 'ms';
+    pill.classList.remove('text-secondary', 'text-warning', 'text-error', 'text-on-surface-variant');
+    pill.classList.add(ms <= 90 ? 'text-secondary' : ms <= 220 ? 'text-warning' : 'text-error');
+    const ic = pill.querySelector('svg');
+    if (ic) {
+      ic.classList.remove('text-secondary', 'text-warning', 'text-error', 'text-on-surface-variant');
+      ic.classList.add(ms <= 90 ? 'text-secondary' : ms <= 220 ? 'text-warning' : 'text-error');
+    }
+  }
+  function applyPingStats(pings) {
+    pingSeen.clear();
+    Object.keys(pings || {}).forEach((k) => {
+      const id = parseInt(k, 10);
+      pingSeen.add(id);
+      paintPing(id, pings[k]);
+    });
+    paintPing('self', pingSeen.has(I.me.id) ? pings[I.me.id] : null);
+  }
+  function startPingLoop() {
+    setInterval(() => {
+      const s = socket;
+      if (s && s.connected) s.emit(EV.CALL_PING, { t: Date.now() });
+    }, 3000);
+  }
+
   // ---------- Emoji ----------
   function buildEmojiGrid() {
     const g = $('emoji-grid');
@@ -840,6 +916,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     d.style.bottom = '100px';
     canvas.appendChild(d);
     setTimeout(() => d.remove(), 2000);
+    // every emoji has its own little synthesised chime (see emoji-sfx.js)
+    if (window.bmEmojiSfx) { try { window.bmEmojiSfx(em); } catch (e) {} }
     if (broadcast && socket) socket.emit(EV.CALL_EMOJI, { emoji: em });
   }
   window.spawnEmoji = spawnEmoji;
@@ -873,12 +951,58 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     if (sharing) { stopShare(); return; }
     if (locks.screen) { showToast('اشتراک صفحه توسط ادمین قفل شده است'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { startCameraAsShare(); return; }
-    navigator.mediaDevices.getDisplayMedia({ video: true }).then(screenStream => {
+    // pre-flight panel: pick the video quality and whether the page audio goes out too
+    const p = $('share-panel');
+    if (p) {
+      p.classList.remove('hidden');
+      return;
+    }
+    doShare();
+  };
+  window.closeSharePanel = function () {
+    const p = $('share-panel');
+    if (p) p.classList.add('hidden');
+  };
+  window.confirmShare = function () {
+    const q = parseInt(($('share-quality') || {}).value || '720', 10);
+    const wantAudio = !!($('share-audio') || {}).checked;
+    window.closeSharePanel();
+    doShare(q, wantAudio);
+  };
+
+  function doShare(quality, wantAudio) {
+    const presets = {
+      360: { width: 640, height: 360, frameRate: 15 },
+      480: { width: 854, height: 480, frameRate: 15 },
+      720: { width: 1280, height: 720, frameRate: 30 },
+      1080: { width: 1920, height: 1080, frameRate: 30 },
+    };
+    const q = presets[quality] || presets[720];
+    const constraints = {
+      video: {
+        width: { ideal: q.width },
+        height: { ideal: q.height },
+        frameRate: { ideal: q.frameRate },
+      },
+      audio: !!wantAudio,
+    };
+    navigator.mediaDevices.getDisplayMedia(constraints).then(screenStream => {
       screenTrack = screenStream.getVideoTracks()[0];
       screenTrack.onended = stopShare;
+      // page/system audio, if the user ticked it in the panel AND in Chrome's picker
+      const at = screenStream.getAudioTracks()[0] || null;
+      if (at) {
+        screenAudioTrack = at;
+        at.enabled = true;
+        replaceOutgoingAudio(at);
+      } else if (wantAudio) {
+        showToast('صدای صفحه انتخاب نشد؛ فقط تصویر پخش می‌شود');
+      }
       sharing = true;
+      shareAudio = !!screenAudioTrack;
       replaceOutgoingVideo(screenTrack);
       updateControlUI();
+      updateTileAudioBadge();
       broadcastStatus();
     }).catch(err => {
       const name = err && err.name;
@@ -886,7 +1010,23 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       else if (name === 'NotSupportedError') { startCameraAsShare(); return; }
       else if (name !== 'AbortError') showToast('اشتراک صفحه ممکن نشد');
     });
-  };
+  }
+  // swap the outgoing audio sender (mic <-> page audio) without touching the local track
+  function replaceOutgoingAudio(track) {
+    pcMap.forEach((st) => {
+      try {
+        const sender = st.pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
+        if (sender) sender.replaceTrack(track || null);
+        else if (track) st.pc.addTrack(track);
+      } catch (e) { /* pc closed */ }
+    });
+  }
+  function updateTileAudioBadge() {
+    const b = $('sa-self');
+    if (b) b.classList.toggle('hidden', !shareAudio);
+    SELF.shareAudio = shareAudio;
+  }
+
   // Fallback when the device can't share its screen (most mobile browsers):
   // share the camera instead, so the user still broadcasts live video.
   function startCameraAsShare() {
@@ -917,7 +1057,16 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   }
   function stopShare() {
     if (screenTrack) { screenTrack.stop(); screenTrack = null; }
+    if (screenAudioTrack) {
+      try { screenAudioTrack.stop(); } catch (e) {}
+      screenAudioTrack = null;
+      // the mic must go back out to everyone
+      const mic = localStream && localStream.getAudioTracks()[0];
+      replaceOutgoingAudio(mic || null);
+    }
     sharing = false;
+    shareAudio = false;
+    updateTileAudioBadge();
     currentVideoTrack = camOn ? cameraTrack : null;
     replaceOutgoingVideo(currentVideoTrack);
     updateControlUI();
@@ -1202,6 +1351,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     grid.style.display = 'grid';
     grid.style.gap = ''; // let .call-grid CSS pick the desktop/mobile gap
     const all = Array.from(grid.children);
+    const webBox = $('web-box');
     let focusedEl = focusedKey ? grid.querySelector('#tile-' + focusedKey) : null;
     if (focusedKey && !focusedEl) { focusedKey = null; focusedEl = null; }
 
@@ -1212,6 +1362,29 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       t.style.gridRow = '';
       t.classList.toggle('tile-focused', t === focusedEl);
     });
+
+    // the shared website/video box always outranks the camera tiles
+    if (webBox && webBox.parentElement === grid) {
+      if (window.bmWebOnLayout) window.bmWebOnLayout();
+      const state = (window.bmWebLayoutState && window.bmWebLayoutState()) || { expanded: false };
+      const tiles = all.filter(t => t !== webBox);
+      if (state.expanded) {
+        grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
+        webBox.style.gridColumn = '1';
+        webBox.style.gridRow = '1';
+      } else {
+        grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
+        // full width, and taller than a plain tile so it is always the biggest box
+        webBox.style.gridColumn = '1 / -1';
+        webBox.style.gridRow = 'auto';
+        webBox.style.height = Math.max(360, Math.round(window.innerHeight * 0.6)) + 'px';
+      }
+      tiles.forEach(t => {
+        if (state.expanded) t.style.display = 'none';
+        else t.style.display = '';
+      });
+      return;
+    }
 
     if (!focusedKey) {
       grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
@@ -1239,6 +1412,10 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     layoutGrid();
   };
 
+  // small hooks used by call-web.js
+  window.bmCallRelayout = function () { layoutGrid(); };
+  window.bmCallRoster = function () { return currentList.slice(); };
+
   function updateTileStatus(userId) {
     const st = memberStatus.get(userId) || {};
     const mic = $('mic-' + userId);
@@ -1247,6 +1424,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       mic.classList.toggle('text-error', !!st.muted);
       mic.classList.toggle('text-secondary', !st.muted);
     }
+    const sa = $('sa-' + userId);
+    if (sa) sa.classList.toggle('hidden', !st.shareAudio);
     applyMediaOverrides(userId);
   }
 

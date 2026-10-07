@@ -384,6 +384,21 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
 }
 .call-grid > * { min-width: 0; }
 
+/* ===== Shared website / video box (always the biggest cell) ===== */
+.web-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  isolation: isolate;
+}
+.web-box .web-body { min-height: 260px; }
+.web-box.web-expanded {
+  height: calc(100dvh - 190px) !important;
+  min-height: calc(100dvh - 190px);
+}
+.web-box.web-expanded .web-body { min-height: 0; }
+.web-box iframe { display: block; }
+
 /* ===== Mobile responsiveness (call page) ===== */
 
 /* Shrink floating control-bar buttons on small screens */

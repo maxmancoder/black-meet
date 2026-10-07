@@ -176,7 +176,8 @@ function attach(httpServer) {
           .filter((m) => m.userId !== uid)
           .map((m) => Object.assign(m, { locks: (r.locks && r.locks[m.userId]) || null }));
         you.locks = (r.locks && r.locks[uid]) || null;
-        socket.emit(EV.CALL_WELCOME, { meeting: st.meeting, you, members, blocked: Array.from(r.blocked) });
+        socket.emit(EV.CALL_WELCOME, { meeting: st.meeting, you, members, blocked: Array.from(r.blocked), web: publicWeb(r) });
+        ensurePingTimer(room);
 
         // re-apply this user's admin locks after (re)join — off=true = locked
         const myLocks = r.locks && r.locks[uid];
@@ -252,6 +253,7 @@ function attach(httpServer) {
       if (typeof st.muted === 'boolean') { s.muted = st.muted; patch.muted = st.muted; }
       if (typeof st.cam === 'boolean') { s.cam = st.cam; patch.cam = st.cam; }
       if (typeof st.sharing === 'boolean') { s.sharing = st.sharing; patch.sharing = st.sharing; }
+      if (typeof st.shareAudio === 'boolean') { s.shareAudio = st.shareAudio; patch.shareAudio = st.shareAudio; }
       emitMemberUpdated(room, uid, patch);
     });
 
@@ -262,6 +264,181 @@ function attach(httpServer) {
       if (!me || !me.is_admin) return null;
       return r;
     }
+
+    // ---------- per-user latency (ping) ----------
+    // Clients emit CALL_PING {t}; we time it ourselves (never trust the client)
+    // and broadcast the map of userId -> rtt every few seconds.
+    socket.on(EV.CALL_PING, (msg = {}) => {
+      const t = Number(msg && msg.t);
+      if (!Number.isFinite(t)) return;
+      socket.emit(EV.CALL_PONG, { t });
+      const r = rooms.get(socket.data.room);
+      if (!r) return;
+      const s = r.sockets.get(socket.id);
+      if (!s) return;
+      s.rtt = Math.max(0, Math.min(9999, Math.round(Date.now() - t)));
+    });
+
+    let pingTimer = null;
+    function ensurePingTimer(room) {
+      if (pingTimer) return;
+      pingTimer = setInterval(() => {
+        const r = rooms.get(room);
+        if (!r || !r.sockets.size) {
+          if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+          return;
+        }
+        const pings = {};
+        r.sockets.forEach((s) => { if (Number.isFinite(s.rtt)) pings[s.userId] = s.rtt; });
+        io.to(room).emit(EV.PING_STATS, { pings });
+      }, 3000);
+      if (pingTimer.unref) pingTimer.unref();
+    }
+
+    // ---------- shared web surface (site box / video box) ----------
+    function publicWeb(r) {
+      const w = r && r.web;
+      if (!w || !w.kind || !w.url) return null;
+      return {
+        kind: w.kind, url: w.url, src: w.src, host: w.host,
+        ownerId: w.ownerId, ownerName: w.ownerName || '',
+        controlAll: w.controlAll !== false,
+        controllers: Array.from(w.controllers || []),
+        viewersAll: w.viewersAll !== false,
+        viewers: Array.from(w.viewers || []),
+        scroll: w.scroll || null,
+        video: w.video || null,
+      };
+    }
+    function webRoom() {
+      const r = rooms.get(socket.data.room);
+      return r ? r : null;
+    }
+    function canControlWeb(r, s) {
+      const w = r && r.web;
+      if (!w) return false;
+      if (w.controlAll !== false) return true;
+      return !!(s && (w.controllers || new Set()).has(s.userId));
+    }
+    function canViewWeb(r, s) {
+      const w = r && r.web;
+      if (!w) return false;
+      if (w.viewersAll !== false) return true;
+      return !!(s && (w.viewers || new Set()).has(s.userId));
+    }
+    // normalize + validate an incoming web target (server-side, both kinds)
+    function normalizeWebTarget(kind, rawUrl) {
+      const u = String(rawUrl || '').trim();
+      if (u.length > 2000) return { ok: false, error: 'BAD_URL' };
+      let abs;
+      try {
+        abs = new URL(/^https?:\/\//i.test(u) ? u : 'https://' + u);
+      } catch (e) {
+        return { ok: false, error: 'BAD_URL' };
+      }
+      if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return { ok: false, error: 'BAD_URL' };
+      const host = abs.hostname.toLowerCase();
+      if (!host) return { ok: false, error: 'BAD_URL' };
+      if (kind === 'video') {
+        // embed-ify the known providers, otherwise hand the URL to an <iframe>/<video>
+        let embed = null;
+        let m = host.match(/(?:^|\.)youtu\.be$/);
+        if (m) embed = 'https://www.youtube.com/embed/' + abs.pathname.split('/').filter(Boolean)[0];
+        if (!embed && (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com' || host === 'youtube-nocookie.com')) {
+          const v = abs.searchParams.get('v');
+          const parts = abs.pathname.split('/').filter(Boolean);
+          const id = v || (parts[0] === 'embed' || parts[0] === 'shorts' || parts[0] === 'live' ? parts[1] : '');
+          if (id) embed = 'https://www.youtube.com/embed/' + id;
+        }
+        if (!embed && /(^|\.)aparat\.com$/.test(host)) {
+          const m2 = abs.href.match(/aparat\.com\/(?:video\/)?v\/([a-zA-Z0-9]+)/);
+          if (m2) embed = 'https://www.aparat.com/video/video/embed/videohash/' + m2[1] + '/vt/frame';
+        }
+        return { ok: true, url: abs.href, host, src: embed || abs.href, embed: !!embed };
+      }
+      return { ok: true, url: abs.href, host, src: abs.href };
+    }
+
+    socket.on(EV.CALL_WEB_OPEN, (msg = {}, cb) => {
+      const r = webRoom();
+      const s = r && r.sockets.get(socket.id);
+      if (!r || !s) return;
+      if (!s.approved) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_A_MEMBER' }); return; }
+      const kind = msg.kind === 'video' ? 'video' : 'site';
+      const norm = normalizeWebTarget(kind, msg.url);
+      if (!norm.ok) {
+        socket.emit(EV.WEB_ERR, { msg: 'لینک وارد شده معتبر نیست' });
+        if (typeof cb === 'function') cb({ ok: false, error: norm.error });
+        return;
+      }
+      const keepRights = (r.web && r.web.kind === kind) ? {
+        controlAll: r.web.controlAll, controllers: r.web.controllers,
+        viewersAll: r.web.viewersAll, viewers: r.web.viewers,
+      } : { controlAll: true, controllers: new Set(), viewersAll: true, viewers: new Set() };
+      r.web = Object.assign({
+        kind, url: norm.url, src: norm.src, host: norm.host,
+        ownerId: uid, ownerName: s.name || '', scroll: null, video: null,
+      }, keepRights);
+      io.to(socket.data.room).emit(EV.WEB_STATE, { web: publicWeb(r) });
+      if (typeof cb === 'function') cb({ ok: true, web: publicWeb(r) });
+    });
+
+    socket.on(EV.CALL_WEB_CLOSE, (_msg = {}, cb) => {
+      const r = requireRoomAdmin();
+      if (!r) { socket.emit(EV.WEB_ERR, { msg: 'فقط ادمین می‌تواند این باکس را حذف کند' }); return; }
+      r.web = null;
+      io.to(socket.data.room).emit(EV.WEB_STATE, { web: null });
+      if (typeof cb === 'function') cb({ ok: true });
+    });
+
+    socket.on(EV.CALL_WEB_RIGHTS, (msg = {}, cb) => {
+      const r = requireRoomAdmin();
+      if (!r || !r.web) return;
+      const pick = (v) => {
+        if (v === 'all' || v === undefined) return { all: true, set: new Set() };
+        if (!Array.isArray(v)) return { all: true, set: new Set() };
+        return { all: false, set: new Set(v.map((x) => parseInt(x, 10)).filter(Number.isInteger)) };
+      };
+      if (msg.control !== undefined) {
+        const p = pick(msg.control);
+        r.web.controlAll = p.all; r.web.controllers = p.set;
+      }
+      if (msg.view !== undefined) {
+        const p = pick(msg.view);
+        r.web.viewersAll = p.all; r.web.viewers = p.set;
+      }
+      io.to(socket.data.room).emit(EV.WEB_STATE, { web: publicWeb(r) });
+      if (typeof cb === 'function') cb({ ok: true, web: publicWeb(r) });
+    });
+
+    // relays control/scroll/playback actions from a permitted controller
+    socket.on(EV.CALL_WEB_SYNC, (msg = {}) => {
+      const r = webRoom();
+      const s = r && r.sockets.get(socket.id);
+      if (!r || !s || !r.web) return;
+      if (!canControlWeb(r, s)) return;
+      const kind = String(msg.kind || '').slice(0, 16);
+      const payload = { kind, userId: uid };
+      if (kind === 'scroll') {
+        const ratio = Math.max(0, Math.min(1, Number(msg.ratio) || 0));
+        r.web.scroll = { ratio, at: Date.now() };
+        payload.ratio = ratio;
+      } else if (kind === 'click') {
+        const x = Math.max(0, Math.min(1, Number(msg.x) || 0));
+        const y = Math.max(0, Math.min(1, Number(msg.y) || 0));
+        payload.x = x; payload.y = y;
+      } else if (kind === 'navigate') {
+        const norm = normalizeWebTarget('site', msg.url);
+        if (!norm.ok) return;
+        payload.url = norm.url;
+      } else if (kind === 'video') {
+        const cmd = ['play', 'pause', 'seek'].indexOf(msg.cmd) !== -1 ? msg.cmd : 'play';
+        const t = Math.max(0, Math.min(86400, Number(msg.t) || 0));
+        payload.cmd = cmd; payload.t = t;
+        r.web.video = { cmd, t, at: Date.now(), playing: cmd === 'play' };
+      } else return;
+      socket.to(socket.data.room).emit(EV.WEB_SYNC, payload);
+    });
 
     socket.on(EV.CALL_APPROVE, (msg = {}, cb) => {
       const room = socket.data.room;

@@ -5,6 +5,7 @@ const { appConfig } = require('./lib/config');
 const sessions = require('./lib/sessions');
 const pages = require('./routes/pages');
 const api = require('./routes/api');
+const { handleSiteProxy } = require('./lib/siteproxy');
 
 const rootDir = path.resolve(__dirname, '..');
 
@@ -31,6 +32,13 @@ function createApp() {
   });
 
   app.use('/black-meet/api', api);
+  // same-origin proxy behind the call page's shared-website box (login required)
+  app.get('/black-meet/site-proxy', (req, res, next) => {
+    if (!req.session || !req.session.data || !req.session.data.user_id) {
+      return res.status(403).type('text').send('auth required');
+    }
+    handleSiteProxy(req, res).catch(next);
+  });
   app.use('/black-meet', pages);
 
   app.get(['/black-meet', '/black-meet/'], (req, res) => res.redirect(307, '/black-meet/login'));

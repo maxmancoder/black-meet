@@ -19,6 +19,21 @@
             <%- icon('link', 'text-[20px]') %>
             <span class="hidden sm:inline">کپی لینک</span>
         </button>
+        <!-- shared web surface menu: website box / video box -->
+        <div class="relative">
+            <button id="btn-web" onclick="toggleWebMenu(event)" class="flex items-center gap-1 sm:gap-2 bg-surface-container-highest hover:bg-surface-bright px-3 py-2 rounded-full text-body-sm text-on-surface transition" title="لینک سایت / ویدیو">
+                <%- icon('more_vert', 'text-[20px]') %>
+                <span class="hidden sm:inline">لینک‌ها</span>
+            </button>
+            <div id="web-menu" class="hidden fixed z-[75] glass-panel rounded-xl p-1.5 shadow-2xl shadow-black/40 border border-white/10 min-w-[210px] max-w-[260px]" dir="rtl">
+                <button type="button" onclick="openWebModal('site')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-white/10 text-body-sm text-on-surface transition">
+                    <%- icon('link', 'text-[18px] text-primary') %> لینک سایت
+                </button>
+                <button type="button" onclick="openWebModal('video')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-white/10 text-body-sm text-on-surface transition">
+                    <%- icon('video_library', 'text-[18px] text-primary') %> لینک ویدیو
+                </button>
+            </div>
+        </div>
         <div class="hidden sm:flex items-center gap-1 bg-surface-container-highest px-3 py-2 rounded-full" title="وضعیت اتصال زنده">
             <span class="conn-state w-2 h-2 rounded-full bg-secondary"></span>
             <%- icon('groups', 'text-[18px] text-secondary') %>
@@ -166,12 +181,79 @@
     </div>
 </div>
 
+<!-- Screen-share pre-flight: quality + share audio -->
+<div id="share-panel" class="hidden fixed inset-0 z-[85] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[420px]">
+        <div class="flex items-center justify-between mb-lg">
+            <h3 class="font-headline-md text-headline-md text-on-surface">اشتراک صفحه</h3>
+            <button type="button" onclick="closeSharePanel()" class="text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
+        </div>
+        <label class="block font-label-sm text-on-surface-variant mb-1" for="share-quality">کیفیت تصویر</label>
+        <select id="share-quality" class="form-input mb-md">
+            <option value="360">360p — کم‌حجم‌تر</option>
+            <option value="480">480p</option>
+            <option value="720" selected>720p — پیشنهادی</option>
+            <option value="1080">1080p — بهترین کیفیت</option>
+            <option value="0">کیفیت اصلی (بدون محدودیت)</option>
+        </select>
+        <label class="flex items-center justify-between gap-3 px-3 py-3 rounded-lg bg-surface-container-highest border border-outline-variant/30 cursor-pointer">
+            <span class="flex items-center gap-2 font-body-sm text-on-surface">
+                <%- icon('volume_up', 'text-[18px] text-primary') %>
+                اشتراک صدای صفحه
+            </span>
+            <input type="checkbox" id="share-audio"/>
+        </label>
+        <p class="font-body-sm text-[12px] text-on-surface-variant mt-2 mb-lg">در پنجره مرورگر گزینه «اشتراک صدای صفحه/زبانه» را هم تیک بزنید.</p>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="confirmShare()" class="btn-primary flex-1">شروع اشتراک</button>
+            <button type="button" onclick="closeSharePanel()" class="btn-secondary">انصراف</button>
+        </div>
+    </div>
+</div>
+
+<!-- Shared website / video -->
+<div id="web-modal" class="hidden fixed inset-0 z-[85] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[480px]">
+        <div class="flex items-center justify-between mb-lg">
+            <h3 id="web-modal-title" class="font-headline-md text-headline-md text-on-surface">نمایش لینک سایت</h3>
+            <button type="button" onclick="closeWebModal()" class="text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
+        </div>
+        <p id="web-modal-hint" class="font-body-sm text-body-sm text-on-surface-variant mb-md">آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید</p>
+        <input id="web-url" dir="ltr" class="form-input mb-md" placeholder="https://example.com" type="text" inputmode="url"/>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="submitWebModal()" class="btn-primary flex-1">تایید</button>
+            <button type="button" onclick="closeWebModal()" class="btn-secondary">انصراف</button>
+        </div>
+    </div>
+</div>
+
+<!-- Admin: who may control / who may watch the shared box -->
+<div id="web-admin" class="hidden fixed inset-0 z-[85] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
+    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[520px] max-h-[85vh] overflow-y-auto custom-scrollbar">
+        <div class="flex items-center justify-between mb-lg">
+            <h3 class="font-headline-md text-headline-md text-on-surface">دسترسی باکس</h3>
+            <button type="button" onclick="closeWebAdmin()" class="text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
+        </div>
+        <p class="font-label-sm text-on-surface-variant mb-2">چه کسانی بتوانند صفحه/ویدیو را کنترل کنند</p>
+        <div id="web-admin-control" class="mb-lg"></div>
+        <div id="web-admin-view-wrap" class="mb-lg">
+            <p class="font-label-sm text-on-surface-variant mb-2">چه کسانی ویدیو را ببینند</p>
+            <div id="web-admin-view"></div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="applyWebAdmin()" class="btn-primary flex-1">اعمال</button>
+            <button type="button" onclick="removeWebBox()" class="btn-secondary">حذف باکس</button>
+        </div>
+    </div>
+</div>
+
 <!-- Toast -->
 <div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
     <%- icon('error') %><span id="toast-message"></span></div></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>window.INIT = <%- json(init) %>; window.__BM_isManager = <%- json(isManager) %>;</script>
+<script src="<%- asset('assets/js/emoji-sfx.js') %>"></script>
 <script>
   // Sidebar open/close: one button toggles chat/members/admin on ALL screen sizes.
   window.toggleSidebar = function (force) {
@@ -194,5 +276,6 @@
   });
 </script>
 <script src="<%- asset('assets/js/call.js') %>"></script>
+<script src="<%- asset('assets/js/call-web.js') %>"></script>
 </body>
 </html>
