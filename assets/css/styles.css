@@ -467,7 +467,8 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
   .bm-page-loader.bm-show .bm-dots { opacity: 1; transform: none; }
 }
 
-/* Responsive video grid: scales with participant count, never overlaps */
+/* Responsive video grid: scales with participant count, never overlaps.
+   The call stage does NOT scroll — rows are sized by layoutGrid() to fit. */
 .call-grid {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
@@ -476,22 +477,22 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
   width: 100%;
   max-width: 1500px;
   margin: 0 auto;
+  min-height: 0;
+  overflow: hidden;
 }
-.call-grid > * { min-width: 0; }
+.call-grid > * { min-width: 0; min-height: 0; }
 
 /* ===== Shared website / video box (always the biggest cell) ===== */
+/* height comes from the grid row layoutGrid() sets — never from the viewport,
+   otherwise the box overflows the (non-scrolling) call stage */
 .web-box {
   display: flex;
   flex-direction: column;
-  min-height: 320px;
+  min-height: 0;
   isolation: isolate;
 }
-.web-box .web-body { min-height: 260px; }
-.web-box.web-expanded {
-  height: calc(100dvh - 190px) !important;
-  min-height: calc(100dvh - 190px);
-}
-.web-box.web-expanded .web-body { min-height: 0; }
+.web-box .web-body { min-height: 0; }
+.web-box.web-expanded { height: 100% !important; min-height: 0; }
 .web-box iframe { display: block; }
 
 /* ===== Mobile responsiveness (call page) ===== */

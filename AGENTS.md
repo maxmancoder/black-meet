@@ -130,6 +130,13 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Ping pill moved** from the tile centre to the bottom-right: it now lives INSIDE the name badge row (`<span id="ping-…">` BEFORE the name span, because RTL puts the first child on the right).
 - Tests: `%TEMP%\opencode\shot13.js` **16/16**, `cleanup13.js`. Regression: shot12 34/34, shot11 37/37, e2e 44/44, verify-dom 9/9. **Two of those "failures" were test races, not app bugs**: a `waitFor` helper that returned an always-truthy object sampled the FIRST attempt (before the iframe finished loading / before WEB_STATE arrived). Puppeteer probes must return `null` while the condition is not met — `a && b` combined predicates are fine, bare `{ok:…}` objects are not.
 
+## Batch 8 — the call stage never scrolls
+
+- **Root cause of both complaints** (tiles misbehaving when the link box appears + page scrolling) was the same: `<main>` had `overflow-y-auto` and the grid grew past the viewport, so the web box pushed the member tiles below the fold. The stage is now `overflow-hidden` + `flex flex-col`, and `#video-grid` is `flex-1 min-h-0` with a `pb-24 sm:pb-28` bottom padding that reserves the space of the fixed control bar. `.call-grid` gained `min-height: 0; overflow: hidden` (and `min-height:0` on its children).
+- **`layoutGrid()` now computes rows from the space that exists**: `grid-auto-rows: minmax(0,1fr)` in every branch (tiles always fill the stage), and with a web box it sets `grid-template-rows: <webH>px minmax(0,1fr)` where `webH = clamp(stage.clientHeight*0.42, 200, 430)` — box on top, member tiles sharing everything below. Expanded mode uses a single `minmax(0,1fr)` row.
+- `.web-box` min-heights were removed (they fought the row sizing and could force overflow); `web-expanded` is now `height:100%` of its row instead of viewport maths.
+- Tests: `%TEMP%\opencode\shot14.js` **25/25** — a `probeLayout()` helper asserts `documentElement.scrollHeight <= clientHeight`, `main.scrollHeight <= clientHeight` and `grid.scrollHeight <= clientHeight` (all ≤ 0 = no scroll) plus "every tile bottom is above the control bar", on desktop AND mobile, with no box / with the site box / expanded / video box / after delete. **Measure the stage as `clientHeight - paddingTop - paddingBottom`** — `clientHeight` includes the padding that clears the control bar, so comparing the expanded box against it fails by exactly the padding. Regression: shot13 16/16, shot12 34/34, shot11 37/37, verify-dom 9/9. `cleanup14.js`.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

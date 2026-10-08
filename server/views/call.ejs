@@ -102,9 +102,9 @@
         </div>
     </aside>
 
-    <!-- Video grid -->
-    <main class="flex-1 bg-surface-container-lowest relative p-md overflow-y-auto custom-scrollbar">
-        <div id="video-grid" class="call-grid pb-32"></div>
+    <!-- Video grid: the stage NEVER scrolls — the grid is sized to the space it has -->
+    <main class="flex-1 min-w-0 bg-surface-container-lowest relative p-md overflow-hidden flex flex-col">
+        <div id="video-grid" class="call-grid flex-1 min-h-0 pb-24 sm:pb-28"></div>
         <div class="absolute inset-0 pointer-events-none overflow-hidden" id="emoji-canvas"></div>
         <div id="waiting-overlay" class="hidden absolute inset-0 z-30 flex items-center justify-center bg-surface-container-lowest/80 backdrop-blur">
             <div class="text-center">

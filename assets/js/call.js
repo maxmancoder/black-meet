@@ -1376,21 +1376,26 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       if (window.bmWebOnLayout) window.bmWebOnLayout();
       const state = (window.bmWebLayoutState && window.bmWebLayoutState()) || { expanded: false };
       const tiles = all.filter(t => t !== webBox);
+      // rows are sized from the space we actually have, so nothing ever overflows
+      const stage = Math.max(0, (grid.clientHeight || 0));
       if (state.expanded) {
         grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
-        grid.style.alignContent = '';
+        grid.style.gridTemplateRows = 'minmax(0, 1fr)';
+        grid.style.gridAutoRows = 'minmax(0, 1fr)';
+        grid.style.alignContent = 'stretch';
         webBox.style.gridColumn = '1';
         webBox.style.gridRow = '1';
         webBox.style.height = '';
       } else {
-        // full width, but never so tall that the member tiles get pushed off-screen:
-        // they stay visible right below it
         grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
-        grid.style.alignContent = 'start';
+        // the box takes the top row, the member tiles share everything below it
+        const webH = Math.max(200, Math.min(430, Math.round(stage * 0.42)));
+        grid.style.gridTemplateRows = webH + 'px minmax(0, 1fr)';
+        grid.style.gridAutoRows = 'minmax(0, 1fr)';
+        grid.style.alignContent = 'stretch';
         webBox.style.gridColumn = '1 / -1';
-        webBox.style.gridRow = 'auto';
-        const h = Math.max(280, Math.min(420, Math.round(window.innerHeight * 0.42)));
-        webBox.style.height = h + 'px';
+        webBox.style.gridRow = '1';
+        webBox.style.height = webH + 'px';
       }
       tiles.forEach(t => {
         if (state.expanded) t.style.display = 'none';
@@ -1404,6 +1409,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       return;
     }
     grid.style.alignContent = '';
+    grid.style.gridTemplateRows = '';
+    grid.style.gridAutoRows = 'minmax(0, 1fr)';
 
     if (!focusedKey) {
       grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
