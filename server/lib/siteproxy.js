@@ -127,6 +127,63 @@ function rewriteHtml(html, baseUrl) {
 }
 
 const BRIDGE = `<script>(function(){
+  // ---- route the page's own network calls back through our proxy ----
+  var TARGET = window.__bmTarget || location.href;
+  var TARGET_ORIGIN;
+  try { TARGET_ORIGIN = new URL(TARGET).origin; } catch (e) { TARGET_ORIGIN = ''; }
+  function mapUrl(u) {
+    if (TARGET_ORIGIN === '') return u;
+    try {
+      var abs = new URL(String(u), TARGET).href;
+      if (new URL(abs).origin === TARGET_ORIGIN) {
+        return '/black-meet/site-proxy?u=' + encodeURIComponent(abs);
+      }
+      return String(u);
+    } catch (e) { return String(u); }
+  }
+  try {
+    var _fetch = window.fetch;
+    window.fetch = function (u, o) {
+      try { if (typeof u === 'string') u = mapUrl(u); else if (u && u.url) u = mapUrl(u.url); } catch (e) {}
+      return _fetch.call(this, u, o);
+    };
+  } catch (e) {}
+  try {
+    var _open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, u) {
+      var args = Array.prototype.slice.call(arguments);
+      try { args[1] = mapUrl(u); } catch (e) {}
+      return _open.apply(this, args);
+    };
+  } catch (e) {}
+  try {
+    ['HTMLImageElement', 'HTMLMediaElement', 'HTMLScriptElement', 'HTMLLinkElement'].forEach(function (n) {
+      if (!window[n]) return;
+      var d = Object.getOwnPropertyDescriptor(window[n].prototype, 'src');
+      var h = Object.getOwnPropertyDescriptor(window[n].prototype, 'href');
+      [d, h].forEach(function (desc) {
+        if (!desc || !desc.set) return;
+        Object.defineProperty(window[n].prototype, desc === d ? 'src' : 'href', {
+          configurable: true, enumerable: desc.enumerable,
+          get: function () { return desc.get.call(this); },
+          set: function (v) { try { v = mapUrl(v); } catch (e) {} desc.set.call(this, v); },
+        });
+      });
+    });
+  } catch (e) {}
+  try {
+    var _setAttr = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, value) {
+      try {
+        var n = String(name).toLowerCase();
+        if ((n === 'src' || n === 'href' || n === 'poster' || n === 'action') && typeof value === 'string') {
+          value = mapUrl(value);
+        }
+      } catch (e) {}
+      return _setAttr.call(this, name, value);
+    };
+  } catch (e) {}
+
   function post(m){ try{ parent.postMessage(Object.assign({__bmweb:1}, m), '*'); }catch(e){} }
   var t=null;
   function scroll(){
@@ -138,9 +195,7 @@ const BRIDGE = `<script>(function(){
   addEventListener('click', function(e){
     var el=e.target; if(!el||!el.closest) return;
     var de=document.documentElement;
-    var maxX=Math.max(1,(de.scrollWidth||0)-window.innerWidth);
-    var maxY=Math.max(1,(de.scrollHeight||0)-window.innerHeight);
-    post({type:'click', x: Math.max(0,Math.min(1,(e.pageX||0)/maxX)), y: Math.max(0,Math.min(1,(e.pageY||0)/maxY))});
+    post({type:'click', x: Math.max(0,Math.min(1,(e.pageX||0)/Math.max(1,de.scrollWidth||1))), y: Math.max(0,Math.min(1,(e.pageY||0)/Math.max(1,de.scrollHeight||1)))});
   }, true);
   addEventListener('load', function(){ scroll(); post({type:'ready'}); });
   addEventListener('message', function(ev){
@@ -158,10 +213,15 @@ const BRIDGE = `<script>(function(){
   scroll();
 })();</script>`;
 
-function injectBridge(html) {
-  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + BRIDGE);
-  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + '<head>' + BRIDGE + '</head>');
-  return BRIDGE + html;
+function injectBridge(html, finalUrl) {
+  // The document now lives on OUR origin, so the page's own relative/absolute
+  // requests (fetch, XHR, dynamic images) would hit us and 404 — the buttons would
+  // render but never do anything. The shim maps them back through the proxy.
+  const cfg = '<script>window.__bmTarget=' + JSON.stringify(finalUrl) + ';</script>';
+  const head = cfg + BRIDGE;
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + head);
+  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + '<head>' + head + '</head>');
+  return head + html;
 }
 
 // Full router: handles ?u=<encoded absolute url>
@@ -199,7 +259,7 @@ async function handleSiteProxy(req, res) {
 
   let html = await got.res.text();
   html = rewriteHtml(html, finalUrl);
-  html = injectBridge(html);
+  html = injectBridge(html, finalUrl);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   // strip anything that would block being framed

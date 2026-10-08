@@ -787,7 +787,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   function appendMessage(userId, name, body, self) {
     const box = $('chat-messages');
     const wrap = document.createElement('div');
-    wrap.className = 'flex flex-col ' + (self ? 'items-end' : 'items-start') + ' gap-1';
+    wrap.className = 'font-vazir flex flex-col ' + (self ? 'items-end' : 'items-start') + ' gap-1';
     const meta = peerMeta.get(userId) || { name: name, avatar: '' };
     const av = self
       ? '<div class="w-7 h-7 rounded-full overflow-hidden border border-outline-variant">' + avatarMarkup({ name: I.me.name, avatar: I.me.avatar, avatar_color: I.me.avatar_color }) + '</div>'
@@ -1142,8 +1142,32 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
         ${rows()}
         <div class="h-px bg-white/10 my-1"></div>
         <div id="cam-menu-devices">${box.innerHTML}</div>`;
+      // the device list arrives asynchronously and makes the menu taller
+      positionCamMenu();
     }).catch(() => {});
   }
+  // Opens exactly ABOVE the ⋮ button. Bottom-anchored when space is tight so the
+  // menu grows upward instead of being clipped by the bottom of the screen.
+  function positionCamMenu() {
+    const menu = $('cam-menu');
+    const btn = $('btn-cam-more');
+    if (!menu || !btn || menu.classList.contains('hidden')) return;
+    const r = btn.getBoundingClientRect();
+    const mw = menu.offsetWidth || 200;
+    const mh = menu.offsetHeight || 160;
+    let left = r.left + r.width / 2 - mw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+    menu.style.left = left + 'px';
+    menu.style.bottom = '';
+    menu.style.top = '';
+    const above = r.top - mh - 10;
+    if (above >= 8) {
+      menu.style.top = above + 'px';
+    } else {
+      menu.style.bottom = Math.round(window.innerHeight - r.top + 10) + 'px';
+    }
+  }
+  window.addEventListener('resize', positionCamMenu);
   window.__pickCam = function (i) {
     const src = camSources[i];
     closeCamMenu();
@@ -1156,21 +1180,9 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     if (!menu.classList.contains('hidden')) { closeCamMenu(); return; }
     renderCamMenu(menu);
     menu.classList.remove('hidden');
-    const btn = $('btn-cam-more');
-    if (btn) {
-      const r = btn.getBoundingClientRect();
-      menu.style.visibility = 'hidden';
-      menu.style.left = '0px';
-      menu.style.top = '0px';
-      const mw = menu.offsetWidth, mh = menu.offsetHeight;
-      let left = r.left + r.width / 2 - mw / 2;
-      left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
-      let top = r.top - mh - 10;
-      if (top < 8) top = r.bottom + 10;
-      menu.style.left = left + 'px';
-      menu.style.top = top + 'px';
-      menu.style.visibility = 'visible';
-    }
+    menu.style.visibility = 'hidden';
+    positionCamMenu();
+    menu.style.visibility = 'visible';
   };
   document.addEventListener('click', (e) => {
     const menu = $('cam-menu');
@@ -1370,21 +1382,32 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       const tiles = all.filter(t => t !== webBox);
       if (state.expanded) {
         grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
+        grid.style.alignContent = '';
         webBox.style.gridColumn = '1';
         webBox.style.gridRow = '1';
+        webBox.style.height = '';
       } else {
+        // full width, but never so tall that the member tiles get pushed off-screen:
+        // they stay visible right below it
         grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
-        // full width, and taller than a plain tile so it is always the biggest box
+        grid.style.alignContent = 'start';
         webBox.style.gridColumn = '1 / -1';
         webBox.style.gridRow = 'auto';
-        webBox.style.height = Math.max(360, Math.round(window.innerHeight * 0.6)) + 'px';
+        const h = Math.max(280, Math.min(420, Math.round(window.innerHeight * 0.42)));
+        webBox.style.height = h + 'px';
       }
       tiles.forEach(t => {
         if (state.expanded) t.style.display = 'none';
-        else t.style.display = '';
+        else { t.style.display = ''; t.style.gridColumn = ''; t.style.order = ''; }
       });
+      // clicking a tile still enlarges it: it takes the full width of a row below the box
+      if (!state.expanded && focusedEl && focusedEl.style.display !== 'none') {
+        focusedEl.style.gridColumn = '1 / -1';
+        focusedEl.style.order = '-1';
+      }
       return;
     }
+    grid.style.alignContent = '';
 
     if (!focusedKey) {
       grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';

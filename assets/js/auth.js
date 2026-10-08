@@ -132,14 +132,80 @@
   };
 
   window.verifyOtp = function () {
-    const code = document.getElementById('otp-input').value.trim();
+    const cells = otpCells();
+    let code = '';
+    if (cells.length) code = cells.map((c) => c.value.trim()).join('');
+    else code = document.getElementById('otp-input').value.trim();
     if (!code) return showToast('کد تأیید را وارد کنید');
+    if (code.length < 6) return showToast('کد ۶ رقمی را کامل وارد کنید');
     postJSON('api/login/verify', { csrf, phone: currentPhone, code, purpose: currentPurpose })
       .then(d => {
         if (d.ok) { persistSession(); location.href = d.redirect; }
-        else showToast(d.msg || 'خطا');
+        else { flashOtpError(); showToast(d.msg || 'خطا'); }
       });
   };
+
+  // ---------- segmented OTP input (CuteOtp style) ----------
+  function otpCells() {
+    return Array.from(document.querySelectorAll('#otp-boxes .otp-cell'));
+  }
+  function otpValue() {
+    return otpCells().map((c) => c.value.trim()).join('');
+  }
+  function otpSubmit() {
+    const v = otpValue();
+    if (v.length === 6) window.verifyOtp();
+  }
+  function flashOtpError() {
+    otpCells().forEach((c) => {
+      c.classList.add('otp-error');
+      setTimeout(() => c.classList.remove('otp-error'), 450);
+      c.value = '';
+    });
+    const f = otpCells()[0];
+    if (f) f.focus();
+  }
+  function setupOtpBoxes() {
+    const cells = otpCells();
+    if (!cells.length) return;
+    cells.forEach((cell, i) => {
+      cell.addEventListener('input', () => {
+        cell.value = cell.value.replace(/\D/g, '').slice(0, 1);
+        cell.classList.remove('otp-error');
+        if (cell.value && i < cells.length - 1) cells[i + 1].focus();
+        otpSubmit();
+      });
+      cell.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !cell.value && i > 0) {
+          e.preventDefault();
+          cells[i - 1].value = '';
+          cells[i - 1].focus();
+        } else if (e.key === 'ArrowLeft' && i < cells.length - 1) {
+          e.preventDefault();
+          cells[i + 1].focus();
+        } else if (e.key === 'ArrowRight' && i > 0) {
+          e.preventDefault();
+          cells[i - 1].focus();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          window.verifyOtp();
+        }
+      });
+      cell.addEventListener('focus', () => cell.select());
+      cell.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const txt = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+        cells.forEach((c, k) => { c.value = txt[k] || ''; });
+        const next = cells[Math.min(txt.length, cells.length - 1)];
+        if (next) next.focus();
+        otpSubmit();
+      });
+    });
+    const first = cells[0];
+    if (first) setTimeout(() => first.focus(), 80);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupOtpBoxes);
+  else setupOtpBoxes();
 
   window.loginEmail = function () {
     const email = document.getElementById('le-email').value.trim();

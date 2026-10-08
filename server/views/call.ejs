@@ -70,7 +70,7 @@
                 <div id="member-list"></div>
             </div>
             <!-- Chat -->
-            <div class="absolute inset-0 p-md pb-28 md:pb-md overflow-y-auto custom-scrollbar hidden flex-col justify-between" id="content-chat">
+            <div class="absolute inset-0 p-md pb-28 md:pb-md overflow-y-auto custom-scrollbar hidden flex-col justify-between font-vazir" id="content-chat">
                 <div id="chat-messages" class="flex flex-col gap-4"></div>
                 <div class="mt-4 pt-4 border-t border-outline-variant/20 relative">
                     <input id="chat-input" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-4 pl-12 text-body-sm text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="پیام خود را بنویسید..." type="text" onkeydown="if(event.key==='Enter')sendChat()"/>
@@ -213,16 +213,27 @@
 
 <!-- Shared website / video -->
 <div id="web-modal" class="hidden fixed inset-0 z-[85] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
-    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[480px]">
-        <div class="flex items-center justify-between mb-lg">
-            <h3 id="web-modal-title" class="font-headline-md text-headline-md text-on-surface">نمایش لینک سایت</h3>
-            <button type="button" onclick="closeWebModal()" class="text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
+    <div class="glass-panel rounded-3xl p-xl shadow-2xl w-full max-w-[520px] border border-primary/25 overflow-hidden">
+        <div class="flex items-center gap-3 mb-lg">
+            <span id="web-modal-badge" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container flex items-center justify-center shadow-lg shadow-primary/20">
+                <%- icon('link', 'text-[26px]') %>
+            </span>
+            <div class="min-w-0">
+                <h3 id="web-modal-title" class="font-headline-md text-headline-md text-on-surface">نمایش لینک سایت</h3>
+                <p id="web-modal-hint" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید</p>
+            </div>
+            <button type="button" onclick="closeWebModal()" class="mr-auto text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
         </div>
-        <p id="web-modal-hint" class="font-body-sm text-body-sm text-on-surface-variant mb-md">آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید</p>
-        <input id="web-url" dir="ltr" class="form-input mb-md" placeholder="https://example.com" type="text" inputmode="url"/>
-        <div class="flex items-center gap-2">
-            <button type="button" onclick="submitWebModal()" class="btn-primary flex-1">تایید</button>
-            <button type="button" onclick="closeWebModal()" class="btn-secondary">انصراف</button>
+        <div class="relative mb-md">
+            <input id="web-url" dir="ltr" class="form-input pr-11" placeholder="https://example.com" type="text" inputmode="url"/>
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"><%- icon('link', 'text-[18px]') %></span>
+        </div>
+        <p class="font-body-sm text-[12px] text-on-surface-variant mb-lg bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2">
+            باکس به همه‌ی اعضای تماس نشان داده می‌شود و همه می‌توانند آن را کنترل کنند (ادمین می‌تواند محدود کند).
+        </p>
+        <div class="flex items-center gap-3">
+            <button type="button" onclick="submitWebModal()" class="btn-primary flex-1 text-center">تایید</button>
+            <button type="button" onclick="closeWebModal()" class="btn-secondary flex-1 text-center">انصراف</button>
         </div>
     </div>
 </div>

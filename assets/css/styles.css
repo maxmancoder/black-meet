@@ -14,6 +14,29 @@
   src: url('../../fonts/AFSANEH.ttf') format('truetype');
   font-weight: 400; font-style: normal; font-display: swap;
 }
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../../fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../../fonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../../fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+/* Chat bubbles and search boxes read better in Vazirmatn */
+.font-vazir, .font-vazir * {
+  font-family: 'Vazirmatn', 'Entezar', Tahoma, Arial, sans-serif !important;
+}
+.bm-chat-text, .bm-chat-text * { font-family: 'Vazirmatn', 'Entezar', Tahoma, Arial, sans-serif; }
+input[type="search"], input[type="text"].bm-search, .bm-search input {
+  font-family: 'Vazirmatn', 'Entezar', Tahoma, Arial, sans-serif;
+}
 :root {
   --bm-outline-variant: 70 69 85;
   --bm-background: 11 19 38;
@@ -112,6 +135,48 @@ body { font-family: 'Entezar','Tahoma','Arial',sans-serif; }
   box-shadow: 0 0 0 2px rgba(79,70,229,0.35);
 }
 .input-glow:focus-within { box-shadow: 0 0 0 2px rgb(var(--bm-primary-container)); border-color: transparent; }
+
+/* Segmented OTP input (CuteOtp style) */
+.otp-boxes {
+  display: flex;
+  gap: 0.5rem;
+  direction: ltr;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.otp-cell {
+  width: 100%;
+  max-width: 3.25rem;
+  aspect-ratio: 3 / 4;
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  background: #1a2236;
+  color: rgb(var(--bm-primary-container));
+  border: 1px solid rgb(var(--bm-outline-variant));
+  border-radius: 0.75rem;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .12s ease, border-color .18s ease;
+}
+.otp-cell:focus {
+  outline: none;
+  border-color: rgb(var(--bm-primary-container));
+  box-shadow: 0 0 0 3px rgba(79,70,229,.35);
+  transform: translateY(-1px);
+}
+.otp-cell.otp-error {
+  border-color: rgb(var(--bm-error));
+  box-shadow: 0 0 0 3px rgba(191,15,60,.3);
+  animation: otp-shake .4s ease;
+}
+@keyframes otp-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+@media (max-width: 420px) {
+  .otp-boxes { gap: 0.35rem; }
+  .otp-cell { font-size: 1.15rem; border-radius: 0.6rem; }
+}
 
 /* Buttons */
 .btn-primary {

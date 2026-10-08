@@ -113,7 +113,7 @@
         <!-- Recent meetings -->
         <section class="flex flex-col gap-4 mt-4">
             <h3 class="font-headline-md text-headline-md text-on-surface mb-2">جلسات اخیر</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div id="recent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <% if (recent.length === 0) { %>
                 <div class="border border-dashed border-outline-variant rounded-lg p-5 flex flex-col items-center justify-center text-center opacity-70 min-h-[140px]">
                     <%- icon('calendar_add_on', 'text-outline mb-2 text-[32px]') %>
@@ -121,10 +121,15 @@
                 </div>
                 <% } else { %>
                 <% recent.forEach(function (m) { %>
-                <div class="glass-panel rounded-lg p-5 transition-colors group relative cursor-not-allowed opacity-80">
+                <div class="glass-panel rounded-lg p-5 transition-colors group relative">
                     <div class="flex justify-between items-start mb-4">
                         <div class="bg-surface-variant rounded-md p-2 text-primary"><%- icon('groups') %></div>
-                        <span class="font-label-sm text-label-sm text-on-surface-variant"><%- esc(timeAgo(m.created_at)) %></span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-label-sm text-label-sm text-on-surface-variant"><%- esc(timeAgo(m.created_at)) %></span>
+                            <button type="button" data-no-loader onclick="deleteRecent(<%- m.id %>, this)" title="حذف از لیست" class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/40">
+                                <%- icon('close', 'text-[16px]') %>
+                            </button>
+                        </div>
                     </div>
                     <h4 class="font-body-lg text-body-lg text-on-surface font-medium mb-1"><%- esc(m.title) %></h4>
                     <p class="font-body-sm text-body-sm text-on-surface-variant"><%- Number(m.members) %> عضو</p>

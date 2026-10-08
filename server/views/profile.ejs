@@ -17,6 +17,11 @@
     <ul class="flex-1 space-y-2 font-body-md text-body-md">
         <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('home') %>"><%- icon('video_library') %> تماس‌ها</a></li>
         <li><a class="flex items-center gap-4 py-3 px-4 bg-primary-container text-on-primary-container rounded-lg mx-2" href="<%- url('profile') %>"><%- icon('person', '', true) %> پروفایل</a></li>
+        <% if (isManager) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>"><%- icon('forum') %> پیام‌ها</a></li>
+        <% } else if (canMessages) { %>
+        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>?chat=admin"><%- icon('forum') %> ارتباط با ادمین</a></li>
+        <% } %>
         <% if (canMembers || canRequests) { %>
         <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('members') %>"><%- icon('group_off') %> مدیریت اعضا</a></li>
         <% } %>

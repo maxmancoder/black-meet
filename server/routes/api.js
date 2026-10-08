@@ -428,6 +428,32 @@ function resolveTarget(req, res) {
   return part;
 }
 
+// remove one of MY recent meetings from the home list (creator or manager only)
+router.post('/meetings/delete', (req, res) => {
+  if (!checkMethod(req, res, 'POST')) return;
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const mid = Number(req.body.meeting_id || 0);
+  if (mid === 0) return bad(res, { ok: false, msg: 'داده ناقص' });
+  const me = sessions.currentUser(req);
+  const m = dbm.get('SELECT id, creator_id, active FROM meetings WHERE id=?', [mid]);
+  if (!m) return bad(res, { ok: false, msg: 'جلسه یافت نشد' });
+  if (Number(m.creator_id) !== Number(me.id) && !me.is_manager) {
+    return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  }
+  if (m.active) {
+    // close the live room first so sockets are dropped before the rows disappear
+    const row = dbm.get('SELECT room_id FROM meetings WHERE id=?', [mid]);
+    if (row && row.room_id) internal.closeMeeting(String(row.room_id));
+  }
+  dbm.run('DELETE FROM messages WHERE meeting_id=?', [mid]);
+  dbm.run('DELETE FROM emoji_events WHERE meeting_id=?', [mid]);
+  dbm.run('DELETE FROM meeting_participants WHERE meeting_id=?', [mid]);
+  dbm.run('DELETE FROM verification_codes WHERE identifier=?', ['room:' + mid]);
+  dbm.run('DELETE FROM meetings WHERE id=?', [mid]);
+  return ok(res, { ok: true, id: mid });
+});
+
 router.post('/meetings/leave', (req, res) => {
   if (!checkMethod(req, res, 'POST')) return;
   if (!requireLoginApi(req, res)) return;

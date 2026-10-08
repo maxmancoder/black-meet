@@ -44,6 +44,28 @@
       });
   };
 
+  // ---- Delete a meeting from the "recent meetings" cards ----
+  window.deleteRecent = function (id, btn) {
+    const card = btn && btn.closest ? btn.closest('.glass-panel') : null;
+    fetch('api/meetings/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ meeting_id: id, csrf: window.CSRF }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) return showToast(d.msg || 'حذف نشد');
+        if (card) card.remove();
+        // empty state when the last card goes away
+        const grid = document.getElementById('recent-grid');
+        if (grid && grid.querySelectorAll('.glass-panel').length === 0) {
+          grid.innerHTML = '<div class="border border-dashed border-outline-variant rounded-lg p-5 flex flex-col items-center justify-center text-center opacity-70 min-h-[140px]">' +
+            '<p class="font-body-sm text-body-sm text-on-surface-variant">هنوز جلسه‌ای ایجاد نکرده‌اید</p></div>';
+        }
+      })
+      .catch(() => showToast('خطا در ارتباط'));
+  };
+
   const params = new URLSearchParams(location.search);
   if (params.get('err') === 'blocked') showToast('شما از طرف ادمین مسدود شدید و اجازه ورود به این تماس را ندارید');
 

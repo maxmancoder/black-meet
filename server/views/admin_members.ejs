@@ -4,7 +4,7 @@
 
 <div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
 
-<header class="relative z-50 bg-background/80 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
+<header class="sticky top-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
     <a href="<%- url('home') %>" class="flex items-center gap-3">
         <%- icon('arrow_forward', 'text-on-surface-variant') %>
         <span class="font-display-md text-display-md font-bold text-primary">Black Meet</span>
@@ -19,16 +19,8 @@
 
     <!-- ===== Left sidebar: same look as home's, only the two section switchers ===== -->
     <aside id="side-panel" class="hidden md:flex flex-col static md:fixed md:inset-y-0 md:left-0 md:w-80 md:z-[60] bg-surface-container-low md:border-r md:border-white/5 md:shadow-2xl p-3 md:py-lg">
-        <div class="hidden md:flex items-center gap-sm px-lg mb-8">
-            <div class="w-12 h-12 rounded-full overflow-hidden border border-outline-variant flex items-center justify-center font-display-md text-display-md text-white" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %></div>
-            <div class="flex flex-col">
-                <span class="font-headline-md text-headline-md text-primary"><%- esc(me.display_name) %></span>
-                <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2">
-                    <%- rankLabel %>
-                    <span class="w-2 h-2 rounded-full bg-secondary"></span> آنلاین
-                </span>
-            </div>
-        </div>
+        <%# the signed-in identity is intentionally NOT shown on this page (owner asked) %>
+        <div class="hidden md:flex flex-col gap-sm px-lg mb-8 min-h-[64px]"></div>
 
         <ul class="flex-1 space-y-2 font-body-md text-body-md">
         <% if (canMembers) { %>
@@ -110,7 +102,7 @@
             <div class="flex flex-col md:flex-row md:items-center gap-md mb-md">
                 <div class="relative flex-1">
                     <%- icon('search', 'absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]') %>
-                    <input id="member-search" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-11 pl-4 text-body-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="جستجوی نام نمایشی، نام کاربری، ایمیل یا شماره تلفن..." type="text" autocomplete="off"/>
+                    <input id="member-search" class="bm-search w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-11 pl-4 text-body-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="جستجوی نام نمایشی، نام کاربری، ایمیل یا شماره تلفن..." type="text" autocomplete="off"/>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="font-body-sm text-on-surface-variant whitespace-nowrap">نمایش</span>

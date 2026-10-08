@@ -14,7 +14,7 @@
     <!-- Left: conversations -->
     <aside class="conv-panel w-72 md:w-80 flex-shrink-0 bg-surface-container-low border-l border-outline-variant/20 flex flex-col">
         <div class="p-md <%- isManager ? '' : 'hidden' %>">
-            <input id="conv-search" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-2 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="جستجوی کاربر..." oninput="filterConvs()"/>
+            <input id="conv-search" class="bm-search w-full bg-surface-container rounded-lg border border-outline-variant/30 py-2 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="جستجوی کاربر..." oninput="filterConvs()"/>
         </div>
         <div id="conv-list" class="flex-1 overflow-y-auto custom-scrollbar p-md pt-0 flex flex-col gap-1"></div>
     </aside>

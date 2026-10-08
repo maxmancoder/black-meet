@@ -43,6 +43,13 @@
     closeWebMenu();
     const m = $('web-modal');
     if (!m) return;
+    const badge = $('web-modal-badge');
+    if (badge) {
+      badge.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ' + (modalKind === 'video'
+        ? 'bg-gradient-to-br from-tertiary-container to-secondary-container text-on-tertiary-container shadow-tertiary/20'
+        : 'bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container shadow-primary/20');
+      badge.innerHTML = bmIcon(modalKind === 'video' ? 'movie' : 'link', 'text-[26px]', false);
+    }
     $('web-modal-title').textContent = modalKind === 'video' ? 'پخش لینک ویدیو' : 'نمایش لینک سایت';
     $('web-modal-hint').textContent = modalKind === 'video'
       ? 'لینک آپارات، یوتیوب یا لینک مستقیم ویدیو (mp4/webm) را وارد کنید'
@@ -193,12 +200,22 @@
     box.className = 'web-box relative rounded-xl overflow-hidden border border-primary/40 shadow-lg bg-surface-container';
     box.innerHTML = `
       ${headerHtml(kind, web.host, isAdmin)}
-      <div class="web-body relative flex-1 min-h-0 bg-black"></div>`;
+      <div class="web-body relative flex-1 min-h-0 bg-black"></div>
+      ${kind === 'video' ? videoControlsMarkup() : ''}`;
     $('video-grid').insertBefore(box, $('video-grid').firstChild);
 
     const body = box.querySelector('.web-body');
     if (kind === 'site') mountSite(body);
-    else mountVideo(body);
+    else {
+      mountVideo(body);
+      const play = $('web-v-play');
+      const seek = $('web-v-seek');
+      if (!canControl()) {
+        if (play) { play.disabled = true; play.classList.add('opacity-40', 'cursor-not-allowed'); }
+        if (seek) { seek.disabled = true; seek.classList.add('opacity-40'); }
+      }
+      paintControls();
+    }
 
     applyExpanded();
     relayout();
@@ -206,20 +223,34 @@
 
   function applyExpanded() {
     const box = $('web-box');
-    if (!box) return;
     const grid = $('video-grid');
     if (!grid) return;
+    if (!box) { restoreTiles(); return; }
     Array.from(grid.children).forEach((el) => {
       if (el.id === 'web-box') return;
       if (expanded) {
-        if (el.dataset.bmHidden !== '1') { el.dataset.bmPrevDisplay = el.style.display; el.dataset.bmHidden = '1'; }
+        // full-stage mode: remember what the tile looked like before hiding it
+        if (el.dataset.bmHidden !== '1') {
+          el.dataset.bmPrevDisplay = el.style.display || '';
+          el.dataset.bmHidden = '1';
+        }
         el.style.display = 'none';
-      } else if (el.dataset.bmHidden === '1') {
-        delete el.dataset.bmHidden;
-        el.style.display = el.dataset.bmPrevDisplay || '';
+      } else {
+        restoreTile(el);
       }
     });
     box.classList.toggle('web-expanded', expanded);
+  }
+  function restoreTile(el) {
+    if (!el || el.dataset.bmHidden !== '1') return;
+    delete el.dataset.bmHidden;
+    el.style.display = el.dataset.bmPrevDisplay || '';
+    delete el.dataset.bmPrevDisplay;
+  }
+  function restoreTiles() {
+    const grid = $('video-grid');
+    if (!grid) return;
+    Array.from(grid.children).forEach(restoreTile);
   }
   window.bmWebLayoutState = function () {
     const box = $('web-box');
@@ -300,7 +331,9 @@
       }, { passive: true });
 
       d.addEventListener('click', (e) => {
-        if (applying || !canControl()) return;
+        // a replayed click must not navigate this tab (the room follows the sender)
+        if (applying) { e.preventDefault(); return; }
+        if (!canControl()) return;
         const de = d.documentElement;
         const a = e.target && e.target.closest && e.target.closest('a[href]');
         if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
@@ -317,7 +350,7 @@
         send('click', { x: (e.pageX || 0) / sw, y: (e.pageY || 0) / sh });
       }, true);
 
-      d.addEventListener('submit', (e) => { if (canControl()) e.preventDefault(); }, true);
+      d.addEventListener('submit', (e) => { if (applying) e.preventDefault(); }, true);
     } catch (e) { /* frame vanished / not reachable */ }
   }
 
@@ -326,24 +359,101 @@
     return /\.(mp4|webm|ogv|ogg|mov|m4v|m3u8)(\?|#|$)/i.test(u);
   }
 
+  // One shared video: play/pause/seek go through the socket, so stopping it anywhere
+  // stops it for everybody. The box header carries the shared transport controls
+  // (provider embeds cannot be driven from the page reliably, so we provide our own).
+  function videoControlsMarkup() {
+    return `
+      <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border-t border-white/10 shrink-0" dir="ltr">
+        <button type="button" id="web-v-play" onclick="webVideoCommand(playerPlaying() ? 'pause' : 'play')" class="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-[12px] font-medium" title="پخش / توقف برای همه">Play</button>
+        <input id="web-v-seek" oninput="onWebSeek(this.value)" type="range" min="0" max="1000" value="0" class="flex-1"/>
+        <span id="web-v-time" class="text-[11px] text-on-surface-variant w-10 text-center">0:00</span>
+      </div>`;
+  }
+  window.playerPlaying = playerPlaying;
+
+  function fmtTime(s) {
+    s = Math.max(0, Math.floor(Number(s) || 0));
+    const m = Math.floor(s / 60);
+    return m + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function playerTime() {
+    const v = $('web-video');
+    if (v && !v.paused) return v.currentTime;
+    return ytTime;
+  }
+  function playerPlaying() {
+    const v = $('web-video');
+    if (v) return !v.paused;
+    return ytPlaying;
+  }
+
+  function paintControls() {
+    const btn = $('web-v-play');
+    const seek = $('web-v-seek');
+    const time = $('web-v-time');
+    const dur = videoDuration();
+    if (btn) btn.textContent = playerPlaying() ? 'Pause' : 'Play';
+    if (seek) {
+      const t = playerTime();
+      seek.value = dur > 0 ? Math.round((t / dur) * 1000) : 0;
+    }
+    if (time) time.textContent = fmtTime(playerTime());
+  }
+
+  function videoDuration() {
+    const v = $('web-video');
+    if (v && v.duration && isFinite(v.duration)) return v.duration;
+    return ytDuration;
+  }
+
+  let ytTime = 0, ytDuration = 0, ytPlaying = false;
+  let videoCtrlTimer = null;
+
+  function startVideoControls() {
+    clearInterval(videoCtrlTimer);
+    videoCtrlTimer = setInterval(() => {
+      if (!web || web.kind !== 'video') { clearInterval(videoCtrlTimer); return; }
+      paintControls();
+    }, 700);
+    paintControls();
+  }
+
+  window.webVideoCommand = function (cmd, t) {
+    send('video', { cmd: cmd, t: t != null ? t : playerTime() });
+  };
+  window.onWebSeek = function (val) {
+    const dur = videoDuration();
+    const t = dur > 0 ? (Number(val) / 1000) * dur : 0;
+    send('video', { cmd: 'seek', t: t });
+  };
+
   function mountVideo(body) {
     const isEmbed = !!web.src && web.src !== web.url;
     if (!isEmbed && isDirectMedia(web.url)) {
       const v = document.createElement('video');
       v.id = 'web-video';
       v.src = web.url;
-      v.controls = true;
+      v.controls = false;
       v.playsInline = true;
       v.className = 'absolute inset-0 w-full h-full bg-black';
-      v.autoplay = true;
       body.appendChild(v);
-      v.addEventListener('play', () => send('video', { cmd: 'play', t: v.currentTime }));
-      v.addEventListener('pause', () => send('video', { cmd: 'pause', t: v.currentTime }));
-      v.addEventListener('seeked', () => send('video', { cmd: 'seek', t: v.currentTime }));
-      // keep late joiners in sync with the player that is already running
-      setTimeout(() => {
-        if (web && web.video && !v.paused) { applyVideoCmd(web.video); }
-      }, 400);
+      v.addEventListener('play', () => { if (canControl()) send('video', { cmd: 'play', t: v.currentTime }); paintControls(); });
+      v.addEventListener('pause', () => { if (canControl()) send('video', { cmd: 'pause', t: v.currentTime }); paintControls(); });
+      v.addEventListener('seeked', () => { if (canControl()) send('video', { cmd: 'seek', t: v.currentTime }); });
+      v.addEventListener('timeupdate', () => {
+        if (v.paused) return;
+        if (Math.abs(v.currentTime - ytTime) > 2) send('video', { cmd: 'seek', t: v.currentTime });
+      });
+      startVideoControls();
+      // the room starts together: the opener plays, everybody else receives the command
+      if (canControl()) {
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      }
+      // late joiners land on the position the room is already at
+      setTimeout(() => { if (web && web.video) applyVideoCmd(web.video); }, 500);
       return;
     }
     const f = document.createElement('iframe');
@@ -353,35 +463,71 @@
     f.setAttribute('allowfullscreen', 'true');
     f.className = 'absolute inset-0 w-full h-full border-0 bg-black';
     let src = web.src || web.url;
-    // youtube's postMessage command API needs enablejsapi=1
-    if (/youtube\.com\/embed\//.test(src) && src.indexOf('enablejsapi') === -1) {
-      src += (src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&rel=0';
+    if (/youtube\.com\/embed\//.test(src)) {
+      if (src.indexOf('enablejsapi') === -1) src += (src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&rel=0';
+      if (canControl() && src.indexOf('autoplay') === -1) src += '&autoplay=1';
     }
     f.src = src;
     body.appendChild(f);
+    startVideoControls();
+    // YouTube embeds report player state back through postMessage when enablejsapi=1
+    window.addEventListener('message', (ev) => {
+      let d = ev.data;
+      if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
+      if (!d || d.event !== 'infoDelivery' || !d.info) return;
+      const f2 = $('web-frame');
+      if (!f2 || ev.source !== f2.contentWindow) return;
+      const info = d.info;
+      if (typeof info.currentTime === 'number') {
+        const jump = Math.abs(info.currentTime - ytTime) > 1.5;
+        ytTime = info.currentTime;
+        if (typeof info.duration === 'number' && info.duration) ytDuration = info.duration;
+        if (jump && canControl() && !applying) send('video', { cmd: 'seek', t: ytTime });
+      }
+      if (typeof info.playerState === 'number') {
+        const playing = info.playerState === 1;
+        if (playing !== ytPlaying) {
+          ytPlaying = playing;
+          if (canControl() && !applying) send('video', { cmd: playing ? 'play' : 'pause', t: ytTime });
+        }
+      }
+      paintControls();
+    });
+    // fall back to the room's known state once the frame is up
+    setTimeout(() => { if (web && web.video) applyVideoCmd(web.video); }, 1500);
   }
 
   function ytCommand(cmd, t) {
     const f = $('web-frame');
-    if (!f || !f.contentWindow || !/youtube\.com\/embed\//.test(f.src || '')) return;
+    if (!f || !f.contentWindow) return;
     try {
-      if (t != null) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Number(t) || 0, true] }), '*');
-      f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
+      if (cmd !== 'seek' && t != null) {
+        f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Number(t) || 0, true] }), '*');
+      }
+      const fn = cmd === 'play' ? 'playVideo' : (cmd === 'pause' ? 'pauseVideo' : null);
+      if (fn) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: fn, args: [] }), '*');
+      if (cmd === 'seek') f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Number(t) || 0, true] }), '*');
     } catch (e) {}
   }
   function applyVideoCmd(v) {
     if (!v) return;
+    applying = true;
     const el = $('web-video');
     if (el) {
-      if (Math.abs((el.currentTime || 0) - (Number(v.t) || 0)) > 1.2) {
-        try { el.currentTime = Number(v.t) || 0; } catch (e) {}
-      }
-      if (v.playing) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }
-      else el.pause();
-      return;
+      try {
+        if (Math.abs((el.currentTime || 0) - (Number(v.t) || 0)) > 1.2) el.currentTime = Number(v.t) || 0;
+        if (v.playing) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }
+        else el.pause();
+      } catch (e) {}
+      ytTime = Number(v.t) || 0;
+      ytPlaying = !!v.playing;
+    } else {
+      ytTime = Number(v.t) || 0;
+      ytPlaying = !!v.playing;
+      ytCommand(v.cmd === 'seek' ? 'seek' : (v.playing ? 'play' : 'pause'), ytTime);
     }
-    if (v.playing) ytCommand('playVideo');
-    else ytCommand('pauseVideo');
+    paintControls();
+    setTimeout(() => { applying = false; }, 150);
   }
 
   // ---------- socket hooks ----------
@@ -389,9 +535,11 @@
     const prev = web;
     web = (d && d.web) || null;
     if (!web) {
+      // box removed: every tile must come back exactly where it was
       expanded = false;
       const box = $('web-box');
       if (box) box.remove();
+      restoreTiles();
       relayout();
       return;
     }

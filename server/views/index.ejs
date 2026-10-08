@@ -104,7 +104,16 @@
                 <div id="otp-code" class="font-label-md text-primary text-2xl tracking-[0.4em] mt-1 select-all">------</div>
             </div>
 
-            <input class="form-input text-center tracking-widest text-lg" dir="ltr" maxlength="6" id="otp-input" placeholder="کد تایید ۶ رقمی" type="text" inputmode="numeric"/>
+            <!-- CuteOtp-style segmented code input -->
+            <div id="otp-boxes" class="otp-boxes" dir="ltr">
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="رقم ۱"/>
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۲"/>
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۳"/>
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۴"/>
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۵"/>
+                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۶"/>
+            </div>
+            <input id="otp-input" class="hidden" type="text" inputmode="numeric" maxlength="6" dir="ltr"/>
             <button class="btn-primary" onclick="verifyOtp()">تایید و ورود</button>
             <div class="text-center mt-4">
                 <p class="font-body-sm text-body-sm text-on-surface-variant" id="timer-text">ارسال مجدد کد تا <span id="countdown">۳۰</span> ثانیه دیگر</p>
