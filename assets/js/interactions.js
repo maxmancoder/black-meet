@@ -110,7 +110,9 @@
   // ---------- squishy hover/press class on non-call pages ----------
   function soften(root) {
     if (isCallPage) return;
-    (root || doc).querySelectorAll('button:not(.bm-soft), .btn-primary:not(.bm-soft), .btn-secondary:not(.bm-soft)')
+    // data-no-soft opts a button out of the squishy transform (e.g. dropdown
+    // toggles that must only change colour, never scale)
+    (root || doc).querySelectorAll('button:not(.bm-soft):not([data-no-soft]), .btn-primary:not(.bm-soft):not([data-no-soft]), .btn-secondary:not(.bm-soft):not([data-no-soft])')
       .forEach(function (el) { el.classList.add('bm-soft'); });
   }
   doc.addEventListener('DOMContentLoaded', function () { soften(); });

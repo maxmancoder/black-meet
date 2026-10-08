@@ -121,6 +121,15 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Recent meetings delete**: `POST /api/meetings/delete {meeting_id}` (creator or manager; closes a live room through `internal.closeMeeting(room_id)` first, then deletes messages/emoji_events/participants/meeting), `window.deleteRecent(id, btn)` in home.js removes the card and falls back to the empty state inside `#recent-grid`, button is a ghost ✕ that appears on hover.
 - Tests: `%TEMP%\opencode\shot12.js` **34/34** (OTP end-to-end incl. wrong-code shake, profile sidebar, Vazirmatn load, members sticky/empty sidebar, recent-meeting delete incl. DB check, modal button widths, cam-menu position, tiles-visible-under-box + restore, proxied `fetch()` routing, shared video play/pause + admin close), `cleanup12.js`. Regression after the batch: shot11 37/37, e2e 44/44, verify-dom 9/9.
 
+## Batch 7 (visual polish from the owner)
+
+- **Link menu is punchier**: `#web-menu` got a gradient panel, a header row and per-item gradient icon badges; the top-bar `#btn-web` is now a primary→secondary gradient chip (it showed a `more_vert` dot before, now a `link` icon).
+- **Recent-meeting delete button** moved to `absolute bottom-3 left-3` — it was rendered inside the top row and sat *under* the private-meeting lock icon (top-left).
+- **OTP success animation**: `celebrateOtp()` in auth.js adds `.otp-success` → cells turn green one by one (`.otp-ok`, 60ms stagger) and an SVG check mark pops in the middle (`.otp-mark`), then `location.href` fires ~1.1s later. **Careful: `$` does NOT exist in auth.js** (that helper lives in call.js) — using `$('otp-boxes')` threw a `ReferenceError` that silently swallowed the login.
+- **No-scale opt-out**: `interactions.js soften()` now skips `[data-no-soft]`, so `#mode-btn` (signup-mode dropdown) only changes colour on hover (`hover:bg-primary-container/25`) and never scales on hover/press.
+- **Ping pill moved** from the tile centre to the bottom-right: it now lives INSIDE the name badge row (`<span id="ping-…">` BEFORE the name span, because RTL puts the first child on the right).
+- Tests: `%TEMP%\opencode\shot13.js` **16/16**, `cleanup13.js`. Regression: shot12 34/34, shot11 37/37, e2e 44/44, verify-dom 9/9. **Two of those "failures" were test races, not app bugs**: a `waitFor` helper that returned an always-truthy object sampled the FIRST attempt (before the iframe finished loading / before WEB_STATE arrived). Puppeteer probes must return `null` while the condition is not met — `a && b` combined predicates are fine, bare `{ok:…}` objects are not.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

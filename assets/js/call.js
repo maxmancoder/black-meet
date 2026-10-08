@@ -271,12 +271,10 @@
       <div id="sa-self" class="hidden absolute top-3 left-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10" title="صدای صفحه در حال پخش">
         ${bmIcon('volume_up', 'text-[14px] text-primary', true)}
       </div>
-      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span id="ping-self" class="ping-pill hidden items-center gap-1 px-2 py-1 rounded-full bg-background/70 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
-          ${bmIcon('network_check', 'text-[14px]', false)}<span class="ping-val">—</span>
-        </span>
-      </div>
       <div class="absolute bottom-3 right-3 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+        <span id="ping-self" class="ping-pill hidden items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] text-on-surface-variant">
+          ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
+        </span>
         <span class="font-label-md text-on-surface">${escapeHtml(I.me.name)} (شما)</span>
       </div>`;
     grid.appendChild(tile);
@@ -295,19 +293,17 @@
       <div id="av-${userId}" class="hidden absolute inset-0 flex items-center justify-center">
         ${avatarMarkup(meta)}
       </div>
-      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span id="ping-${userId}" class="ping-pill hidden items-center gap-1 px-2 py-1 rounded-full bg-background/70 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
-          ${bmIcon('network_check', 'text-[14px]', false)}<span class="ping-val">—</span>
+      <div class="absolute bottom-3 right-3 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+        <span id="ping-${userId}" class="ping-pill hidden items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] text-on-surface-variant">
+          ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
         </span>
+        <span class="font-label-md text-on-surface" id="name-${userId}">${escapeHtml((meta && meta.name) || '')}</span>
       </div>
       <div id="sa-${userId}" class="hidden absolute top-3 left-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10" title="صدای صفحه در حال پخش">
         ${bmIcon('volume_up', 'text-[14px] text-primary', true)}
       </div>
       <div class="absolute top-3 right-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10">
         ${bmIcon('mic', 'text-[14px] text-secondary', false, 'id="mic-' + userId + '"')}
-      </div>
-      <div class="absolute bottom-3 right-3 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
-        <span class="font-label-md text-on-surface" id="name-${userId}">${escapeHtml((meta && meta.name) || '')}</span>
       </div>`;
     tile.oncontextmenu = (e) => openMemberMenu(e, userId, meta && meta.name);
     grid.appendChild(tile);

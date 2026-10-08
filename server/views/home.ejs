@@ -124,16 +124,14 @@
                 <div class="glass-panel rounded-lg p-5 transition-colors group relative">
                     <div class="flex justify-between items-start mb-4">
                         <div class="bg-surface-variant rounded-md p-2 text-primary"><%- icon('groups') %></div>
-                        <div class="flex items-center gap-2">
-                            <span class="font-label-sm text-label-sm text-on-surface-variant"><%- esc(timeAgo(m.created_at)) %></span>
-                            <button type="button" data-no-loader onclick="deleteRecent(<%- m.id %>, this)" title="حذف از لیست" class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/40">
-                                <%- icon('close', 'text-[16px]') %>
-                            </button>
-                        </div>
+                        <span class="font-label-sm text-label-sm text-on-surface-variant"><%- esc(timeAgo(m.created_at)) %></span>
                     </div>
                     <h4 class="font-body-lg text-body-lg text-on-surface font-medium mb-1"><%- esc(m.title) %></h4>
                     <p class="font-body-sm text-body-sm text-on-surface-variant"><%- Number(m.members) %> عضو</p>
                     <%- icon('lock', 'absolute top-3 left-3 text-outline-variant', false, 'title="عضو خصوصی"') %>
+                    <button type="button" data-no-loader onclick="deleteRecent(<%- m.id %>, this)" title="حذف از لیست" class="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 focus:opacity-100 transition p-2 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/40">
+                        <%- icon('close', 'text-[18px]') %>
+                    </button>
                 </div>
                 <% }); }
                 %>

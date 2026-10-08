@@ -140,10 +140,27 @@
     if (code.length < 6) return showToast('کد ۶ رقمی را کامل وارد کنید');
     postJSON('api/login/verify', { csrf, phone: currentPhone, code, purpose: currentPurpose })
       .then(d => {
-        if (d.ok) { persistSession(); location.href = d.redirect; }
+        if (d.ok) { celebrateOtp(d.redirect); }
         else { flashOtpError(); showToast(d.msg || 'خطا'); }
       });
   };
+
+  // success: green sweep + check mark, then we enter the app (never a bare jump)
+  function celebrateOtp(redirect) {
+    const box = document.getElementById('otp-boxes');
+    if (box) {
+      box.classList.add('otp-success');
+      otpCells().forEach((c, i) => {
+        setTimeout(() => c.classList.add('otp-ok'), 60 * i);
+      });
+      const mark = document.createElement('div');
+      mark.className = 'otp-mark';
+      mark.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+      box.appendChild(mark);
+    }
+    persistSession();
+    setTimeout(() => { location.href = redirect; }, 1100);
+  }
 
   // ---------- segmented OTP input (CuteOtp style) ----------
   function otpCells() {
