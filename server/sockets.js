@@ -308,6 +308,7 @@ function attach(httpServer) {
         viewers: Array.from(w.viewers || []),
         scroll: w.scroll || null,
         video: w.video || null,
+        follow: w.follow !== false,
       };
     }
     function webRoom() {
@@ -378,9 +379,20 @@ function attach(httpServer) {
       r.web = Object.assign({
         kind, url: norm.url, src: norm.src, host: norm.host,
         ownerId: uid, ownerName: s.name || '', scroll: null, video: null,
+        // "دسترسی همزمان": when on, one person's scroll/click/play drives everyone
+        follow: msg.follow !== false,
       }, keepRights);
       io.to(socket.data.room).emit(EV.WEB_STATE, { web: publicWeb(r) });
       if (typeof cb === 'function') cb({ ok: true, web: publicWeb(r) });
+    });
+
+    // the shared-box "simultaneous access" switch (room-wide, any member may flip it)
+    socket.on(EV.CALL_WEB_FOLLOW, (msg = {}) => {
+      const r = webRoom();
+      const s = r && r.sockets.get(socket.id);
+      if (!r || !s || !s.approved || !r.web) return;
+      r.web.follow = !!msg.on;
+      io.to(socket.data.room).emit(EV.WEB_STATE, { web: publicWeb(r) });
     });
 
     socket.on(EV.CALL_WEB_CLOSE, (_msg = {}, cb) => {

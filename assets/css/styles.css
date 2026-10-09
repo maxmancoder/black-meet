@@ -330,6 +330,13 @@ button, .btn-primary, .btn-secondary, .bm-switch {
 /* Focused (spotlight) tile in call grid */
 .tile-focused { z-index: 5; box-shadow: 0 0 0 3px rgba(79,70,229,.55); }
 
+/* per-tile maximize: fills the call stage only (browser chrome stays visible) */
+.mx-btn { opacity: .55; display: inline-flex; align-items: center; }
+.mx-btn:hover { opacity: 1; }
+.mx-back { cursor: pointer; }
+.mx-back:hover { color: rgb(var(--bm-on-surface)); border-color: rgba(var(--bm-primary),.45); }
+.tile-maximized { box-shadow: 0 0 0 2px rgba(var(--bm-primary), .55) inset; }
+
 /* ===== Steel info-box: metallic edge + glowing blue accents ===== */
 .bm-infobox {
   position: relative;

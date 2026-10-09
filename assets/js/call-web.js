@@ -56,6 +56,8 @@
       : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید';
     $('web-url').value = web && web.kind === modalKind ? web.url : '';
     $('web-url').setAttribute('placeholder', modalKind === 'video' ? 'https://www.aparat.com/v/xxxx' : 'https://example.com');
+    const sw = $('web-follow');
+    if (sw) sw.checked = followOn();
     m.classList.remove('hidden');
     setTimeout(() => { const i = $('web-url'); if (i) i.focus(); }, 60);
   };
@@ -65,7 +67,8 @@
     if (!url) { toast('لینک را وارد کنید'); return; }
     const s = socket();
     if (!s || !s.connected) { toast('اتصال زنده برقرار نیست'); return; }
-    s.emit(EV.CALL_WEB_OPEN, { kind: modalKind, url }, (res) => {
+    const sw = $('web-follow');
+    s.emit(EV.CALL_WEB_OPEN, { kind: modalKind, url, follow: !sw || sw.checked }, (res) => {
       if (res && res.ok) closeWebModal();
     });
   };
@@ -168,7 +171,7 @@
     const lockNote = canControl() ? '' :
       `<span class="text-[11px] text-on-surface-variant flex items-center gap-1">${bmIcon('lock', 'text-[14px]', false)} فقط ادمین کنترل می‌کند</span>`;
     return `
-      <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-highest/90 backdrop-blur border-b border-white/10 shrink-0">
+      <div class="web-head flex items-center gap-2 px-3 py-2 bg-surface-container-highest/90 backdrop-blur border-b border-white/10 shrink-0">
         ${bmIcon(kind === 'video' ? 'movie' : 'link', 'text-[18px] text-primary shrink-0')}
         <span class="font-label-md text-on-surface shrink-0">${label}</span>
         <span class="text-[12px] text-on-surface-variant truncate" dir="ltr">${escapeHtml(host || '')}</span>
@@ -273,12 +276,14 @@
     frame.addEventListener('load', () => { bindFrame(frame); });
     // some pages swap their document after load (client-side routing) — rebind cheaply
     [800, 2500, 6000].forEach((ms) => setTimeout(() => bindFrame(frame), ms));
-    // same-origin: apply the last known position as soon as the doc is reachable
+    // same-origin: re-apply the room's position whenever the document (re)loads —
+    // a proxied page can grow for seconds after the first paint
     const tryApply = () => {
-      if (!web || !web.scroll) return;
-      try { scrollToRatio(web.scroll.ratio); } catch (e) {}
+      if (lastRatio > 0) scrollToRatio(lastRatio, true);
+      else if (web && web.scroll) applyScrollNow(web.scroll.ratio);
     };
     frame.addEventListener('load', tryApply);
+    [700, 1600, 3200, 5200].forEach((ms) => setTimeout(tryApply, ms));
   }
 
   function docOf(frame) {
@@ -292,27 +297,79 @@
     } catch (e) { return null; }
   }
 
-  function scrollToRatio(ratio) {
+  // The last scroll position we know about. Proxied pages can take seconds to finish
+// loading, so a scroll that arrives while the receiver is still parsing would be lost —
+// we keep the ratio and re-apply it until the document is tall enough to move.
+let lastRatio = 0;
+  let scrollRetry = null;
+
+  function scrollToRatio(ratio, retry) {
     const frame = $('web-frame');
     if (!frame) return;
     const d = docOf(frame);
-    if (!d) return;
+    if (!d) { scheduleScroll(ratio); return; }
     const de = d.documentElement;
     const max = Math.max(0, (de.scrollHeight || 0) - (frame.clientHeight || 0));
+    if (max <= 1 && retry) { scheduleScroll(ratio); return; }
     applying = true;
-    try { frame.contentWindow.scrollTo(0, (Number(ratio) || 0) * max); } catch (e) {}
-    setTimeout(() => { applying = false; }, 120);
+    try {
+      const top = (Number(ratio) || 0) * max;
+      if (typeof frame.contentWindow.scrollTo === 'function') {
+        frame.contentWindow.scrollTo({ top: top, behavior: 'smooth' });
+      } else {
+        frame.contentWindow.scrollTo(0, top);
+      }
+    } catch (e) {}
+    setTimeout(() => { applying = false; }, 260);
+    if (retry) clearTimeout(scrollRetry);
+  }
+  function scheduleScroll(ratio) {
+    clearTimeout(scrollRetry);
+    scrollRetry = setTimeout(() => scrollToRatio(ratio, true), 450);
+  }
+  function applyScrollNow(ratio) {
+    lastRatio = Number(ratio) || 0;
+    scrollToRatio(lastRatio, true);
   }
 
   function send(kind, payload) {
     if (!canControl()) return;
+    // "دسترسی همزمان" off -> everyone drives their own copy, nothing is relayed
+    if (!followOn()) return;
     const s = socket();
     if (!s || !s.connected) return;
     s.emit(EV.CALL_WEB_SYNC, Object.assign({ kind }, payload));
   }
+  function followOn() {
+    return !web || web.follow !== false;
+  }
+  window.setWebFollow = function (on) {
+    const s = socket();
+    if (!s || !s.connected) return;
+    s.emit(EV.CALL_WEB_FOLLOW, { on: !!on });
+  };
 
   // one binding per DOCUMENT (a page can swap its document after load)
   const boundDocs = new WeakSet();
+
+  // keep pushing our scroll position for a moment so receivers converge on it
+  let resendTimers = [];
+  function currentRatio(frame) {
+    try {
+      const d = docOf(frame);
+      if (!d) return null;
+      const max = Math.max(1, (d.documentElement.scrollHeight || 0) - (frame.clientHeight || 0));
+      return (frame.contentWindow.pageYOffset || 0) / max;
+    } catch (e) { return null; }
+  }
+  function scheduleScrollResend(frame) {
+    resendTimers.forEach(clearTimeout);
+    resendTimers = [500, 1500, 3000, 6000].map((ms) => setTimeout(() => {
+      if (!canControl() || !followOn()) return;
+      const r = currentRatio(frame);
+      if (r != null) send('scroll', { ratio: r });
+    }, ms));
+  }
 
   function bindFrame(frame) {
     const d = docOf(frame);
@@ -327,7 +384,11 @@
         lastOwnEmit = now;
         const de = d.documentElement;
         const max = Math.max(1, (de.scrollHeight || 0) - (frame.clientHeight || 0));
-        send('scroll', { ratio: (frame.contentWindow.pageYOffset || 0) / max });
+        const ratio = (frame.contentWindow.pageYOffset || 0) / max;
+        send('scroll', { ratio: ratio });
+        // A page that is still loading keeps changing its height, so the first ratio can
+        // be stale. Re-send a few times: everyone ends up on the same spot.
+        if (followOn()) scheduleScrollResend(frame);
       }, { passive: true });
 
       d.addEventListener('click', (e) => {
@@ -543,17 +604,28 @@
       relayout();
       return;
     }
-    renderWebBox();
+    if (web.scroll && typeof web.scroll.ratio === 'number') lastRatio = web.scroll.ratio;
     if (prev && prev.kind === web.kind && prev.url === web.url) {
-      // same box re-announced (rights change): nothing else to do
+      // same box re-announced (the follow switch or the access rights changed):
+      // refresh the header IN PLACE — re-creating the iframe would reload the page
+      updateWebHeader();
       return;
     }
+    renderWebBox();
   };
+  function updateWebHeader() {
+    const box = $('web-box');
+    if (!box) return;
+    const isAdmin = !!(I.me.is_manager || I.me.is_admin);
+    const head = box.querySelector('.web-head');
+    if (head) head.outerHTML = headerHtml(web.kind, web.host, isAdmin);
+    if (web.kind === 'video') paintControls();
+  }
 
   window.bmWebSync = function (d) {
     if (!web || !d) return;
     if (web.kind === 'site') {
-      if (d.kind === 'scroll') scrollToRatio(d.ratio);
+      if (d.kind === 'scroll') applyScrollNow(d.ratio);
       else if (d.kind === 'navigate') {
         const frame = $('web-frame');
         if (!frame || !d.url) return;

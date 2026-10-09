@@ -276,6 +276,12 @@
           ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
         </span>
         <span class="font-label-md text-on-surface">${escapeHtml(I.me.name)} (شما)</span>
+        <button type="button" id="mx-self" onclick="event.stopPropagation(); window.toggleMaximize('self')" class="mx-btn text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
+          ${bmIcon('fullscreen', 'text-[14px]')}
+        </button>
+      </div>
+      <div id="mxb-self" class="mx-back hidden absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-surface-container-highest/60 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
+        ${bmIcon('fullscreen_exit', 'text-[14px]')} بازگشت به حالت عادی
       </div>`;
     grid.appendChild(tile);
     updateSelfVideo();
@@ -298,6 +304,12 @@
           ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
         </span>
         <span class="font-label-md text-on-surface" id="name-${userId}">${escapeHtml((meta && meta.name) || '')}</span>
+        <button type="button" id="mx-${userId}" onclick="event.stopPropagation(); window.toggleMaximize('${userId}')" class="mx-btn text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
+          ${bmIcon('fullscreen', 'text-[14px]')}
+        </button>
+      </div>
+      <div id="mxb-${userId}" class="mx-back hidden absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-surface-container-highest/60 backdrop-blur border border-white/10 text-[11px] text-on-surface-variant">
+        ${bmIcon('fullscreen_exit', 'text-[14px]')} بازگشت به حالت عادی
       </div>
       <div id="sa-${userId}" class="hidden absolute top-3 left-3 bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded-md border border-white/10" title="صدای صفحه در حال پخش">
         ${bmIcon('volume_up', 'text-[14px] text-primary', true)}
@@ -1354,6 +1366,27 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     el.textContent = nm || 'بدون نام';
   }
   let focusedKey = null;
+  let maximizedKey = null;
+  window.toggleMaximize = function (key) {
+    maximizedKey = (maximizedKey === key) ? null : key;
+    if (maximizedKey) focusedKey = null;
+    layoutGrid();
+  };
+  function paintMaximizeState(maxEl) {
+    Array.from(grid.children).forEach((t) => {
+      const isMax = t === maxEl;
+      t.classList.toggle('tile-maximized', isMax);
+      const back = t.querySelector('.mx-back');
+      if (back) back.classList.toggle('hidden', !isMax);
+      const btn = t.querySelector('.mx-btn');
+      if (btn) {
+        btn.innerHTML = bmIcon(isMax ? 'fullscreen_exit' : 'fullscreen', 'text-[14px]');
+        btn.title = isMax ? 'بازگشت به حالت عادی' : 'بزرگ‌نمایی';
+      }
+      const back2 = back;
+      if (back2) back2.onclick = (e) => { e.stopPropagation(); window.toggleMaximize(isMax ? t.id.replace('tile-', '') : null); };
+    });
+  }
   function layoutGrid() {
     if (!grid) return;
     grid.style.display = 'grid';
@@ -1363,13 +1396,31 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     let focusedEl = focusedKey ? grid.querySelector('#tile-' + focusedKey) : null;
     if (focusedKey && !focusedEl) { focusedKey = null; focusedEl = null; }
 
-    // reset every tile first, then apply the active layout
+    // reset every tile first, then apply the active layout.
+    // `display` MUST be cleared here: the maximize/fullscreen branches hide boxes with
+    // style.display and would otherwise leave them invisible for good.
     all.forEach(t => {
       t.style.order = '';
       t.style.gridColumn = '';
       t.style.gridRow = '';
+      t.style.display = '';
       t.classList.toggle('tile-focused', t === focusedEl);
     });
+
+    // per-tile maximize: that member fills the call stage (the browser chrome stays),
+    // every other box (including the shared link box) steps aside
+    const maxEl = maximizedKey ? grid.querySelector('#tile-' + maximizedKey) : null;
+    if (maximizedKey && !maxEl) maximizedKey = null;
+    if (maxEl) {
+      grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
+      grid.style.gridTemplateRows = 'minmax(0, 1fr)';
+      grid.style.gridAutoRows = 'minmax(0, 1fr)';
+      grid.style.alignContent = 'stretch';
+      all.forEach(t => { t.style.display = (t === maxEl) ? '' : 'none'; });
+      paintMaximizeState(maxEl);
+      return;
+    }
+    paintMaximizeState(null);
 
     // the shared website/video box always outranks the camera tiles
     if (webBox && webBox.parentElement === grid) {
@@ -1435,6 +1486,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
 
   window.toggleFocus = function (key) {
     focusedKey = (focusedKey === key) ? null : key;
+    if (focusedKey) maximizedKey = null; // clicking a tile leaves the maximized view
     layoutGrid();
   };
 

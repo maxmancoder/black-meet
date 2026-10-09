@@ -33,6 +33,7 @@
     // shared web surface: a proxied website or a synced video inside the call
     CALL_WEB_OPEN: 'call:web-open',
     CALL_WEB_CLOSE: 'call:web-close',
+    CALL_WEB_FOLLOW: 'call:web-follow',
     CALL_WEB_RIGHTS: 'call:web-rights',
     CALL_WEB_SYNC: 'call:web-sync',
     WEB_STATE: 'web:state',

@@ -241,9 +241,20 @@
             <input id="web-url" dir="ltr" class="form-input pr-11" placeholder="https://example.com" type="text" inputmode="url"/>
             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"><%- icon('link', 'text-[18px]') %></span>
         </div>
-        <p class="font-body-sm text-[12px] text-on-surface-variant mb-lg bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2">
+        <p class="font-body-sm text-[12px] text-on-surface-variant mb-md bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2">
             باکس به همه‌ی اعضای تماس نشان داده می‌شود و همه می‌توانند آن را کنترل کنند (ادمین می‌تواند محدود کند).
         </p>
+        <label class="flex items-center justify-between gap-3 px-3 py-3 rounded-xl bg-gradient-to-l from-primary-container/40 to-secondary-container/30 border border-primary/25 mb-lg cursor-pointer">
+            <span class="min-w-0">
+                <span class="block font-body-sm text-body-sm text-on-surface">دسترسی همزمان</span>
+                <span class="block font-label-sm text-on-surface-variant text-[11px]">اگر روشن باشد، اسکرول و کلیک یا پخش و توقف یک نفر روی صفحه‌ی همه اعمال می‌شود</span>
+            </span>
+            <span class="relative inline-flex items-center shrink-0">
+                <input type="checkbox" id="web-follow" class="peer sr-only" checked onchange="setWebFollow(this.checked)"/>
+                <span class="w-11 h-6 rounded-full bg-surface-container-highest border border-outline-variant/40 transition-colors peer-checked:bg-primary/80"></span>
+                <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
+            </span>
+        </label>
         <div class="flex items-center gap-3">
             <button type="button" onclick="submitWebModal()" class="btn-primary flex-1 text-center">تایید</button>
             <button type="button" onclick="closeWebModal()" class="btn-secondary flex-1 text-center">انصراف</button>
