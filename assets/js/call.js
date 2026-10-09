@@ -8,7 +8,9 @@
   const EV = window.BMEv;
   const ICE = (I && I.iceServers && I.iceServers.length) ? I.iceServers : [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.l.google.com:19302?transport=udp' },
   ];
   const EMOJIS = ['👍', '❤️', '👏', '😂', '🎉', '😮', '🔥', '✅', '🙏', '💡', '😎', '🌟'];
 
@@ -249,12 +251,13 @@
 
   function avatarMarkup(meta) {
     meta = meta || {};
-    const init = initials(meta.name || '؟');
+    // picture if the member uploaded one, otherwise the first letter of their USERNAME
     const color = /^#[0-9a-fA-F]{3,8}$/.test(meta.avatar_color || '') ? meta.avatar_color : '#4f46e5';
     if (meta.avatar) {
       return '<img src="' + escapeHtml(avatarUrl(meta.avatar)) + '" class="w-full h-full object-cover" alt=""/>';
     }
-    return '<div class="w-full h-full flex items-center justify-center font-display-md text-white" style="background:' + color + '">' + escapeHtml(init) + '</div>';
+    const letter = String(meta.username || meta.name || '؟').trim().charAt(0) || '؟';
+    return '<div class="w-full h-full flex items-center justify-center font-display-md text-white" style="background:' + color + '">' + escapeHtml(letter) + '</div>';
   }
 
   function renderSelf() {
@@ -326,7 +329,10 @@
   }
 
   function removeTile(userId) {
-    const t = $('tile-' + userId); if (t) t.remove();
+    const t = $('tile-' + userId);
+    // if this member was the maximized one, close the overlay first or it would linger
+    if (t && t.classList.contains('maximized-el')) window.bmExitMaximize && window.bmExitMaximize();
+    if (t) t.remove();
     remoteStreams.delete(userId);
   }
 
@@ -339,7 +345,15 @@
     // deterministic politeness: the peer with the larger userId is impolite
     const polite = I.me.id < peer.userId;
     const st = {
-      pc: new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 4 }),
+      pc: new RTCPeerConnection({
+        iceServers: ICE,
+        // gather candidates early and keep them all: with several STUN servers the
+        // browser ends up with more paths to pick from, which lowers the RTT
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+      }),
       polite,
       makingOffer: false,
       ignoreOffer: false,
@@ -356,6 +370,12 @@
     pc.ontrack = e => {
       let rs = remoteStreams.get(peer.userId);
       if (!rs) { rs = new MediaStream(); remoteStreams.set(peer.userId, rs); }
+      // tell the decoder what the stream is: motion for video, speech for audio.
+      // Without this hint browsers can buffer frames, which shows up as delay.
+      try {
+        if (e.track.kind === 'video') e.track.contentHint = 'motion';
+        else if (e.track.kind === 'audio') { e.track.contentHint = 'speech'; e.track.enabled = true; }
+      } catch (err) {}
       rs.addTrack(e.track);
       const v = $('vid-' + peer.userId);
       if (v) v.srcObject = rs;
@@ -489,6 +509,9 @@
     socket.emit(EV.CALL_JOIN, {
       room: I.meeting.room,
       token: I.token,
+      // one key per page load: the server uses it to tell a network reconnect
+      // (same page) apart from opening the meeting on a second device
+      sessionKey: window.__BM_CALL_SESSION || (window.__BM_CALL_SESSION = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)),
       user: {
         id: I.me.id, name: I.me.name, username: I.me.username,
         avatar_color: I.me.avatar_color, avatar: I.me.avatar || '',
@@ -974,29 +997,75 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   window.confirmShare = function () {
     const q = parseInt(($('share-quality') || {}).value || '720', 10);
     const wantAudio = !!($('share-audio') || {}).checked;
+    closeQualityMenu();
     window.closeSharePanel();
     doShare(q, wantAudio);
   };
 
+  // ---------- themed quality picker ----------
+  const QUALITY_LABELS = {
+    360: '360p — کم‌حجم‌ترین', 480: '480p — سبک', 720: '720p — پیشنهادی',
+    1080: '1080p — بهترین کیفیت', 0: 'کیفیت اصلی',
+  };
+  let shareQuality = 720;
+
+  function closeQualityMenu() {
+    const m = $('share-quality-menu');
+    const b = $('share-quality-btn');
+    if (m) m.classList.add('hidden');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  window.toggleQualityMenu = function (e) {
+    if (e) e.stopPropagation();
+    const m = $('share-quality-menu');
+    const b = $('share-quality-btn');
+    if (!m) return;
+    const open = m.classList.contains('hidden');
+    m.classList.toggle('hidden', !open);
+    if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  window.pickQuality = function (q) {
+    shareQuality = parseInt(q, 10) || 0;
+    const hidden = $('share-quality');
+    const label = $('share-quality-label');
+    if (hidden) hidden.value = String(shareQuality);
+    if (label) label.textContent = QUALITY_LABELS[shareQuality] || String(shareQuality);
+    closeQualityMenu();
+  };
+  // close when clicking anywhere else
+  document.addEventListener('click', (e) => {
+    const m = $('share-quality-menu');
+    if (!m || m.classList.contains('hidden')) return;
+    if (e.target.closest && e.target.closest('#share-quality-menu')) return;
+    if (e.target.closest && e.target.closest('#share-quality-btn')) return;
+    closeQualityMenu();
+  });
+
   function doShare(quality, wantAudio) {
     const presets = {
-      360: { width: 640, height: 360, frameRate: 15 },
-      480: { width: 854, height: 480, frameRate: 15 },
-      720: { width: 1280, height: 720, frameRate: 30 },
-      1080: { width: 1920, height: 1080, frameRate: 30 },
+      360: { width: 640, height: 360, frameRate: 15, bitrate: 500000 },
+      480: { width: 854, height: 480, frameRate: 20, bitrate: 900000 },
+      720: { width: 1280, height: 720, frameRate: 30, bitrate: 1600000 },
+      1080: { width: 1920, height: 1080, frameRate: 30, bitrate: 3000000 },
     };
-    const q = presets[quality] || presets[720];
-    const constraints = {
-      video: {
-        width: { ideal: q.width },
-        height: { ideal: q.height },
-        frameRate: { ideal: q.frameRate },
-      },
-      audio: !!wantAudio,
-    };
+    const q = presets[quality];
+    const constraints = quality === 0 || !q
+      ? { video: true, audio: !!wantAudio }
+      : {
+        video: {
+          width: { ideal: q.width, max: q.width },
+          height: { ideal: q.height, max: q.height },
+          frameRate: { ideal: q.frameRate, max: q.frameRate },
+        },
+        audio: !!wantAudio,
+      };
     navigator.mediaDevices.getDisplayMedia(constraints).then(screenStream => {
       screenTrack = screenStream.getVideoTracks()[0];
       screenTrack.onended = stopShare;
+      // honour the picked quality: browsers only hint, so cap the resolution here too
+      if (q && screenTrack) {
+        try { screenTrack.applyConstraints({ width: { max: q.width }, height: { max: q.height } }); } catch (e) {}
+      }
       // page/system audio, if the user ticked it in the panel AND in Chrome's picker
       const at = screenStream.getAudioTracks()[0] || null;
       if (at) {
@@ -1009,6 +1078,20 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       sharing = true;
       shareAudio = !!screenAudioTrack;
       replaceOutgoingVideo(screenTrack);
+      // cap the outgoing bitrate to the chosen quality (keeps latency low too)
+      if (q) {
+        pcMap.forEach((st) => {
+          const s = st.pc.getSenders().find((x) => x.track && x.track.kind === 'video');
+          if (!s) return;
+          try {
+            const p = s.getParameters();
+            p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}];
+            p.encodings[0].maxBitrate = q.bitrate;
+            p.degradationPreference = 'maintain-framerate';
+            s.setParameters(p).catch(() => {});
+          } catch (e) {}
+        });
+      }
       updateControlUI();
       updateTileAudioBadge();
       broadcastStatus();
@@ -1239,12 +1322,29 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
 
   // ---------- Tabs ----------
   window.switchTab = function (tab) {
+    currentTab = tab;
     ['members', 'chat', 'admin'].forEach(t => {
       const c = $('content-' + t); if (c) { c.classList.add('hidden'); c.classList.remove('flex'); }
       const el = $('tab-' + t); if (el) { el.classList.remove('text-primary', 'border-primary'); el.classList.add('text-on-surface-variant', 'border-transparent'); }
     });
     const c2 = $('content-' + tab); if (c2) { c2.classList.remove('hidden'); c2.classList.add('flex'); }
     const a = $('tab-' + tab); if (a) { a.classList.add('text-primary', 'border-primary'); a.classList.remove('text-on-surface-variant', 'border-transparent'); }
+    const cb = $('btn-chat-panel');
+    if (cb) cb.classList.toggle('bg-secondary-container', tab === 'chat');
+    cb && cb.classList.toggle('text-on-secondary-container', tab === 'chat');
+  };
+  let currentTab = 'members';
+  // the chat section is opened from the bottom bar (the sidebar keeps members/admin)
+  window.toggleChatPanel = function () {
+    if (currentTab === 'chat') {
+      toggleSidebar(true);
+      switchTab(window.__BM_isManager ? 'admin' : 'members');
+    } else {
+      toggleSidebar(true);
+      switchTab('chat');
+      const inp = $('chat-input');
+      if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 120);
+    }
   };
 
   // ---------- Right-click member menu ----------
@@ -1313,7 +1413,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       redacted ? '' : infoBox('نام کاربری', info.username, 1),
       infoBox('نام نمایشی', info.display_name),
       redacted ? infoBox('اطلاعات تماس', 'محرمانه') : infoBox('ایمیل', info.email, 1),
-      infoBox('رمز هش شده', info.has_password ? 'هش شده' : 'ندارد'),
+      infoBox('رمز', info.has_password ? '********' : 'ندارد'),
       redacted ? '' : infoBox('شماره موبایل', info.phone, 1),
       infoBox('نقش', roleLabel(info)),
     ].filter(Boolean).join('');
@@ -1367,25 +1467,87 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   }
   let focusedKey = null;
   let maximizedKey = null;
+  let barCollapsed = false;
+
+  // ---------- Maximize: a fixed full-viewport overlay ----------
+  // `position: fixed; inset: 0` IS the whole site area — the browser tabs live
+  // outside the viewport, so they stay visible and nothing can overflow the page.
+  const maxOverlay = $('max-overlay');
+  let maxHolder = null;
+  let maxEl = null;
+
+  function isMaximized() { return !!(maxEl && maxEl.isConnected); }
+
+  function enterMaximize(el) {
+    if (!el || !maxOverlay || isMaximized()) return;
+    maxEl = el;
+    // remember where it was so it can go back to the same spot
+    const ph = document.createElement('div');
+    ph.id = 'max-placeholder';
+    ph.style.display = 'none';
+    el.parentNode.insertBefore(ph, el);
+    maxHolder = ph;
+    el.classList.add('maximized-el');
+    maxOverlay.appendChild(el);
+    maxOverlay.classList.remove('hidden');
+    const back = el.querySelector('.mx-back');
+    if (back) back.classList.remove('hidden');
+    document.body.classList.add('is-maximized');
+    setControlBarVisible(false);
+  }
+
+  function exitMaximize() {
+    if (!isMaximized()) return;
+    const el = maxEl;
+    el.classList.remove('maximized-el');
+    if (maxHolder && maxHolder.parentNode) {
+      maxHolder.parentNode.insertBefore(el, maxHolder);
+      maxHolder.remove();
+    } else if (grid) {
+      grid.appendChild(el);
+    }
+    maxHolder = null;
+    maxEl = null;
+    if (maxOverlay) maxOverlay.classList.add('hidden');
+    const back = document.querySelector('.mx-back');
+    if (back) back.classList.add('hidden');
+    document.body.classList.remove('is-maximized');
+    setControlBarVisible(true);
+    layoutGrid();
+  }
+
   window.toggleMaximize = function (key) {
-    maximizedKey = (maximizedKey === key) ? null : key;
-    if (maximizedKey) focusedKey = null;
+    if (isMaximized() && maxEl && maxEl.id === 'tile-' + key) { exitMaximize(); return; }
+    const el = key ? $('tile-' + key) : null;
+    if (!el) return;
+    maximizedKey = key;
+    focusedKey = null;
+    enterMaximize(el);
     layoutGrid();
   };
-  function paintMaximizeState(maxEl) {
-    Array.from(grid.children).forEach((t) => {
-      const isMax = t === maxEl;
-      t.classList.toggle('tile-maximized', isMax);
-      const back = t.querySelector('.mx-back');
-      if (back) back.classList.toggle('hidden', !isMax);
-      const btn = t.querySelector('.mx-btn');
-      if (btn) {
-        btn.innerHTML = bmIcon(isMax ? 'fullscreen_exit' : 'fullscreen', 'text-[14px]');
-        btn.title = isMax ? 'بازگشت به حالت عادی' : 'بزرگ‌نمایی';
-      }
-      const back2 = back;
-      if (back2) back2.onclick = (e) => { e.stopPropagation(); window.toggleMaximize(isMax ? t.id.replace('tile-', '') : null); };
-    });
+  // used by the shared site/video box header button
+  window.toggleMaximizeWeb = function () {
+    if (isMaximized()) { exitMaximize(); return; }
+    const box = $('web-box');
+    if (!box) return;
+    enterMaximize(box);
+    if (window.bmWebSetExpanded) window.bmWebSetExpanded(false);
+  };
+  window.bmIsMaximized = isMaximized;
+
+  // ---------- control bar collapse ----------
+  window.toggleControlBar = function (show) {
+    setControlBarVisible(show === undefined ? barCollapsed : show);
+  };
+  function setControlBarVisible(show) {
+    barCollapsed = !show;
+    const nav = $('control-bar');
+    const dot = $('btn-bar-show');
+    if (nav) nav.classList.toggle('bar-collapsed', barCollapsed);
+    if (dot) {
+      dot.classList.toggle('hidden', !barCollapsed);
+      dot.classList.toggle('flex', barCollapsed);
+    }
   }
   function layoutGrid() {
     if (!grid) return;
@@ -1407,20 +1569,13 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       t.classList.toggle('tile-focused', t === focusedEl);
     });
 
-    // per-tile maximize: that member fills the call stage (the browser chrome stays),
-    // every other box (including the shared link box) steps aside
-    const maxEl = maximizedKey ? grid.querySelector('#tile-' + maximizedKey) : null;
-    if (maximizedKey && !maxEl) maximizedKey = null;
-    if (maxEl) {
-      grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
-      grid.style.gridTemplateRows = 'minmax(0, 1fr)';
+    // a maximized box lives in the full-viewport overlay, not in the grid
+    if (isMaximized()) {
+      grid.style.gridTemplateColumns = '';
+      grid.style.gridTemplateRows = '';
       grid.style.gridAutoRows = 'minmax(0, 1fr)';
-      grid.style.alignContent = 'stretch';
-      all.forEach(t => { t.style.display = (t === maxEl) ? '' : 'none'; });
-      paintMaximizeState(maxEl);
       return;
     }
-    paintMaximizeState(null);
 
     // the shared website/video box always outranks the camera tiles
     if (webBox && webBox.parentElement === grid) {
@@ -1485,10 +1640,12 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   window.addEventListener('resize', layoutGrid);
 
   window.toggleFocus = function (key) {
+    if (isMaximized()) { exitMaximize(); return; } // clicking a tile leaves the maximized view
     focusedKey = (focusedKey === key) ? null : key;
-    if (focusedKey) maximizedKey = null; // clicking a tile leaves the maximized view
+    if (focusedKey) maximizedKey = null;
     layoutGrid();
   };
+  window.bmExitMaximize = exitMaximize;
 
   // small hooks used by call-web.js
   window.bmCallRelayout = function () { layoutGrid(); };

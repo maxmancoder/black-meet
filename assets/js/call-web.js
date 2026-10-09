@@ -147,10 +147,14 @@
     s.emit(EV.CALL_WEB_CLOSE, {}, () => toast('باکس حذف شد'));
   };
   window.toggleWebExpanded = function () {
-    expanded = !expanded;
+    if (expanded) { window.bmExitMaximize && window.bmExitMaximize(); return; }
+    // the whole-viewport overlay lives in call.js (it also handles the control bar)
+    if (window.toggleMaximizeWeb) { window.toggleMaximizeWeb(); return; }
+    expanded = true;
     renderWebBox();
     relayout();
   };
+  window.toggleWebMaximize = window.toggleWebExpanded;
 
   function relayout() { window.bmCallRelayout && window.bmCallRelayout(); }
 
@@ -177,8 +181,8 @@
         <span class="text-[12px] text-on-surface-variant truncate" dir="ltr">${escapeHtml(host || '')}</span>
         <div class="flex-1"></div>
         ${lockNote}
-        <button type="button" onclick="toggleWebExpanded()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="${expanded ? 'کوچک‌نمایی' : 'تمام‌صفحه'}">
-          ${bmIcon(expanded ? 'fullscreen_exit' : 'fullscreen', 'text-[16px]')}
+        <button type="button" onclick="toggleWebMaximize()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="تمام‌صفحه">
+          ${bmIcon((window.bmIsMaximized && window.bmIsMaximized()) ? 'fullscreen_exit' : 'fullscreen', 'text-[16px]')}
         </button>
         ${isAdmin ? `<button type="button" onclick="openWebAdmin()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="تنظیمات دسترسی">${bmIcon('shield_person', 'text-[16px]')}</button>` : ''}
         ${isAdmin ? `<button type="button" onclick="removeWebBox()" class="px-2.5 py-1.5 rounded-lg bg-error-container text-on-error-container" title="حذف باکس">${bmIcon('close', 'text-[16px]')}</button>` : ''}
@@ -526,6 +530,9 @@ let lastRatio = 0;
     let src = web.src || web.url;
     if (/youtube\.com\/embed\//.test(src)) {
       if (src.indexOf('enablejsapi') === -1) src += (src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&rel=0';
+      // provider controls are hidden on purpose: play/pause/seek must go through the
+      // shared bar so one person's press is applied for everybody
+      if (src.indexOf('controls') === -1) src += '&controls=0&modestbranding=1';
       if (canControl() && src.indexOf('autoplay') === -1) src += '&autoplay=1';
     }
     f.src = src;
@@ -597,8 +604,11 @@ let lastRatio = 0;
     web = (d && d.web) || null;
     if (!web) {
       // box removed: every tile must come back exactly where it was
-      expanded = false;
       const box = $('web-box');
+      if (box && box.classList.contains('maximized-el') && window.bmExitMaximize) {
+        window.bmExitMaximize();
+      }
+      expanded = false;
       if (box) box.remove();
       restoreTiles();
       relayout();

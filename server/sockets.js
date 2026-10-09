@@ -152,8 +152,13 @@ function attach(httpServer) {
             const prev = r.sockets.get(sid);
             if (prev && sid !== socket.id) {
               r.sockets.delete(sid);
-              const target = io.of('/').sockets.get(sid);
-              if (target) target.emit(EV.YOU_REMOVED, { ok: true, reason: 'replaced' });
+              // A reconnect of the SAME page (flaky mobile network) re-registers with the
+              // same session key: drop the stale socket SILENTLY. Telling it "you were
+              // removed" would throw that user out of the call while they only talked.
+              const sameSession = prev.sessionKey && payload.sessionKey && prev.sessionKey === payload.sessionKey;
+              const stale = io.of('/').sockets.get(sid);
+              if (stale && !sameSession) stale.emit(EV.YOU_REMOVED, { ok: true, reason: 'replaced' });
+              if (stale && sameSession) { stale.leave(room); stale.data.room = null; }
             }
           });
         }
@@ -163,6 +168,8 @@ function attach(httpServer) {
           avatar_color: String(user.avatar_color || '#4f46e5'), avatar: String(user.avatar || ''),
           is_admin: role === 'admin', muted: false, cam: false, sharing: false,
           approved: approvedBefore || role === 'admin',
+          // stable per page load: tells a reconnect apart from a second device
+          sessionKey: String(payload.sessionKey || '').slice(0, 64),
         };
         socket.data.room = room;
         socket.data.is_admin = info.is_admin;
@@ -372,7 +379,11 @@ function attach(httpServer) {
         if (typeof cb === 'function') cb({ ok: false, error: norm.error });
         return;
       }
-      const keepRights = (r.web && r.web.kind === kind) ? {
+      // Rights carry over only while the SAME target stays on screen. Opening a new link
+      // starts fresh with "everyone may control" — otherwise an old restriction would
+      // silently make it look like only the admin can drive the shared page.
+      const sameTarget = !!(r.web && r.web.kind === kind && r.web.url === norm.url);
+      const keepRights = sameTarget ? {
         controlAll: r.web.controlAll, controllers: r.web.controllers,
         viewersAll: r.web.viewersAll, viewers: r.web.viewers,
       } : { controlAll: true, controllers: new Set(), viewersAll: true, viewers: new Set() };

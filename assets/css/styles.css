@@ -330,7 +330,21 @@ button, .btn-primary, .btn-secondary, .bm-switch {
 /* Focused (spotlight) tile in call grid */
 .tile-focused { z-index: 5; box-shadow: 0 0 0 3px rgba(79,70,229,.55); }
 
-/* per-tile maximize: fills the call stage only (browser chrome stays visible) */
+/* per-tile maximize: a fixed full-viewport overlay (browser chrome stays visible) */
+.maximized-el {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+  z-index: 2;
+}
+/* the control bar collapses to a floating dot while a box is maximized */
+#control-bar.bar-collapsed .bm-bar-item,
+#control-bar.bar-collapsed #btn-bar-hide { display: none; }
+#control-bar.bar-collapsed { background: transparent; border-color: transparent; box-shadow: none; }
+#btn-bar-hide { display: inline-flex; }
 .mx-btn { opacity: .55; display: inline-flex; align-items: center; }
 .mx-btn:hover { opacity: 1; }
 .mx-back { cursor: pointer; }

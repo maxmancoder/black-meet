@@ -60,6 +60,10 @@
     </div>
 </header>
 
+<!-- Maximize overlay: a maximized box covers the whole site viewport (the browser chrome
+     stays visible because it lives outside the viewport), never off-screen -->
+<div id="max-overlay" class="hidden fixed inset-0 z-[90] bg-background"></div>
+
 <!-- Workspace -->
 <!-- Sidebar backdrop (mobile) -->
 <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/50 z-30 md:hidden" onclick="toggleSidebar(false)"></div>
@@ -69,7 +73,7 @@
     <aside id="call-sidebar" class="hidden fixed md:relative left-0 top-[64px] sm:top-[76px] md:top-0 bottom-0 md:h-full w-[85%] max-w-[320px] md:w-80 lg:w-96 md:max-w-none z-40 flex-shrink-0 bg-surface-container-low border-l border-outline-variant/20 flex flex-col shadow-xl">
         <div class="flex border-b border-outline-variant/20 px-sm pt-sm">
             <button class="flex-1 pb-3 text-center font-label-md text-primary border-b-2 border-primary transition-colors rounded-t-lg" id="tab-members" onclick="switchTab('members')">اعضا</button>
-            <button class="flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg" id="tab-chat" onclick="switchTab('chat')">چت</button>
+            <button class="hidden flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg" id="tab-chat" onclick="switchTab('chat')">چت</button>
             <% if (isAdmin) { %>
             <button class="flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg relative" id="tab-admin" onclick="switchTab('admin')">
                 ادمین <span id="admin-badge" class="absolute top-0 right-2 w-2 h-2 bg-error rounded-full hidden"></span>
@@ -118,34 +122,47 @@
     </main>
 </div>
 
-<!-- Bottom control bar -->
-<nav class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-grid-gutter bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-3 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)]" dir="ltr">
-    <button id="btn-mic" class="bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleMic()">
+<!-- Bottom control bar. While a box is maximized it collapses into a small floating
+     circle (the × at its top-right hides it, the circle brings it back). -->
+<nav id="control-bar" class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-grid-gutter bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-3 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)]" dir="ltr">
+    <button id="btn-bar-hide" onclick="toggleControlBar(false)" title="محو کردن منو" class="absolute -top-11 right-0 w-9 h-9 rounded-full bg-surface-container-highest/90 backdrop-blur border border-white/15 text-on-surface-variant hover:text-on-surface flex items-center justify-center shadow-lg">
+        <%- icon('close', 'text-[18px]') %>
+    </button>
+    <button id="btn-mic" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleMic()">
         <%- icon('mic', 'text-[24px]', true, 'id="ic-mic"') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Mic</span>
     </button>
-    <button id="btn-cam" class="bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleCam()">
+    <button id="btn-cam" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleCam()">
         <%- icon('videocam', 'text-[24px]', true, 'id="ic-cam"') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Camera</span>
     </button>
-    <button id="btn-cam-more" class="hidden bg-white/5 text-on-surface rounded-full p-2.5 hover:bg-white/10 transition-all active:scale-90 duration-150 flex items-center justify-center self-center shrink-0" onclick="toggleCamMenu(event)" aria-label="منبع تصویر">
+    <button id="btn-cam-more" class="bm-bar-item hidden bg-white/5 text-on-surface rounded-full p-2.5 hover:bg-white/10 transition-all active:scale-90 duration-150 flex items-center justify-center self-center shrink-0" onclick="toggleCamMenu(event)" aria-label="منبع تصویر">
         <%- icon('more_vert', 'text-[20px]') %>
     </button>
-    <div class="w-px h-8 bg-white/10 mx-1"></div>
-    <button id="btn-share" class="bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleShare()">
+    <button id="btn-chat-panel" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleChatPanel()" title="بخش چت">
+        <%- icon('forum', 'text-[24px]') %>
+        <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Chat</span>
+    </button>
+    <div class="bm-bar-item w-px h-8 bg-white/10 mx-1"></div>
+    <button id="btn-share" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleShare()">
         <%- icon('screen_share', 'text-[24px]') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Share</span>
     </button>
-    <button class="bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group relative" onclick="toggleEmojiPicker()">
+    <button class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group relative" onclick="toggleEmojiPicker()">
         <%- icon('mood', 'text-[24px]') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Emoji</span>
     </button>
-    <div class="w-px h-8 bg-white/10 mx-1"></div>
-    <button class="bg-tertiary-container text-on-tertiary-container rounded-full p-3 hover:bg-error transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="leaveCall()">
+    <div class="bm-bar-item w-px h-8 bg-white/10 mx-1"></div>
+    <button class="bm-bar-item bg-tertiary-container text-on-tertiary-container rounded-full p-3 hover:bg-error transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="leaveCall()">
         <%- icon('call_end', 'text-[24px]') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Leave</span>
     </button>
 </nav>
+
+<!-- Collapsed state of the control bar -->
+<button id="btn-bar-show" onclick="toggleControlBar(true)" title="نمایش منو" class="hidden fixed bottom-6 right-6 z-[95] w-14 h-14 rounded-full bg-surface-container-highest/90 backdrop-blur-lg border border-white/15 shadow-2xl shadow-black/50 text-on-surface items-center justify-center">
+    <%- icon('menu', 'text-[24px]') %>
+</button>
 
 <!-- Emoji picker popup -->
 <div id="emoji-picker" class="hidden fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-[60] glass-panel rounded-2xl p-3 sm:p-4 shadow-2xl max-w-[calc(100vw-24px)]">
@@ -196,30 +213,47 @@
 
 <!-- Screen-share pre-flight: quality + share audio -->
 <div id="share-panel" class="hidden fixed inset-0 z-[85] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
-    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[420px]">
+    <div class="glass-panel rounded-2xl p-xl shadow-2xl w-full max-w-[430px]">
         <div class="flex items-center justify-between mb-lg">
             <h3 class="font-headline-md text-headline-md text-on-surface">اشتراک صفحه</h3>
             <button type="button" onclick="closeSharePanel()" class="text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
         </div>
-        <label class="block font-label-sm text-on-surface-variant mb-1" for="share-quality">کیفیت تصویر</label>
-        <select id="share-quality" class="form-input mb-md">
-            <option value="360">360p — کم‌حجم‌تر</option>
-            <option value="480">480p</option>
-            <option value="720" selected>720p — پیشنهادی</option>
-            <option value="1080">1080p — بهترین کیفیت</option>
-            <option value="0">کیفیت اصلی (بدون محدودیت)</option>
-        </select>
+
+        <!-- themed quality picker (a real menu, not the browser's native select) -->
+        <div class="relative mb-md">
+            <span class="font-label-sm text-on-surface-variant mb-1 block">کیفیت تصویر</span>
+            <button type="button" id="share-quality-btn" onclick="toggleQualityMenu(event)" aria-haspopup="true" aria-expanded="false" class="w-full flex items-center justify-between gap-2 bg-surface-container border border-outline-variant/40 hover:border-primary-container rounded-xl px-4 py-3 font-body-sm text-body-sm text-on-surface transition-colors">
+                <span class="flex items-center gap-2 min-w-0">
+                    <span id="share-quality-icon" class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container flex items-center justify-center shrink-0"><%- icon('tune', 'text-[18px]') %></span>
+                    <span id="share-quality-label" class="truncate">720p — پیشنهادی</span>
+                </span>
+                <span class="bm-caret text-on-surface-variant"></span>
+            </button>
+            <div id="share-quality-menu" class="hidden absolute left-0 right-0 top-full mt-2 z-10 glass-panel rounded-xl shadow-2xl border border-outline-variant/30 p-1.5 max-h-[240px] overflow-y-auto custom-scrollbar">
+                <button type="button" data-q="360"  onclick="pickQuality(360)"><span class="block font-body-sm text-body-sm text-on-surface">360p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">کم‌حجم‌ترین، برای اینترنت ضعیف</span></button>
+                <button type="button" data-q="480"  onclick="pickQuality(480)"><span class="block font-body-sm text-body-sm text-on-surface">480p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">سبک و قابل قبول</span></button>
+                <button type="button" data-q="720"  onclick="pickQuality(720)"><span class="block font-body-sm text-body-sm text-on-surface">720p — پیشنهادی</span><span class="block font-label-sm text-on-surface-variant text-[11px]">تعادل کیفیت و روانی</span></button>
+                <button type="button" data-q="1080" onclick="pickQuality(1080)"><span class="block font-body-sm text-body-sm text-on-surface">1080p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">بهترین کیفیت، نیاز به اینترنت خوب</span></button>
+                <button type="button" data-q="0"    onclick="pickQuality(0)"><span class="block font-body-sm text-body-sm text-on-surface">کیفیت اصلی</span><span class="block font-label-sm text-on-surface-variant text-[11px]">بدون محدودیت، مطابق صفحه</span></button>
+            </div>
+        </div>
+        <input type="hidden" id="share-quality" value="720"/>
+
         <label class="flex items-center justify-between gap-3 px-3 py-3 rounded-lg bg-surface-container-highest border border-outline-variant/30 cursor-pointer">
             <span class="flex items-center gap-2 font-body-sm text-on-surface">
                 <%- icon('volume_up', 'text-[18px] text-primary') %>
                 اشتراک صدای صفحه
             </span>
-            <input type="checkbox" id="share-audio"/>
+            <span class="relative inline-flex items-center shrink-0">
+                <input type="checkbox" id="share-audio" class="peer sr-only" checked/>
+                <span class="w-11 h-6 rounded-full bg-surface-container-highest border border-outline-variant/40 transition-colors peer-checked:bg-primary/80"></span>
+                <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
+            </span>
         </label>
-        <p class="font-body-sm text-[12px] text-on-surface-variant mt-2 mb-lg">در پنجره مرورگر گزینه «اشتراک صدای صفحه/زبانه» را هم تیک بزنید.</p>
-        <div class="flex items-center gap-2">
-            <button type="button" onclick="confirmShare()" class="btn-primary flex-1">شروع اشتراک</button>
-            <button type="button" onclick="closeSharePanel()" class="btn-secondary">انصراف</button>
+        <p class="font-body-sm text-[12px] text-on-surface-variant mt-2 mb-lg">در پنجره‌ی مرورگر گزینه «اشتراک صدای صفحه/زبانه» را هم تیک بزنید.</p>
+        <div class="flex items-center gap-3">
+            <button type="button" onclick="confirmShare()" class="btn-primary flex-1 text-center">شروع اشتراک</button>
+            <button type="button" onclick="closeSharePanel()" class="btn-secondary flex-1 text-center">انصراف</button>
         </div>
     </div>
 </div>
