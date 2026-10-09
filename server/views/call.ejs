@@ -338,6 +338,9 @@
       btn.classList.toggle('text-on-secondary-container', show);
       btn.classList.toggle('bg-surface-container-highest', !show);
     }
+    // the stage just changed width: the video grid must be re-sized or the boxes
+    // keep the old row heights and spill out of the page
+    if (window.bmCallRelayout) window.bmCallRelayout();
   };
   // On first load: open on desktop, closed on mobile
   window.addEventListener('DOMContentLoaded', () => {

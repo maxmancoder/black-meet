@@ -161,6 +161,13 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **DB snapshots**: `server/lib/db.js` gained `BM_DB_BACKUP_DIR` / `BM_DB_BACKUP_MIN` — on boot it restores the newest snapshot when the live file is missing/empty, then writes one every N minutes (plus on exit) keeping the last 5. This only helps where the target directory is persistent; Render's free plan still needs an external volume or database (see Security notes).
 - Tests: `%TEMP%\opencode\shot16.js` **27/27**. Regression: `regress11.js` 14/14 (its share-panel assertion had to follow the native select → themed menu change), live check 17/17.
 
+## Batch 11 (chat panel, sidebar resize, animated control bar)
+
+- **Chat button**: `toggleChatPanel()` now hides the whole tab row (members/admin) while the chat is open, so only the chat is visible; pressing it again returns to the members section. The button carries `.ctrl-live` while the chat is open (same red "live" ring the share button uses) and is normal when closed. `switchTab()` keeps `currentTab` in sync and calls `layoutGrid()`.
+- **The boxes no longer fall off the bottom when the sidebar opens/closes**: the grid rows are computed from `grid.clientHeight`, which was measured once. Two fixes — `toggleSidebar()` ends with `bmCallRelayout()`, and a `ResizeObserver` on `#video-grid` re-runs `layoutGrid()` whenever its measured width/height changes (sidebar, rotation, devtools, keyboard). The observer ignores its own writes by comparing the last size first.
+- **Animated control bar**: `#control-bar` transitions `transform + opacity`; hiding slides it out to the side (`translateX(-130%)`) and fades it, the floating dot (`#btn-bar-show`) pops in with `.bar-in`. Neither toggles `display:none` any more, so both directions animate; `setControlBarVisible()` re-runs `layoutGrid()` after the transition (340 ms). Maximizing collapses it automatically, leaving restores it.
+- Tests: `%TEMP%\opencode\shot17.js` **19/19** — chat opens with members/admin hidden + red button, closing brings the section back, five sidebar/chat toggles each re-probed for `pageScroll <= 0 && gridScroll <= 0 && every tile above the bar`, the same on a 390px viewport, and the bar/dot animation in both directions (including on maximize). Regression: shot16 27/27, `regress11.js` 14/14.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

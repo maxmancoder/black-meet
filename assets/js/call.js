@@ -1329,22 +1329,31 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     });
     const c2 = $('content-' + tab); if (c2) { c2.classList.remove('hidden'); c2.classList.add('flex'); }
     const a = $('tab-' + tab); if (a) { a.classList.add('text-primary', 'border-primary'); a.classList.remove('text-on-surface-variant', 'border-transparent'); }
+    // the tab row is members/admin only — it must not show while the chat panel is open
+    const sb = $('call-sidebar');
+    const tabs = sb ? sb.querySelector(':scope > div') : null;
+    if (tabs) tabs.classList.toggle('hidden', tab === 'chat');
     const cb = $('btn-chat-panel');
-    if (cb) cb.classList.toggle('bg-secondary-container', tab === 'chat');
-    cb && cb.classList.toggle('text-on-secondary-container', tab === 'chat');
+    if (cb) cb.classList.toggle('ctrl-live', tab === 'chat');
+    layoutGrid();
   };
   let currentTab = 'members';
-  // the chat section is opened from the bottom bar (the sidebar keeps members/admin)
+  // The chat lives in the bottom bar: pressing it shows ONLY the chat (members/admin are
+  // closed), pressing it again returns to members/admin. The button turns red while open.
   window.toggleChatPanel = function () {
+    const sb = $('call-sidebar');
+    const tabs = sb ? sb.querySelector(':scope > div') : null;
     if (currentTab === 'chat') {
       toggleSidebar(true);
-      switchTab(window.__BM_isManager ? 'admin' : 'members');
+      switchTab('members'); // back to the members/admin section (members by default)
     } else {
       toggleSidebar(true);
       switchTab('chat');
+      if (tabs) tabs.classList.add('hidden');
       const inp = $('chat-input');
       if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 120);
     }
+    layoutGrid();
   };
 
   // ---------- Right-click member menu ----------
@@ -1543,11 +1552,13 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     barCollapsed = !show;
     const nav = $('control-bar');
     const dot = $('btn-bar-show');
+    // both directions are animated: the bar slides out to the side, the dot pops back in
     if (nav) nav.classList.toggle('bar-collapsed', barCollapsed);
     if (dot) {
-      dot.classList.toggle('hidden', !barCollapsed);
-      dot.classList.toggle('flex', barCollapsed);
+      dot.classList.remove('hidden');
+      dot.classList.toggle('bar-in', barCollapsed);
     }
+    window.setTimeout(layoutGrid, 340);
   }
   function layoutGrid() {
     if (!grid) return;
@@ -1650,6 +1661,20 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   // small hooks used by call-web.js
   window.bmCallRelayout = function () { layoutGrid(); };
   window.bmCallRoster = function () { return currentList.slice(); };
+
+  // The stage can change size without a window resize (sidebar open/close, rotation,
+  // the browser devtools panel…). Re-measure on every size change so the tiles always
+  // fit exactly — otherwise the rows keep their old height and spill off the page.
+  if (window.ResizeObserver && grid) {
+    let lastW = 0, lastH = 0;
+    const ro = new ResizeObserver(() => {
+      const w = grid.clientWidth, h = grid.clientHeight;
+      if (w === lastW && h === lastH) return;
+      lastW = w; lastH = h;
+      requestAnimationFrame(layoutGrid);
+    });
+    ro.observe(grid);
+  }
 
   function updateTileStatus(userId) {
     const st = memberStatus.get(userId) || {};

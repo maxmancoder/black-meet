@@ -340,10 +340,29 @@ button, .btn-primary, .btn-secondary, .bm-switch {
   border-radius: 0 !important;
   z-index: 2;
 }
-/* the control bar collapses to a floating dot while a box is maximized */
+/* the control bar collapses to a floating dot while a box is maximized —
+   it slides out to the side and the dot pops back in */
+#control-bar {
+  transition: transform .38s var(--bm-squish), opacity .28s ease, background-color .28s ease;
+}
+#control-bar.bar-collapsed {
+  transform: translateX(-130%);
+  opacity: 0;
+  pointer-events: none;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
 #control-bar.bar-collapsed .bm-bar-item,
 #control-bar.bar-collapsed #btn-bar-hide { display: none; }
-#control-bar.bar-collapsed { background: transparent; border-color: transparent; box-shadow: none; }
+#btn-bar-show {
+  transform: translateY(26px) scale(.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .38s var(--bm-squish), opacity .3s ease, background-color .2s ease;
+}
+#btn-bar-show.bar-in { transform: none; opacity: 1; pointer-events: auto; }
+#btn-bar-show.bar-in:hover { background-color: rgb(var(--bm-surface-container-highest)); }
 #btn-bar-hide { display: inline-flex; }
 .mx-btn { opacity: .55; display: inline-flex; align-items: center; }
 .mx-btn:hover { opacity: 1; }
