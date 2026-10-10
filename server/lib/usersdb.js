@@ -14,6 +14,11 @@
 const path = require('path');
 const fs = require('fs');
 const { DatabaseSync } = require('node:sqlite');
+const neon = require('./neon');
+const neonEnabled = neon.enabled;
+const neonPushAll = neon.pushAll;
+const neonPullAll = neon.pullAll;
+const neonInfo = neon.info;
 
 const rootDir = path.resolve(__dirname, '..', '..');
 const ARCHIVE_PATH = process.env.BM_USERS_DB_PATH || path.join(rootDir, 'users_archive.db');
@@ -53,6 +58,55 @@ function archive() {
 
 function dbm() { return require('./db'); }
 
+// --- optional Neon/Postgres mirror ---------------------------------------------
+// Inert unless NEON_DATABASE_URL is set. Pushes are debounced and never awaited by the
+// request path, so a slow or unreachable database can never delay a signup or a login.
+let _neonTimer = null;
+let _neonLast = { at: null, result: null, reason: null };
+
+function neonSchedule(reason) {
+  if (!neonEnabled()) return;
+  if (_neonTimer) return;
+  _neonTimer = setTimeout(async () => {
+    _neonTimer = null;
+    try {
+      const rows = archive().prepare('SELECT ' + COLUMNS.join(',') + ' FROM users').all();
+      const res = await neonPushAll(rows);
+      _neonLast = { at: new Date().toISOString(), reason: reason || 'sync', result: res };
+    } catch (e) { /* the mirror is a safety net, never fatal */ }
+  }, 2000);
+  if (_neonTimer.unref) _neonTimer.unref();
+}
+
+function neonStatus() {
+  const i = neonInfo();
+  return Object.assign(i, { lastSync: _neonLast.at, lastResult: _neonLast.result, lastReason: _neonLast.reason });
+}
+
+// fill the local archive from Neon (only used when BOTH the live DB and the archive are
+// empty, i.e. a brand-new instance whose disk was wiped)
+async function neonRestoreArchive() {
+  if (!neonEnabled()) return 0;
+  let rows = [];
+  try { rows = await neonPullAll(); } catch (e) { return 0; }
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  try {
+    const a = archive();
+    const cols = COLUMNS.concat('updated_at');
+    for (const r of rows) {
+      const vals = COLUMNS.map((c) => (r[c] === undefined ? null : r[c]));
+      a.prepare(
+        'INSERT OR REPLACE INTO users (' + cols.join(',') + ') VALUES (' + cols.map(() => '?').join(',') + ')'
+      ).run(...vals.concat([new Date().toISOString().replace('T', ' ').slice(0, 19)]));
+    }
+    console.log('[neon] pulled ' + rows.length + ' account(s) into the local archive');
+    return rows.length;
+  } catch (e) {
+    console.warn('[neon] could not write the pulled accounts: ' + e.message);
+    return 0;
+  }
+}
+
 function rowToArchive(row) {
   const out = {};
   COLUMNS.forEach((c) => { out[c] = row[c] === undefined ? null : row[c]; });
@@ -74,6 +128,7 @@ function syncUser(userId) {
       a.prepare('DELETE FROM users WHERE id=?').run(id);
       a.prepare('INSERT INTO sync_log (user_id, action, detail) VALUES (?,?,?)').run(id, 'delete', '');
     } catch (e) {}
+    neon.removeUser(id);
     return true;
   }
   const r = rowToArchive(row);
@@ -85,6 +140,7 @@ function syncUser(userId) {
       " ON CONFLICT(id) DO UPDATE SET " + COLUMNS.slice(1).map((c) => c + '=excluded.' + c).join(',')
     ).run(...vals);
     a.prepare('INSERT INTO sync_log (user_id, action) VALUES (?,?)').run(id, 'sync');
+    neonSchedule('user ' + id);
   } catch (e) {
     console.warn('[usersdb] sync failed for user ' + id + ': ' + e.message);
     return false;
@@ -129,6 +185,8 @@ function exportSnapshot() {
   } catch (e) {
     console.warn('[usersdb] export failed: ' + e.message);
     return false;
+  } finally {
+    neonSchedule('export');
   }
 }
 
@@ -155,24 +213,34 @@ function restore({ overwrite = false } = {}) {
 }
 
 // on boot: a brand-new instance has no users at all -> rebuild them from the archive
+// (or, when the archive is empty too, from the Neon mirror). Returns a promise because the
+// Neon step is network I/O and MUST finish before the admin seed runs — otherwise a wiped
+// instance would create a fresh manager instead of restoring the real one.
 function boot() {
   let count = 0;
-  try { count = dbm().get('SELECT COUNT(*) AS c FROM users').c; } catch (e) { return; }
+  try { count = dbm().get('SELECT COUNT(*) AS c FROM users').c; } catch (e) { return Promise.resolve(); }
   let archived = 0;
-  try { archived = archive().prepare('SELECT COUNT(*) AS c FROM users').get().c; } catch (e) { return; }
-  if (count === 0 && archived > 0) {
-    const res = restore();
-    console.log('[usersdb] restored ' + res.restored + ' account(s) from ' + path.basename(ARCHIVE_PATH));
-  } else if (archived === 0 && count > 0) {
-    syncAll(); // first run: seed the archive from the live database
-    exportSnapshot();
-    console.log('[usersdb] archive seeded with ' + count + ' account(s)');
-  }
-  syncAll();
-  if (!_timer) {
-    _timer = setInterval(() => { syncAll(); exportSnapshot(); }, 10 * 60 * 1000);
-    if (_timer.unref) _timer.unref();
-  }
+  try { archived = archive().prepare('SELECT COUNT(*) AS c FROM users').get().c; } catch (e) { return Promise.resolve(); }
+
+  return (async () => {
+    if (count === 0 && archived === 0 && neonEnabled()) {
+      archived = await neonRestoreArchive();
+    }
+    if (count === 0 && archived > 0) {
+      const res = restore();
+      console.log('[usersdb] restored ' + res.restored + ' account(s) from ' + path.basename(ARCHIVE_PATH));
+    } else if (archived === 0 && count > 0) {
+      syncAll(); // first run: seed the archive from the live database
+      exportSnapshot();
+      console.log('[usersdb] archive seeded with ' + count + ' account(s)');
+    }
+    syncAll();
+    neonSchedule('boot');
+    if (!_timer) {
+      _timer = setInterval(() => { syncAll(); exportSnapshot(); }, 10 * 60 * 1000);
+      if (_timer.unref) _timer.unref();
+    }
+  })();
 }
 
 function stats() {
@@ -186,6 +254,7 @@ function stats() {
       archived: n,
       live: dbm().get('SELECT COUNT(*) AS c FROM users').c,
       lastSync: last ? last.at : null,
+      neon: neonStatus(),
     };
   } catch (e) {
     return { path: ARCHIVE_PATH, exportDir: EXPORT_DIR || null, archived: 0, live: 0, lastSync: null, error: e.message };
@@ -202,4 +271,7 @@ function listUsers() {
   } catch (e) { return []; }
 }
 
-module.exports = { syncUser, syncAll, restore, exportSnapshot, boot, stats, listUsers, ARCHIVE_PATH, EXPORT_DIR };
+module.exports = {
+  syncUser, syncAll, restore, exportSnapshot, boot, stats, listUsers,
+  ARCHIVE_PATH, EXPORT_DIR, COLUMNS,
+};

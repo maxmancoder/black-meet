@@ -18,6 +18,7 @@
     "express": "^4.19.2",
     "multer": "^2.4.0",
     "node-turn": "^0.0.6",
+    "pg": "^8.13.1",
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
