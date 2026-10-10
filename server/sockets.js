@@ -347,6 +347,10 @@ function attach(httpServer) {
       if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return { ok: false, error: 'BAD_URL' };
       const host = abs.hostname.toLowerCase();
       if (!host) return { ok: false, error: 'BAD_URL' };
+if (kind === 'audio') {
+        // any http(s) URL; the browser decides whether it can stream it
+        return { ok: true, url: abs.href, host, src: abs.href, audio: true };
+      }
       if (kind === 'video') {
         // embed-ify the known providers, otherwise hand the URL to an <iframe>/<video>
         let embed = null;
@@ -372,7 +376,7 @@ function attach(httpServer) {
       const s = r && r.sockets.get(socket.id);
       if (!r || !s) return;
       if (!s.approved) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_A_MEMBER' }); return; }
-      const kind = msg.kind === 'video' ? 'video' : 'site';
+      const kind = msg.kind === 'video' ? 'video' : (msg.kind === 'audio' ? 'audio' : 'site');
       const norm = normalizeWebTarget(kind, msg.url);
       if (!norm.ok) {
         socket.emit(EV.WEB_ERR, { msg: 'لینک وارد شده معتبر نیست' });
@@ -454,7 +458,7 @@ function attach(httpServer) {
         const norm = normalizeWebTarget('site', msg.url);
         if (!norm.ok) return;
         payload.url = norm.url;
-      } else if (kind === 'video') {
+      } else if (kind === 'video' || kind === 'audio') {
         const cmd = ['play', 'pause', 'seek'].indexOf(msg.cmd) !== -1 ? msg.cmd : 'play';
         const t = Math.max(0, Math.min(86400, Number(msg.t) || 0));
         payload.cmd = cmd; payload.t = t;

@@ -168,6 +168,15 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Animated control bar**: `#control-bar` transitions `transform + opacity`; hiding slides it out to the side (`translateX(-130%)`) and fades it, the floating dot (`#btn-bar-show`) pops in with `.bar-in`. Neither toggles `display:none` any more, so both directions animate; `setControlBarVisible()` re-runs `layoutGrid()` after the transition (340 ms). Maximizing collapses it automatically, leaving restores it.
 - Tests: `%TEMP%\opencode\shot17.js` **19/19** — chat opens with members/admin hidden + red button, closing brings the section back, five sidebar/chat toggles each re-probed for `pageScroll <= 0 && gridScroll <= 0 && every tile above the bar`, the same on a 390px viewport, and the bar/dot animation in both directions (including on maximize). Regression: shot16 27/27, `regress11.js` 14/14.
 
+## Batch 12 — shared audio box («لینک صدا»)
+
+- Third entry in the `#btn-web` menu opens the same modal in **audio** mode (own title/hint/placeholder + its own gradient badge) and emits `CALL_WEB_OPEN {kind:'audio'}`.
+- The box mounts a **dedicated player** (`mountAudio`): spinning disc with a big play/pause button, track name, seek bar with current/total time, volume slider, all wired to `<audio id="web-audio">`. Play/pause/seek go out as `CALL_WEB_SYNC {kind:'audio'}` so **one person pausing pauses it for everyone** (with «دسترسی همزمان» respected); late joiners land on the room's position through `web.video`.
+- `applyVideoCmd` was generalised into `applyMediaCmd` + `mediaEl()` (`#web-video` || `#web-audio`), so the video and audio boxes share one code path for state, sync and painting.
+- The audio box keeps every earlier guarantee: it is the biggest cell, the stage never scrolls, it can be maximized to the full viewport and the admin can delete it for everyone.
+- **Server gotcha**: `CALL_WEB_OPEN` normalised the kind with `msg.kind === 'video' ? 'video' : 'site'`, which silently turned every audio request into a SITE box (it rendered the mp3 URL through the site proxy). The ternary now knows `audio`, and the sync handler accepts `kind === 'audio'` as well as `video`.
+- Tests: `%TEMP%\opencode\shot18.js` **22/22** (menu entry, modal, dedicated player, duration read from the file, plays for the other user, shared pause/resume, maximize, admin delete, tiles return). Regression: shot17 19/19, shot16 27/27, `regress11.js` 14/14.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

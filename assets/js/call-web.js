@@ -39,23 +39,32 @@
 
   // ---------- modal ----------
   window.openWebModal = function (kind) {
-    modalKind = kind === 'video' ? 'video' : 'site';
+    modalKind = kind === 'video' ? 'video' : (kind === 'audio' ? 'audio' : 'site');
     closeWebMenu();
     const m = $('web-modal');
     if (!m) return;
     const badge = $('web-modal-badge');
+    const tone = {
+      video: 'bg-gradient-to-br from-tertiary-container to-secondary-container text-on-tertiary-container shadow-tertiary/20',
+      audio: 'bg-gradient-to-br from-secondary-container to-primary-container text-on-secondary-container shadow-secondary/20',
+      site: 'bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container shadow-primary/20',
+    }[modalKind];
+    const ico = { video: 'movie', audio: 'volume_up', site: 'link' }[modalKind];
     if (badge) {
-      badge.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ' + (modalKind === 'video'
-        ? 'bg-gradient-to-br from-tertiary-container to-secondary-container text-on-tertiary-container shadow-tertiary/20'
-        : 'bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container shadow-primary/20');
-      badge.innerHTML = bmIcon(modalKind === 'video' ? 'movie' : 'link', 'text-[26px]', false);
+      badge.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ' + tone;
+      badge.innerHTML = bmIcon(ico, 'text-[26px]', false);
     }
-    $('web-modal-title').textContent = modalKind === 'video' ? 'پخش لینک ویدیو' : 'نمایش لینک سایت';
+    $('web-modal-title').textContent = modalKind === 'video' ? 'پخش لینک ویدیو'
+      : (modalKind === 'audio' ? 'پخش لینک صدا' : 'نمایش لینک سایت');
     $('web-modal-hint').textContent = modalKind === 'video'
       ? 'لینک آپارات، یوتیوب یا لینک مستقیم ویدیو (mp4/webm) را وارد کنید'
-      : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید';
+      : (modalKind === 'audio'
+        ? 'لینک مستقیم یک فایل صوتی یا آهنگ (mp3 / m4a / ogg) را وارد کنید'
+        : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید');
     $('web-url').value = web && web.kind === modalKind ? web.url : '';
-    $('web-url').setAttribute('placeholder', modalKind === 'video' ? 'https://www.aparat.com/v/xxxx' : 'https://example.com');
+    $('web-url').setAttribute('placeholder',
+      modalKind === 'video' ? 'https://www.aparat.com/v/xxxx'
+        : (modalKind === 'audio' ? 'https://example.com/music.mp3' : 'https://example.com'));
     const sw = $('web-follow');
     if (sw) sw.checked = followOn();
     m.classList.remove('hidden');
@@ -171,12 +180,13 @@
 
   // ---------- rendering ----------
   function headerHtml(kind, host, isAdmin) {
-    const label = kind === 'video' ? 'ویدیو' : 'سایت';
+    const label = kind === 'video' ? 'ویدیو' : (kind === 'audio' ? 'صدا' : 'سایت');
+    const icon = kind === 'video' ? 'movie' : (kind === 'audio' ? 'volume_up' : 'link');
     const lockNote = canControl() ? '' :
       `<span class="text-[11px] text-on-surface-variant flex items-center gap-1">${bmIcon('lock', 'text-[14px]', false)} فقط ادمین کنترل می‌کند</span>`;
     return `
       <div class="web-head flex items-center gap-2 px-3 py-2 bg-surface-container-highest/90 backdrop-blur border-b border-white/10 shrink-0">
-        ${bmIcon(kind === 'video' ? 'movie' : 'link', 'text-[18px] text-primary shrink-0')}
+        ${bmIcon(icon, 'text-[18px] text-primary shrink-0')}
         <span class="font-label-md text-on-surface shrink-0">${label}</span>
         <span class="text-[12px] text-on-surface-variant truncate" dir="ltr">${escapeHtml(host || '')}</span>
         <div class="flex-1"></div>
@@ -204,7 +214,7 @@
     if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'web-box';
-    box.className = 'web-box relative rounded-xl overflow-hidden border border-primary/40 shadow-lg bg-surface-container';
+    box.className = 'web-box web-kind-' + kind + ' relative rounded-xl overflow-hidden border border-primary/40 shadow-lg bg-surface-container';
     box.innerHTML = `
       ${headerHtml(kind, web.host, isAdmin)}
       <div class="web-body relative flex-1 min-h-0 bg-black"></div>
@@ -213,7 +223,11 @@
 
     const body = box.querySelector('.web-body');
     if (kind === 'site') mountSite(body);
-    else {
+    else if (kind === 'audio') {
+      mountAudio(body);
+      const hint = $('web-a-hint');
+      if (!canControl() && hint) hint.textContent = 'فقط ادمین می‌تواند این صدا را کنترل کند';
+    } else {
       mountVideo(body);
       const play = $('web-v-play');
       const seek = $('web-v-seek');
@@ -444,15 +458,17 @@ let lastRatio = 0;
   }
 
   function playerTime() {
-    const v = $('web-video');
-    if (v && !v.paused) return v.currentTime;
+    const el = mediaEl();
+    if (el && !el.paused) return el.currentTime;
     return ytTime;
   }
   function playerPlaying() {
-    const v = $('web-video');
-    if (v) return !v.paused;
+    const el = mediaEl();
+    if (el) return !el.paused;
     return ytPlaying;
   }
+  // the direct-media element of whichever box is open (video or audio)
+  function mediaEl() { return $('web-video') || $('web-audio'); }
 
   function paintControls() {
     const btn = $('web-v-play');
@@ -468,8 +484,8 @@ let lastRatio = 0;
   }
 
   function videoDuration() {
-    const v = $('web-video');
-    if (v && v.duration && isFinite(v.duration)) return v.duration;
+    const el = mediaEl();
+    if (el && el.duration && isFinite(el.duration)) return el.duration;
     return ytDuration;
   }
 
@@ -577,10 +593,99 @@ let lastRatio = 0;
       if (cmd === 'seek') f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [Number(t) || 0, true] }), '*');
     } catch (e) {}
   }
-  function applyVideoCmd(v) {
+  // ---------- audio box: our own player (the native one is too small to share) ----------
+  function isAudioUrl(u) {
+    return /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|weba|mp4)(\?|#|$)/i.test(u) || /\b(audio|music|track)\b/i.test(u);
+  }
+
+  function mountAudio(body) {
+    body.classList.add('audio-body');
+    body.innerHTML = `
+      <div class="audio-player">
+        <div class="audio-disc" id="web-a-disc">
+          <button type="button" id="web-a-play" onclick="audioToggle()" title="پخش / توقف برای همه">
+            ${bmIcon('play', 'text-[30px]', true)}
+          </button>
+        </div>
+        <p class="audio-title" id="web-a-title">—</p>
+        <div class="audio-bar" dir="ltr">
+          <span id="web-a-cur" class="audio-time">0:00</span>
+          <input id="web-a-seek" oninput="onAudioSeek(this.value)" type="range" min="0" max="1000" value="0"/>
+          <span id="web-a-dur" class="audio-time">0:00</span>
+        </div>
+        <div class="audio-vol" dir="ltr" title="صدای پخش">
+          ${bmIcon('volume_up', 'text-[18px] text-primary')}
+          <input id="web-a-vol" oninput="onAudioVolume(this.value)" type="range" min="0" max="100" value="100"/>
+        </div>
+        <p class="audio-hint" id="web-a-hint">پخش برای همه‌ی اعضای تماس</p>
+      </div>
+      <audio id="web-audio" preload="metadata" class="hidden" src=""></audio>`;
+    const a = $('web-audio');
+    if (!a) return;
+    a.src = web.url || web.src;
+    const title = $('web-a-title');
+    if (title) {
+      title.textContent = decodeURIComponent(String(web.url || '').split('/').pop().split('?')[0]) || 'فایل صوتی';
+    }
+    a.addEventListener('play', () => {
+      spinDisc(true);
+      paintAudio();
+      if (canControl()) send('audio', { cmd: 'play', t: a.currentTime });
+    });
+    a.addEventListener('pause', () => {
+      spinDisc(false);
+      paintAudio();
+      if (canControl()) send('audio', { cmd: 'pause', t: a.currentTime });
+    });
+    a.addEventListener('seeked', () => { if (canControl()) send('audio', { cmd: 'seek', t: a.currentTime }); });
+    a.addEventListener('loadedmetadata', () => { if (web && web.video) applyMediaCmd(web.video); paintAudio(); });
+    a.addEventListener('error', () => {
+      const h = $('web-a-hint');
+      if (h) h.textContent = 'این لینک صوتی پشتیبانی نشد؛ یک لینک مستقیم فایل صوتی (mp3 / m4a / ogg) بدهید';
+    });
+    a.addEventListener('canplay', () => { if (canControl()) { const p = a.play(); if (p && p.catch) p.catch(() => {}); } });
+    paintAudio();
+    setInterval(paintAudio, 500);
+  }
+  function spinDisc(on) {
+    const d = $('web-a-disc');
+    if (d) d.classList.toggle('playing', !!on);
+  }
+  function paintAudio() {
+    const a = $('web-audio');
+    if (!a) return;
+    const btn = $('web-a-play');
+    const seek = $('web-a-seek');
+    const cur = $('web-a-cur');
+    const dur = $('web-a-dur');
+    const playing = !a.paused;
+    if (btn) btn.innerHTML = bmIcon(playing ? 'pause' : 'play', 'text-[30px]', true);
+    const d = a.duration && isFinite(a.duration) ? a.duration : 0;
+    if (seek) seek.value = d > 0 ? Math.round((a.currentTime / d) * 1000) : 0;
+    if (cur) cur.textContent = fmtTime(a.currentTime);
+    if (dur) dur.textContent = fmtTime(d);
+  }
+  window.audioToggle = function () {
+    const a = $('web-audio');
+    if (!a) return;
+    if (a.paused) { const p = a.play(); if (p && p.catch) p.catch(() => {}); }
+    else a.pause();
+  };
+  window.onAudioSeek = function (val) {
+    const a = $('web-audio');
+    if (!a || !a.duration) return;
+    send('audio', { cmd: 'seek', t: (Number(val) / 1000) * a.duration });
+  };
+  window.onAudioVolume = function (val) {
+    const a = $('web-audio');
+    if (a) a.volume = Math.max(0, Math.min(1, Number(val) / 100));
+  };
+
+  // one shared player for both the video and the audio box
+  function applyMediaCmd(v) {
     if (!v) return;
     applying = true;
-    const el = $('web-video');
+    const el = mediaEl();
     if (el) {
       try {
         if (Math.abs((el.currentTime || 0) - (Number(v.t) || 0)) > 1.2) el.currentTime = Number(v.t) || 0;
@@ -595,8 +700,10 @@ let lastRatio = 0;
       ytCommand(v.cmd === 'seek' ? 'seek' : (v.playing ? 'play' : 'pause'), ytTime);
     }
     paintControls();
+    paintAudio();
     setTimeout(() => { applying = false; }, 150);
   }
+  const applyVideoCmd = applyMediaCmd;
 
   // ---------- socket hooks ----------
   window.bmWebState = function (d) {
@@ -662,7 +769,9 @@ let lastRatio = 0;
         setTimeout(() => { applying = false; }, 120);
       }
     } else if (web.kind === 'video' && d.kind === 'video') {
-      applyVideoCmd({ cmd: d.cmd, t: d.t, playing: d.cmd === 'play' });
+      applyMediaCmd({ cmd: d.cmd, t: d.t, playing: d.cmd === 'play' });
+    } else if (web.kind === 'audio' && d.kind === 'audio') {
+      applyMediaCmd({ cmd: d.cmd, t: d.t, playing: d.cmd === 'play' });
     }
   };
 
