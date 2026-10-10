@@ -10,6 +10,7 @@ const {
 } = require('./../lib/helpers');
 const sessions = require('./../lib/sessions');
 const pwd = require('./../lib/pwd');
+const usersdb = require('./../lib/usersdb');
 const otp = require('./../lib/otp');
 const internal = require('./../lib/internal');
 const bus = require('./../lib/bus');
@@ -116,7 +117,8 @@ router.post('/signup', (req, res) => {
 
     const ins = dbm.run(
       'INSERT INTO signup_requests (full_name, username, email, phone, password, status, created_at) VALUES (?,?,?,?,?,?,?)',
-      [full, user, email, phone, pass, 'pending', sqlNow()]
+      // the pending request stores the HASH, never the plain password
+      [full, user, email, phone, pwd.hashPassword(pass), 'pending', sqlNow()]
     );
     bus.srToManagers(EV.SR_NEW_REQUEST, { requestId: Number(ins.lastInsertRowid), name: full, ts: sqlNow() });
     return ok(res, { ok: true, pending: true, phone, msg: PENDING_SIGNUP_MSG });
@@ -135,6 +137,8 @@ router.post('/signup', (req, res) => {
     'INSERT INTO users (full_name, username, email, phone, password_hash, display_name, avatar_color, created_at) VALUES (?,?,?,?,?,?,?,?)',
     [full, user, email, phone, hash, full, avatarColor, sqlNow()]
   );
+  // mirror the new account into the users archive right away
+  try { usersdb.syncUser(Number(dbm.get('SELECT id FROM users WHERE username=?', [user]).id)); } catch (e) {}
   // if this phone had a waiting approval request, it is obsolete now
   dbm.run("DELETE FROM signup_requests WHERE status='pending' AND phone=?", [phone]);
 
@@ -485,6 +489,7 @@ router.post('/profile/update', (req, res) => {
   if (display === '') return bad(res, { ok: false, msg: 'نام نمایشی الزامی است' });
 
   dbm.run('UPDATE users SET display_name=? WHERE id=?', [display, me.id]);
+  usersdb.syncUser(me.id);
   if (req.session) req.session.data.display_name = display;
   sessions.save(req);
   return ok(res, { ok: true, display_name: display });
@@ -524,6 +529,7 @@ router.post('/profile/avatar', upload.single('avatar'), (req, res) => {
   fs.writeFileSync(abs, req.file.buffer);
 
   dbm.run('UPDATE users SET avatar=? WHERE id=?', [rel, me.id]);
+  usersdb.syncUser(me.id);
   return ok(res, { ok: true, avatar: avatarUrl(rel, req) });
 });
 
@@ -549,6 +555,48 @@ function usersForViewer(me) {
 }
 
 const VALID_RANKS = ['user', 'admin', 'premium'];
+
+// ------------------------------------------------------------------
+// Users archive (users_archive.db) — a durable copy of every account
+// ------------------------------------------------------------------
+router.get('/admin/users-archive', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  return ok(res, { ok: true, stats: usersdb.stats(), users: usersdb.listUsers() });
+});
+
+// download the archive file itself (manager only; it is never served publicly)
+router.get('/admin/users-archive/download', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  usersdb.syncAll();
+  if (!fs.existsSync(usersdb.ARCHIVE_PATH)) return bad(res, { ok: false, msg: 'فایل هنوز ساخته نشده است' });
+  return res.download(usersdb.ARCHIVE_PATH, 'users_archive.db');
+});
+
+// pull the accounts back into a fresh database (e.g. a brand-new Render instance)
+router.post('/admin/users-archive/restore', (req, res) => {
+  if (!checkMethod(req, res, 'POST')) return;
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  const r = usersdb.restore({ overwrite: req.body.overwrite === '1' || req.body.overwrite === true });
+  return ok(res, Object.assign({ ok: true }, r));
+});
+
+router.post('/admin/users-archive/export', (req, res) => {
+  if (!checkMethod(req, res, 'POST')) return;
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  const n = usersdb.syncAll();
+  const exported = usersdb.exportSnapshot();
+  return ok(res, { ok: true, synced: n, exported, dir: usersdb.EXPORT_DIR || null });
+});
 
 router.all('/admin/members', (req, res) => {
   if (!requireLoginApi(req, res)) return;
@@ -601,6 +649,7 @@ router.all('/admin/members', (req, res) => {
     if (!row.is_manager) { sets.push('rank=?'); params.push(rankVal); }
     params.push(uid);
     dbm.run('UPDATE users SET ' + sets.join(', ') + ' WHERE id=?', params);
+    usersdb.syncUser(uid);
 
     const updated = usersForViewer(me).find((u) => Number(u.id) === uid);
     return ok(res, { ok: true, user: updated || null });
@@ -612,6 +661,7 @@ router.all('/admin/members', (req, res) => {
     if (uid === Number(me.id)) return bad(res, { ok: false, msg: 'نمی‌توانید درجه خود را تغییر دهید' });
     if (row.is_manager) return bad(res, { ok: false, msg: 'درجه مدیر اصلی قابل تغییر نیست' }, 403);
     dbm.run('UPDATE users SET rank=? WHERE id=?', [nr, uid]);
+    usersdb.syncUser(uid);
     return ok(res, { ok: true, rank: nr, label: ranks.RANKS[nr].label });
   }
 
@@ -623,7 +673,9 @@ router.all('/admin/members', (req, res) => {
       for (let i = 0; i < 10; i++) np += chars[crypto.randomInt(0, chars.length)];
     }
     if (np.length < 6) return bad(res, { ok: false, msg: 'رمز عبور حداقل ۶ کاراکتر باشد' });
-    dbm.run('UPDATE users SET password_hash=? WHERE id=?', [np, uid]);
+    // always store a hash, never the plain password
+    dbm.run('UPDATE users SET password_hash=? WHERE id=?', [pwd.hashPassword(np), uid]);
+    usersdb.syncUser(uid);
     return ok(res, { ok: true, generated: (String(req.body.new_password || '').trim() === '') ? np : null });
   }
 
@@ -631,6 +683,7 @@ router.all('/admin/members', (req, res) => {
   if (uid === Number(me.id)) return bad(res, { ok: false, msg: 'نمی‌توانید حساب خود را محدود کنید' });
   if (row.is_manager) return bad(res, { ok: false, msg: 'مدیر را نمی‌توان محدود کرد' }, 403);
   dbm.run('UPDATE users SET is_limited = 1 - is_limited WHERE id=?', [uid]);
+  usersdb.syncUser(uid);
   const lim = dbm.get('SELECT is_limited FROM users WHERE id=?', [uid]);
   return ok(res, { ok: true, is_limited: !!lim.is_limited });
 });
@@ -709,6 +762,7 @@ router.post('/admin/signup-requests', (req, res) => {
     ['approved', sqlNow(), me.id, rid]);
 
   const created = dbm.get('SELECT id, full_name, username, display_name, email, phone, is_manager, is_limited, rank, avatar_color, avatar, created_at, password_hash FROM users WHERE username=?', [reqRow.username]);
+  usersdb.syncUser(Number(created.id)); // mirror into the users archive
   return ok(res, { ok: true, status: 'approved', user: created || null });
 });
 

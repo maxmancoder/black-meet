@@ -58,6 +58,11 @@ black_meet.db
 black_meet.db-*
 *.db-journal
 
+# Users archive (contains password hashes — never commit it)
+users_archive.db
+users_archive.db-*
+users-*.json
+
 # Smoke-test artifacts
 node-smoke.*
 

@@ -28,4 +28,4 @@ function storeUpgradedPassword(userId, newHash) {
   db.run('UPDATE users SET password_hash=? WHERE id=?', [newHash, userId]);
 }
 
-module.exports = { hashPassword, verifyAndUpgradePassword, storeUpgradedPassword };
+module.exports = { hashPassword, looksLikeHash, verifyAndUpgradePassword, storeUpgradedPassword };

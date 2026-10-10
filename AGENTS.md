@@ -177,6 +177,16 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Server gotcha**: `CALL_WEB_OPEN` normalised the kind with `msg.kind === 'video' ? 'video' : 'site'`, which silently turned every audio request into a SITE box (it rendered the mp3 URL through the site proxy). The ternary now knows `audio`, and the sync handler accepts `kind === 'audio'` as well as `video`.
 - Tests: `%TEMP%\opencode\shot18.js` **22/22** (menu entry, modal, dedicated player, duration read from the file, plays for the other user, shared pause/resume, maximize, admin delete, tiles return). Regression: shot17 19/19, shot16 27/27, `regress11.js` 14/14.
 
+## Users archive (`users_archive.db`)
+
+- `server/lib/usersdb.js` keeps a **separate, self-contained SQLite file** with a full mirror of the `users` table: `id, full_name, username, email, phone, display_name, password_hash, is_manager, is_limited, rank, avatar_color, avatar, created_at` (+ `updated_at` and a `sync_log`). Path: `BM_USERS_DB_PATH` or `users_archive.db` in the repo root; it is **gitignored** (it holds password hashes) and never served as a static file.
+- **Mirrored on every write**: `usersdb.syncUser(id)` is called after signup (open + approved), profile display name, avatar, admin profile edit, rank change, reset password and the limited toggle. `syncAll()` runs on boot and every 10 minutes as a safety net.
+- **Restore on boot** (`server/index.js` order matters): `usersdb.boot()` runs BEFORE `ensureAdmin()`, because on a fresh instance the live DB is empty — the admin seed would otherwise create one row and suppress the restore. `boot()` sees `live = 0 && archived > 0` and re-inserts every account; when the archive is the empty one it seeds itself from the live DB.
+- **Durable export**: with `BM_USERS_DB_EXPORT_DIR` set it writes `users-<ts>.json` + a copy of the `.db` next to it (that is the path that must point at persistent storage — see the Render caveats).
+- **Manager API** (`canManageUsers`): `GET api/admin/users-archive` (stats + list, no hashes), `GET api/admin/users-archive/download` (the file itself, 401/403 for anyone else), `POST api/admin/users-archive/restore {overwrite}`, `POST api/admin/users-archive/export`.
+- **Password safety fix that came with it**: approval-mode signups stored the PLAIN password in `signup_requests.password` and copied it into `users.password_hash`, and `reset_password` did the same. Signup now hashes on the way in, `reset_password` hashes too, and `index.js` migrates any legacy plaintext value (`looksLikeHash()` decides) in both `users` and pending `signup_requests`. Never store or mirror a plain password — the archive keeps the bcrypt hash.
+- Tests: `%TEMP%\opencode\usersdb-test.js` **18/18** — signup never stores a plain password, the account is mirrored with every field, profile/role edits are mirrored, manager can read stats/list/download (a visitor gets 401/403), and the real proof: with `BM_DB_PATH` pointed at an empty database the boot restores every account, keeps its role, and the restored account still verifies its original password.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.
