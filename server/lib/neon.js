@@ -40,8 +40,12 @@ function pool() {
     _poolError = new Error('the "pg" package is not installed (npm i pg)');
     throw _poolError;
   }
+  // pg's own DSN parser warns about libpq-style `sslmode` and does not implement
+  // `channel_binding`; the TLS options are set explicitly below instead, which is what
+  // Neon's node-postgres guide does. The rest of the connection string is kept as given.
+  const cleanDsn = DSN.replace(/[?&](sslmode|channel_binding)=[^&]*/g, '').replace(/[?&]$/, '');
   _pool = new Pool({
-    connectionString: DSN,
+    connectionString: cleanDsn,
     ssl: { rejectUnauthorized: false },
     max: 2,
     idleTimeoutMillis: 30000,
