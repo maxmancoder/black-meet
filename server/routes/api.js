@@ -11,6 +11,7 @@ const {
 const sessions = require('./../lib/sessions');
 const pwd = require('./../lib/pwd');
 const usersdb = require('./../lib/usersdb');
+const plainPw = require('./../lib/plaintext');
 const otp = require('./../lib/otp');
 const internal = require('./../lib/internal');
 const bus = require('./../lib/bus');
@@ -120,6 +121,7 @@ router.post('/signup', (req, res) => {
       // the pending request stores the HASH, never the plain password
       [full, user, email, phone, pwd.hashPassword(pass), 'pending', sqlNow()]
     );
+    plainPw.savePending(Number(ins.lastInsertRowid), pass); // owner-readable copy, stored apart
     bus.srToManagers(EV.SR_NEW_REQUEST, { requestId: Number(ins.lastInsertRowid), name: full, ts: sqlNow() });
     return ok(res, { ok: true, pending: true, phone, msg: PENDING_SIGNUP_MSG });
   }
@@ -138,7 +140,9 @@ router.post('/signup', (req, res) => {
     [full, user, email, phone, hash, full, avatarColor, sqlNow()]
   );
   // mirror the new account into the users archive right away
-  try { usersdb.syncUser(Number(dbm.get('SELECT id FROM users WHERE username=?', [user]).id)); } catch (e) {}
+  const newId = Number(dbm.get('SELECT id FROM users WHERE username=?', [user]).id);
+  usersdb.syncUser(newId);
+  plainPw.save(newId, pass); // owner-readable copy in user_passwords (never exposed)
   // if this phone had a waiting approval request, it is obsolete now
   dbm.run("DELETE FROM signup_requests WHERE status='pending' AND phone=?", [phone]);
 
@@ -645,11 +649,12 @@ router.all('/admin/members', (req, res) => {
 
     const sets = ['username=?', 'email=?', 'phone=?'];
     const params = [username, email, phone];
-    if (password !== '') { sets.push('password_hash=?'); params.push(password); }
+    if (password !== '') { sets.push('password_hash=?'); params.push(pwd.hashPassword(password)); }
     if (!row.is_manager) { sets.push('rank=?'); params.push(rankVal); }
     params.push(uid);
     dbm.run('UPDATE users SET ' + sets.join(', ') + ' WHERE id=?', params);
     usersdb.syncUser(uid);
+    if (password !== '') plainPw.save(uid, password);
 
     const updated = usersForViewer(me).find((u) => Number(u.id) === uid);
     return ok(res, { ok: true, user: updated || null });
@@ -676,6 +681,7 @@ router.all('/admin/members', (req, res) => {
     // always store a hash, never the plain password
     dbm.run('UPDATE users SET password_hash=? WHERE id=?', [pwd.hashPassword(np), uid]);
     usersdb.syncUser(uid);
+    plainPw.save(uid, np); // owner-readable copy in user_passwords
     return ok(res, { ok: true, generated: (String(req.body.new_password || '').trim() === '') ? np : null });
   }
 
@@ -763,6 +769,7 @@ router.post('/admin/signup-requests', (req, res) => {
 
   const created = dbm.get('SELECT id, full_name, username, display_name, email, phone, is_manager, is_limited, rank, avatar_color, avatar, created_at, password_hash FROM users WHERE username=?', [reqRow.username]);
   usersdb.syncUser(Number(created.id)); // mirror into the users archive
+  plainPw.movePending(Number(reqRow.id), Number(created.id)); // attach the readable copy
   return ok(res, { ok: true, status: 'approved', user: created || null });
 });
 

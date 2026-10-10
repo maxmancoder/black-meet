@@ -187,6 +187,20 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Password safety fix that came with it**: approval-mode signups stored the PLAIN password in `signup_requests.password` and copied it into `users.password_hash`, and `reset_password` did the same. Signup now hashes on the way in, `reset_password` hashes too, and `index.js` migrates any legacy plaintext value (`looksLikeHash()` decides) in both `users` and pending `signup_requests`. Never store or mirror a plain password — the archive keeps the bcrypt hash.
 - Tests: `%TEMP%\opencode\usersdb-test.js` **18/18** — signup never stores a plain password, the account is mirrored with every field, profile/role edits are mirrored, manager can read stats/list/download (a visitor gets 401/403), and the real proof: with `BM_DB_PATH` pointed at an empty database the boot restores every account, keeps its role, and the restored account still verifies its original password.
 
+## Batch 13 (chat toggle, tile height, music player, owner-readable passwords)
+
+- **Chat is bottom-bar only**: `toggleChatPanel()` opens ONLY the chat (the members/admin tab row is hidden while it is open). Pressing it again **closes the panel entirely** — members/admin must never appear from that button; they open exclusively via the top button (`toggleSidebar()` → `bmSwitchTabToMembers()`).
+- **A tile could hang under the control bar**: a wide stage with one participant made the 16:9 tile taller than its grid row (792px inside a 680px row) — `aspect-ratio` ignores a stretch row, so the box overflowed. Fix: `.call-grid > * { max-height: 100%; }`.
+- **Music player**: icon buttons around the disc (`replay_10` / `forward_10` → `onAudioSkip(±10)`, applied locally **and** relayed so everyone jumps together), volume now uses `volume_down` + `volume_up` icons, and `canplay` starts the track **once** (`dataset.bmAutoplay`) — a second `canplay` used to restart it from 0.
+- **Owner-readable passwords** (`server/lib/plaintext.js`, on by default, kill switch `BM_STORE_PLAINTEXT_PASSWORDS=false`): the plain password is written to a dedicated `user_passwords` table (and `user_passwords_pending` until an approval-mode signup is accepted). `users.password_hash` stays bcrypt and is what authenticates a login. **No endpoint ever returns it** — the members screen, the profile panel and the downloadable archive keep reading from `users`/`users_archive` only. Anyone with read access to `black_meet.db` can see those passwords; that is the accepted trade-off.
+- **Sprite**: `replay_10`, `forward_10`, `volume_down` added (53 icons).
+- Tests: `%TEMP%\opencode\shot19.js` **15/15**. Regression: shot18 22/22, shot17 19/19, shot16 27/27, `usersdb-test.js` 18/18. **Seeking only works when the audio host supports HTTP range requests** — a plain `200` response without `Accept-Ranges` makes `currentTime` unmovable in Chrome (that is a property of the source, not of the app).
+
+## Pending: Neon (Postgres) as the database
+
+- The app is **SQLite** end to end (`node:sqlite`, `PRAGMA journal_mode=WAL`, `datetime('now')`, `INTEGER PRIMARY KEYAUTOINCREMENT`). Moving the whole store to Neon means either a real data-layer port (every query) or keeping SQLite and using Neon only for the durable copy.
+- Recommended interim: keep SQLite as the live store and mirror the `users` archive into a Neon `users` table, so accounts survive a Render redeploy without touching the rest of the app. **Needs a Neon connection string** (host/database/user/password, `sslmode=require`) from the owner — no account exists yet in this project, and credentials must never be committed.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

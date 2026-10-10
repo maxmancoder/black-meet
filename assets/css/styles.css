@@ -521,6 +521,9 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
   overflow: hidden;
 }
 .call-grid > * { min-width: 0; min-height: 0; }
+/* aspect-ratio must never push a box past its own grid row (a wide stage made a single
+   16:9 tile taller than the stage, so it hung under the control bar) */
+.call-grid > * { max-height: 100%; }
 
 /* ===== Shared website / video box (always the biggest cell) ===== */
 /* height comes from the grid row layoutGrid() sets — never from the viewport,
@@ -585,6 +588,22 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
   white-space: nowrap;
   direction: ltr;
 }
+/* skip / play row: icon buttons around the spinning disc */
+.audio-row { display: flex; align-items: center; gap: clamp(14px, 3vw, 28px); }
+.audio-btn {
+  width: clamp(38px, 5vh, 46px);
+  height: clamp(38px, 5vh, 46px);
+  border-radius: 9999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgb(var(--bm-on-surface));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .2s var(--bm-squish), background-color .2s ease, color .2s ease;
+}
+.audio-btn:hover { background: rgba(var(--bm-primary), .28); color: rgb(var(--bm-primary)); transform: scale(1.08); }
+.audio-btn:active { transform: scale(.94); }
 .audio-bar, .audio-vol {
   display: flex;
   align-items: center;

@@ -602,9 +602,17 @@ let lastRatio = 0;
     body.classList.add('audio-body');
     body.innerHTML = `
       <div class="audio-player">
-        <div class="audio-disc" id="web-a-disc">
-          <button type="button" id="web-a-play" onclick="audioToggle()" title="پخش / توقف برای همه">
-            ${bmIcon('play', 'text-[30px]', true)}
+        <div class="audio-row">
+          <button type="button" id="web-a-back" onclick="onAudioSkip(-10)" class="audio-btn" title="۱۰ ثانیه عقب">
+            ${bmIcon('replay_10', 'text-[22px]')}
+          </button>
+          <div class="audio-disc" id="web-a-disc">
+            <button type="button" id="web-a-play" onclick="audioToggle()" title="پخش / توقف برای همه">
+              ${bmIcon('play', 'text-[30px]', true)}
+            </button>
+          </div>
+          <button type="button" id="web-a-fwd" onclick="onAudioSkip(10)" class="audio-btn" title="۱۰ ثانیه جلو">
+            ${bmIcon('forward_10', 'text-[22px]')}
           </button>
         </div>
         <p class="audio-title" id="web-a-title">—</p>
@@ -614,8 +622,9 @@ let lastRatio = 0;
           <span id="web-a-dur" class="audio-time">0:00</span>
         </div>
         <div class="audio-vol" dir="ltr" title="صدای پخش">
-          ${bmIcon('volume_up', 'text-[18px] text-primary')}
+          ${bmIcon('volume_down', 'text-[18px] text-primary')}
           <input id="web-a-vol" oninput="onAudioVolume(this.value)" type="range" min="0" max="100" value="100"/>
+          ${bmIcon('volume_up', 'text-[18px] text-primary')}
         </div>
         <p class="audio-hint" id="web-a-hint">پخش برای همه‌ی اعضای تماس</p>
       </div>
@@ -643,7 +652,15 @@ let lastRatio = 0;
       const h = $('web-a-hint');
       if (h) h.textContent = 'این لینک صوتی پشتیبانی نشد؛ یک لینک مستقیم فایل صوتی (mp3 / m4a / ogg) بدهید';
     });
-    a.addEventListener('canplay', () => { if (canControl()) { const p = a.play(); if (p && p.catch) p.catch(() => {}); } });
+    a.addEventListener('canplay', () => {
+      // start the room together, but only once per box: a second canplay would restart
+      // the track from the beginning
+      if (canControl() && a.dataset.bmAutoplay !== '1') {
+        a.dataset.bmAutoplay = '1';
+        const p = a.play();
+        if (p && p.catch) p.catch(() => {});
+      }
+    });
     paintAudio();
     setInterval(paintAudio, 500);
   }
@@ -675,6 +692,15 @@ let lastRatio = 0;
     const a = $('web-audio');
     if (!a || !a.duration) return;
     send('audio', { cmd: 'seek', t: (Number(val) / 1000) * a.duration });
+  };
+  // jump forward/back: the move is applied locally too (no lag for the person pressing)
+  window.onAudioSkip = function (secs) {
+    const a = $('web-audio');
+    if (!a || !a.duration) return;
+    const t = Math.max(0, Math.min(a.duration, a.currentTime + Number(secs || 0)));
+    try { a.currentTime = t; } catch (e) {}
+    send('audio', { cmd: 'seek', t: t });
+    paintAudio();
   };
   window.onAudioVolume = function (val) {
     const a = $('web-audio');

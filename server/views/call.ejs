@@ -346,6 +346,9 @@
       btn.classList.toggle('text-on-secondary-container', show);
       btn.classList.toggle('bg-surface-container-highest', !show);
     }
+    // the top button always owns the members/admin section: if the chat was open,
+    // opening the panel switches back to it (the chat only opens from the bottom bar)
+    if (show && window.bmSwitchTabToMembers) window.bmSwitchTabToMembers();
     // the stage just changed width: the video grid must be re-sized or the boxes
     // keep the old row heights and spill out of the page
     if (window.bmCallRelayout) window.bmCallRelayout();

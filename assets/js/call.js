@@ -1338,18 +1338,16 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     layoutGrid();
   };
   let currentTab = 'members';
-  // The chat lives in the bottom bar: pressing it shows ONLY the chat (members/admin are
-  // closed), pressing it again returns to members/admin. The button turns red while open.
+  // The chat lives in the bottom bar and the members/admin section lives behind the top
+  // button: pressing the chat key NEVER opens members/admin, and closing the chat closes
+  // the whole panel so only the video boxes are left.
   window.toggleChatPanel = function () {
-    const sb = $('call-sidebar');
-    const tabs = sb ? sb.querySelector(':scope > div') : null;
     if (currentTab === 'chat') {
-      toggleSidebar(true);
-      switchTab('members'); // back to the members/admin section (members by default)
+      switchTab('members');          // hide the chat panel (nothing is shown)
+      toggleSidebar(false);          // and close the panel -> only the boxes remain
     } else {
       toggleSidebar(true);
       switchTab('chat');
-      if (tabs) tabs.classList.add('hidden');
       const inp = $('chat-input');
       if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 120);
     }
@@ -1657,6 +1655,11 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     layoutGrid();
   };
   window.bmExitMaximize = exitMaximize;
+
+  // the top-bar button owns the members/admin section
+  window.bmSwitchTabToMembers = function () {
+    if (currentTab === 'chat') switchTab('members');
+  };
 
   // small hooks used by call-web.js
   window.bmCallRelayout = function () { layoutGrid(); };
