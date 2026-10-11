@@ -87,6 +87,9 @@ async function main() {
   upgradePlainPasswords();
   upgradePendingRequests();
 
+  // shared call files belong to a live session only — drop whatever a previous run left
+  require('./lib/callfiles').purgeInactive();
+
   ensureAdmin();
   const ustats = usersdb.stats();
   console.log('[users] archive: ' + ustats.archived + ' account(s) at ' + ustats.path);

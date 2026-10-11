@@ -39,7 +39,8 @@
 
   // ---------- modal ----------
   window.openWebModal = function (kind) {
-    modalKind = kind === 'video' ? 'video' : (kind === 'audio' ? 'audio' : 'site');
+    modalKind = kind === 'video' ? 'video'
+      : (kind === 'audio' ? 'audio' : (kind === 'file' ? 'file' : 'site'));
     closeWebMenu();
     const m = $('web-modal');
     if (!m) return;
@@ -47,31 +48,47 @@
     const tone = {
       video: 'bg-gradient-to-br from-tertiary-container to-secondary-container text-on-tertiary-container shadow-tertiary/20',
       audio: 'bg-gradient-to-br from-secondary-container to-primary-container text-on-secondary-container shadow-secondary/20',
+      file: 'bg-gradient-to-br from-primary-container to-tertiary-container text-on-primary-container shadow-primary/20',
       site: 'bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container shadow-primary/20',
     }[modalKind];
-    const ico = { video: 'movie', audio: 'volume_up', site: 'link' }[modalKind];
+    const ico = { video: 'movie', audio: 'volume_up', file: 'upload', site: 'link' }[modalKind];
     if (badge) {
       badge.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ' + tone;
       badge.innerHTML = bmIcon(ico, 'text-[26px]', false);
     }
     $('web-modal-title').textContent = modalKind === 'video' ? 'پخش لینک ویدیو'
-      : (modalKind === 'audio' ? 'پخش لینک صدا' : 'نمایش لینک سایت');
+      : (modalKind === 'audio' ? 'پخش لینک صدا'
+        : (modalKind === 'file' ? 'آپلود فایل برای همه' : 'نمایش لینک سایت'));
     $('web-modal-hint').textContent = modalKind === 'video'
       ? 'لینک آپارات، یوتیوب یا لینک مستقیم ویدیو (mp4/webm) را وارد کنید'
       : (modalKind === 'audio'
         ? 'لینک مستقیم یک فایل صوتی یا آهنگ (mp3 / m4a / ogg) را وارد کنید'
-        : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید');
-    $('web-url').value = web && web.kind === modalKind ? web.url : '';
+        : (modalKind === 'file'
+          ? 'فایلی که می‌خواهید به همه‌ی اعضای این جلسه نشان دهید را انتخاب کنید'
+          : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید'));
+    const isFile = modalKind === 'file';
+    $('web-url').parentElement.classList.toggle('hidden', isFile);
+    $('web-file-zone').classList.toggle('hidden', !isFile);
+    $('web-file-note-fallback') // no-op guard for older markup
+      ;
+    const noteEl = $('web-note');
+    if (noteEl) noteEl.classList.toggle('hidden', !isFile);
+    $('web-url').value = web && web.kind === modalKind && !isFile ? web.url : '';
     $('web-url').setAttribute('placeholder',
       modalKind === 'video' ? 'https://www.aparat.com/v/xxxx'
         : (modalKind === 'audio' ? 'https://example.com/music.mp3' : 'https://example.com'));
     const sw = $('web-follow');
     if (sw) sw.checked = followOn();
+    $('web-submit').textContent = isFile ? 'بارگذاری و نمایش' : 'تایید';
     m.classList.remove('hidden');
-    setTimeout(() => { const i = $('web-url'); if (i) i.focus(); }, 60);
+    setTimeout(() => {
+      if (isFile) { const d = $('web-file-drop'); if (d) d.click(); }
+      else { const i = $('web-url'); if (i) i.focus(); }
+    }, 60);
   };
   window.closeWebModal = function () { const m = $('web-modal'); if (m) m.classList.add('hidden'); };
   window.submitWebModal = function () {
+    if (modalKind === 'file') return uploadWebFile();
     const url = ($('web-url').value || '').trim();
     if (!url) { toast('لینک را وارد کنید'); return; }
     const s = socket();
@@ -81,6 +98,93 @@
       if (res && res.ok) closeWebModal();
     });
   };
+
+  // ---------- upload ----------
+  let pickedFile = null;
+  window.clearWebFile = function () {
+    pickedFile = null;
+    const inp = $('web-file-input');
+    if (inp) inp.value = '';
+    const card = $('web-file-card');
+    if (card) { card.classList.add('hidden'); card.classList.remove('flex'); }
+    $('web-file-bar') && $('web-file-bar').classList.add('hidden');
+    const d = $('web-file-drop');
+    if (d) d.classList.remove('hidden');
+  };
+  function faSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n >= 1048576) return (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' مگابایت';
+    if (n >= 1024) return Math.round(n / 1024) + ' کیلوبایت';
+    return n + ' بایت';
+  }
+  function pickWebFile(f) {
+    if (!f) return;
+    const max = window.BM_CALL_FILE_MAX || (50 * 1024 * 1024);
+    if (f.size > max) { toast('حجم فایل بیش از ' + faSize(max) + ' است'); return; }
+    pickedFile = f;
+    const card = $('web-file-card');
+    const drop = $('web-file-drop');
+    if (drop) drop.classList.add('hidden');
+    if (card) {
+      card.classList.remove('hidden');
+      card.classList.add('flex');
+      $('web-file-name').textContent = f.name;
+      $('web-file-size').textContent = faSize(f.size);
+    }
+  }
+  function uploadWebFile() {
+    if (!pickedFile) { toast('اول یک فایل انتخاب کنید'); return; }
+    const s = socket();
+    if (!s || !s.connected) { toast('اتصال زنده برقرار نیست'); return; }
+    const bar = $('web-file-bar');
+    const prog = $('web-file-prog');
+    const msg = $('web-file-msg');
+    const btn = $('web-submit');
+    if (bar) bar.classList.remove('hidden');
+    if (prog) prog.style.width = '15%';
+    if (msg) msg.textContent = 'در حال ارسال…';
+    if (btn) btn.disabled = true;
+
+    const room = (I.meeting && I.meeting.room) || (I.room || '');
+    const fd = new FormData();
+    fd.append('file', pickedFile);
+    fd.append('room', room);
+    // the API validates CSRF from the BODY (req.body.csrf), so it has to be in the form too
+    fd.append('csrf', window.CSRF || '');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', (window.BASE || '/black-meet') + '/api/call/file');
+    xhr.setRequestHeader('X-CSRF-Token', window.CSRF || '');
+    xhr.upload.onprogress = (ev) => {
+      if (prog && ev.lengthComputable) prog.style.width = Math.round(15 + (ev.loaded / ev.total) * 60) + '%';
+    };
+    xhr.onload = () => {
+      if (prog) prog.style.width = '100%';
+      let d = {};
+      try { d = JSON.parse(xhr.responseText); } catch (e) {}
+      if (btn) btn.disabled = false;
+      if (xhr.status !== 200 || !d.ok || !d.file) {
+        if (msg) msg.textContent = (d && d.msg) || 'بارگذاری انجام نشد';
+        toast((d && d.msg) || 'بارگذاری فایل انجام نشد');
+        return;
+      }
+      if (msg) msg.textContent = 'آپلود شد — در حال نمایش به همه…';
+      const sw = $('web-follow');
+      s.emit(EV.CALL_WEB_OPEN, {
+        kind: 'file', url: d.file.url, follow: !sw || sw.checked,
+      }, (res) => {
+        closeWebModal();
+        clearWebFile();
+        if (res && res.ok) toast('فایل برای همه‌ی اعضا نمایش داده شد');
+      });
+    };
+    xhr.onerror = () => {
+      if (btn) btn.disabled = false;
+      if (msg) msg.textContent = 'ارتباط برقرار نشد';
+      toast('ارتباط برقرار نشد');
+    };
+    xhr.send(fd);
+  }
+  window.pickWebFile = pickWebFile;
 
   // ---------- admin rights ----------
   window.openWebAdmin = function () {
@@ -180,23 +284,33 @@
 
   // ---------- rendering ----------
   function headerHtml(kind, host, isAdmin) {
-    const label = kind === 'video' ? 'ویدیو' : (kind === 'audio' ? 'صدا' : 'سایت');
-    const icon = kind === 'video' ? 'movie' : (kind === 'audio' ? 'volume_up' : 'link');
+    const label = kind === 'video' ? 'ویدیو' : (kind === 'audio' ? 'صدا' : (kind === 'file' ? 'فایل' : 'سایت'));
+    const icon = kind === 'video' ? 'movie' : (kind === 'audio' ? 'volume_up' : (kind === 'file' ? 'description' : 'link'));
     const lockNote = canControl() ? '' :
       `<span class="text-[11px] text-on-surface-variant flex items-center gap-1">${bmIcon('lock', 'text-[14px]', false)} فقط ادمین کنترل می‌کند</span>`;
+    // a file box also offers an explicit download, so a viewer can always keep it
+    const dl = kind === 'file' && web && web.url
+      ? `<a href="${escapeHtml(web.url)}?room=${encodeURIComponent(fileRoom())}&download=1" target="_blank" rel="noopener" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="دانلود فایل">${bmIcon('download', 'text-[16px]')}</a>` : '';
     return `
       <div class="web-head flex items-center gap-2 px-3 py-2 bg-surface-container-highest/90 backdrop-blur border-b border-white/10 shrink-0">
         ${bmIcon(icon, 'text-[18px] text-primary shrink-0')}
         <span class="font-label-md text-on-surface shrink-0">${label}</span>
-        <span class="text-[12px] text-on-surface-variant truncate" dir="ltr">${escapeHtml(host || '')}</span>
+        <span class="text-[12px] text-on-surface-variant truncate" dir="auto" title="${escapeHtml(host || '')}">${escapeHtml(host || '')}</span>
+        ${kind === 'file' && web && web.size ? `<span class="text-[11px] text-on-surface-variant shrink-0">${faSize(web.size)}</span>` : ''}
         <div class="flex-1"></div>
         ${lockNote}
+        ${dl}
         <button type="button" onclick="toggleWebMaximize()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="تمام‌صفحه">
           ${bmIcon((window.bmIsMaximized && window.bmIsMaximized()) ? 'fullscreen_exit' : 'fullscreen', 'text-[16px]')}
         </button>
         ${isAdmin ? `<button type="button" onclick="openWebAdmin()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="تنظیمات دسترسی">${bmIcon('shield_person', 'text-[16px]')}</button>` : ''}
         ${isAdmin ? `<button type="button" onclick="removeWebBox()" class="px-2.5 py-1.5 rounded-lg bg-error-container text-on-error-container" title="حذف باکس">${bmIcon('close', 'text-[16px]')}</button>` : ''}
       </div>`;
+  }
+
+  // the room id is needed to read a shared file: it is only ever readable by members
+  function fileRoom() {
+    return (I.meeting && I.meeting.room) || (I.room || '');
   }
 
   function escapeHtml(s) {
@@ -223,6 +337,7 @@
 
     const body = box.querySelector('.web-body');
     if (kind === 'site') mountSite(body);
+    else if (kind === 'file') mountFile(body);
     else if (kind === 'audio') {
       mountAudio(body);
       const hint = $('web-a-hint');
@@ -598,6 +713,69 @@ let lastRatio = 0;
     return /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|weba|mp4)(\?|#|$)/i.test(u) || /\b(audio|music|track)\b/i.test(u);
   }
 
+  // ---------- file box ----------
+  // The file is served by US (/black-meet/call-file/:id?room=…) so it only loads for members
+  // of this session. Images / pdf / text / video / audio are shown in place, everything else
+  // gets a card with a download button (the server forces `attachment` for those anyway).
+  function mountFile(body) {
+    const src = web.src || web.url;
+    const url = src + (src.indexOf('?') === -1 ? '?' : '&') + 'room=' + encodeURIComponent(fileRoom());
+    body.classList.remove('bg-black');
+    body.classList.add('bg-surface-container-low');
+
+    if (web.viewable === false) {
+      body.innerHTML = `
+        <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+          ${bmIcon('description', 'text-[40px] text-primary')}
+          <p class="font-body-sm text-body-sm text-on-surface break-all">${escapeHtml(web.name || 'فایل')}</p>
+          <p class="font-label-sm text-on-surface-variant text-[11px]">این فرمت به‌صورت مستقیم نمایش داده نمی‌شود</p>
+          <a href="${escapeHtml(url)}&download=1" target="_blank" rel="noopener"
+             class="btn-primary px-4 py-2 inline-flex items-center gap-2">${bmIcon('download', 'text-[18px]')} دانلود فایل</a>
+        </div>`;
+      return;
+    }
+
+    const frame = document.createElement('iframe');
+    frame.id = 'web-file-frame';
+    frame.setAttribute('title', 'shared file');
+    frame.className = 'absolute inset-0 w-full h-full border-0 bg-white';
+    frame.src = url;
+    body.appendChild(frame);
+    // an image needs no chrome; a pdf/text does fine full-bleed too
+    frame.addEventListener('load', () => bindFileFrame(frame));
+  }
+
+  // Scroll relay for a shared file. Only SAME-ORIGIN documents are measurable (images and
+  // text are, the browser's built-in pdf viewer is not) — so this works when it can and
+  // silently does nothing when it can not. Uses its own 'fscroll' sync kind so a file box
+  // never collides with the shared-website box.
+  function bindFileFrame(frame) {
+    if (frame.dataset.bmBound === '1') return;
+    frame.dataset.bmBound = '1';
+    const push = () => {
+      const r = currentRatio(frame);
+      if (r != null) send('fscroll', { ratio: r });
+    };
+    frame.addEventListener('load', push);
+    [800, 1800, 3600].forEach((ms) => setTimeout(push, ms));
+    frame.addEventListener('scroll', () => {
+      clearTimeout(frame._bmScrollT);
+      frame._bmScrollT = setTimeout(push, 140);
+    }, { passive: true });
+  }
+
+  function applyFileScroll(ratio) {
+    const frame = $('web-file-frame');
+    if (!frame) return;
+    try {
+      const d = docOf(frame);
+      if (!d) return;
+      const de = d.documentElement;
+      const max = Math.max(0, (de.scrollHeight || 0) - (frame.clientHeight || 0));
+      frame.contentWindow.scrollTo({ top: Math.round(ratio * max), behavior: 'smooth' });
+    } catch (e) { /* not same-origin (pdf): nothing to do */ }
+  }
+
   function mountAudio(body) {
     body.classList.add('audio-body');
     body.innerHTML = `
@@ -798,6 +976,10 @@ let lastRatio = 0;
       applyMediaCmd({ cmd: d.cmd, t: d.t, playing: d.cmd === 'play' });
     } else if (web.kind === 'audio' && d.kind === 'audio') {
       applyMediaCmd({ cmd: d.cmd, t: d.t, playing: d.cmd === 'play' });
+    } else if (web.kind === 'file' && d.kind === 'fscroll') {
+      applying = true;
+      applyFileScroll(Number(d.ratio) || 0);
+      setTimeout(() => { applying = false; }, 120);
     }
   };
 
@@ -807,6 +989,34 @@ let lastRatio = 0;
     if (urlInput) {
       urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitWebModal(); });
     }
+    // file picker + drag & drop
+    const fInput = $('web-file-input');
+    if (fInput) fInput.addEventListener('change', () => pickWebFile(fInput.files && fInput.files[0]));
+    const drop = $('web-file-drop');
+    if (drop) {
+      ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        drop.classList.add('bg-primary-container/40');
+      }));
+      ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        drop.classList.remove('bg-primary-container/40');
+      }));
+      drop.addEventListener('drop', (e) => {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) pickWebFile(f);
+      });
+    }
+    // drag & drop anywhere on the call page while the file dialog is open
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => {
+      const zone = $('web-file-zone');
+      if (zone && !zone.classList.contains('hidden')) {
+        e.preventDefault();
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) pickWebFile(f);
+      }
+    });
     document.addEventListener('click', (e) => {
       const menu = $('web-menu');
       const btn = $('btn-web');

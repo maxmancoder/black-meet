@@ -10,6 +10,7 @@ for (const k of Object.keys(internalRaw)) {
   internal[k] = (...a) => Promise.resolve(internalRaw[k](...a));
 }
 const { verifySocketToken } = require('./lib/helpers');
+const callfiles = require('./lib/callfiles');
 const { appConfig } = require('./lib/config');
 
 const SECRET = appConfig().secret;
@@ -308,6 +309,7 @@ function attach(httpServer) {
       if (!w || !w.kind || !w.url) return null;
       return {
         kind: w.kind, url: w.url, src: w.src, host: w.host,
+        name: w.name || '', size: Number(w.size) || 0, viewable: w.viewable !== false,
         ownerId: w.ownerId, ownerName: w.ownerName || '',
         controlAll: w.controlAll !== false,
         controllers: Array.from(w.controllers || []),
@@ -351,6 +353,21 @@ if (kind === 'audio') {
         // any http(s) URL; the browser decides whether it can stream it
         return { ok: true, url: abs.href, host, src: abs.href, audio: true };
       }
+      if (kind === 'file') {
+        // an uploaded file: NEVER a free-form URL. The client posts the bytes to
+        // /api/call/file and gets back an id; only that server-owned path is accepted, so a
+        // member cannot point the box at a remote page and call it "a file".
+        const m2 = String(rawUrl || '').match(/^\/black-meet\/call-file\/([a-f0-9]{24,64})(?:\?|$)/);
+        if (!m2) return { ok: false, error: 'BAD_URL' };
+        const meta = callfiles.meta(socket.data.room, m2[1]);
+        if (!meta) return { ok: false, error: 'NO_FILE' };
+        return {
+          ok: true,
+          url: '/black-meet/call-file/' + meta.id,
+          host: meta.name, src: '/black-meet/call-file/' + meta.id,
+          name: meta.name, size: meta.size, viewable: meta.viewable,
+        };
+      }
       if (kind === 'video') {
         // embed-ify the known providers, otherwise hand the URL to an <iframe>/<video>
         let embed = null;
@@ -376,10 +393,13 @@ if (kind === 'audio') {
       const s = r && r.sockets.get(socket.id);
       if (!r || !s) return;
       if (!s.approved) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_A_MEMBER' }); return; }
-      const kind = msg.kind === 'video' ? 'video' : (msg.kind === 'audio' ? 'audio' : 'site');
+      const kind = msg.kind === 'video' ? 'video'
+        : (msg.kind === 'audio' ? 'audio' : (msg.kind === 'file' ? 'file' : 'site'));
       const norm = normalizeWebTarget(kind, msg.url);
       if (!norm.ok) {
-        socket.emit(EV.WEB_ERR, { msg: 'لینک وارد شده معتبر نیست' });
+        socket.emit(EV.WEB_ERR, {
+          msg: norm.error === 'NO_FILE' ? 'این فایل دیگر در دسترس نیست' : 'لینک وارد شده معتبر نیست',
+        });
         if (typeof cb === 'function') cb({ ok: false, error: norm.error });
         return;
       }
@@ -393,6 +413,7 @@ if (kind === 'audio') {
       } : { controlAll: true, controllers: new Set(), viewersAll: true, viewers: new Set() };
       r.web = Object.assign({
         kind, url: norm.url, src: norm.src, host: norm.host,
+        name: norm.name || '', size: norm.size || 0, viewable: norm.viewable !== false,
         ownerId: uid, ownerName: s.name || '', scroll: null, video: null,
         // "دسترسی همزمان": when on, one person's scroll/click/play drives everyone
         follow: msg.follow !== false,
@@ -463,6 +484,13 @@ if (kind === 'audio') {
         const t = Math.max(0, Math.min(86400, Number(msg.t) || 0));
         payload.cmd = cmd; payload.t = t;
         r.web.video = { cmd, t, at: Date.now(), playing: cmd === 'play' };
+      } else if (kind === 'fscroll') {
+        // a shared FILE box: the viewer relays how far it is scrolled (images/text are
+        // same-origin so the client can measure them; a PDF viewer is not, and simply
+        // sends nothing)
+        const ratio = Math.max(0, Math.min(1, Number(msg.ratio) || 0));
+        r.web.scroll = { ratio, at: Date.now() };
+        payload.ratio = ratio;
       } else return;
       socket.to(socket.data.room).emit(EV.WEB_SYNC, payload);
     });

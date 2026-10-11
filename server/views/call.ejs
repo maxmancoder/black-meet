@@ -53,6 +53,14 @@
                         <span class="block font-label-sm text-on-surface-variant text-[11px]">پخش هم‌زمان یک آهنگ یا فایل صوتی</span>
                     </span>
                 </button>
+                <div class="h-px bg-white/10"></div>
+                <button type="button" data-no-soft onclick="openWebModal('file')" class="w-full flex items-center gap-3 px-3 py-3 text-right transition-colors hover:bg-primary-container/30">
+                    <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-container to-tertiary-container text-on-primary-container flex items-center justify-center shrink-0"><%- icon('upload', 'text-[20px]') %></span>
+                    <span class="min-w-0">
+                        <span class="block font-body-sm text-body-sm text-on-surface">آپلود فایل</span>
+                        <span class="block font-label-sm text-on-surface-variant text-[11px]">نمایش یک فایل برای همه تا پایان جلسه</span>
+                    </span>
+                </button>
             </div>
         </div>
         <div class="hidden sm:flex items-center gap-1 bg-surface-container-highest px-3 py-2 rounded-full" title="وضعیت اتصال زنده">
@@ -283,8 +291,32 @@
             <input id="web-url" dir="ltr" class="form-input pr-11" placeholder="https://example.com" type="text" inputmode="url"/>
             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"><%- icon('link', 'text-[18px]') %></span>
         </div>
+        <!-- file mode: the URL field above is hidden and this drop zone is used instead -->
+        <div id="web-file-zone" class="hidden mb-md">
+            <label id="web-file-drop" class="flex flex-col items-center justify-center gap-2 px-4 py-7 rounded-2xl border-2 border-dashed border-primary/45 bg-primary-container/15 text-center cursor-pointer transition-colors hover:bg-primary-container/25">
+                <span class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-container to-tertiary-container text-on-primary-container flex items-center justify-center"><%- icon('upload', 'text-[24px]') %></span>
+                <span class="font-body-sm text-body-sm text-on-surface">فایل را اینجا رها کنید یا کلیک کنید</span>
+                <span class="font-label-sm text-on-surface-variant text-[11px]">تصویر، PDF، متن، ویدیو، صدا و… — حداکثر <span id="web-file-max">۵۰</span> مگابایت</span>
+                <input id="web-file-input" type="file" class="hidden"/>
+            </label>
+            <div id="web-file-card" class="hidden items-center gap-3 px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30 mt-2">
+                <span class="w-9 h-9 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center shrink-0"><%- icon('description', 'text-[18px]') %></span>
+                <span class="min-w-0 flex-1">
+                    <span id="web-file-name" class="block font-body-sm text-body-sm text-on-surface truncate" dir="auto"></span>
+                    <span id="web-file-size" class="block font-label-sm text-on-surface-variant text-[11px]"></span>
+                </span>
+                <button type="button" onclick="clearWebFile()" class="px-2 py-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"><%- icon('close', 'text-[16px]') %></button>
+            </div>
+            <div id="web-file-bar" class="hidden mt-2">
+                <div class="h-1.5 rounded-full bg-surface-container-highest overflow-hidden"><div id="web-file-prog" class="h-full w-0 bg-primary transition-all"></div></div>
+                <p id="web-file-msg" class="font-label-sm text-on-surface-variant text-[11px] mt-1"></p>
+            </div>
+        </div>
         <p class="font-body-sm text-[12px] text-on-surface-variant mb-md bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2">
             باکس به همه‌ی اعضای تماس نشان داده می‌شود و همه می‌توانند آن را کنترل کنند (ادمین می‌تواند محدود کند).
+        </p>
+        <p id="web-note" class="hidden font-body-sm text-[12px] text-on-surface-variant mb-md bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2">
+            فایل فقط تا وقتی این جلسه فعال است نگه داشته می‌شود؛ به‌محض خروج آخرین عضو، فایل حذف می‌شود.
         </p>
         <label class="flex items-center justify-between gap-3 px-3 py-3 rounded-xl bg-gradient-to-l from-primary-container/40 to-secondary-container/30 border border-primary/25 mb-lg cursor-pointer">
             <span class="min-w-0">
@@ -298,7 +330,7 @@
             </span>
         </label>
         <div class="flex items-center gap-3">
-            <button type="button" onclick="submitWebModal()" class="btn-primary flex-1 text-center">تایید</button>
+            <button type="button" onclick="submitWebModal()" id="web-submit" class="btn-primary flex-1 text-center">تایید</button>
             <button type="button" onclick="closeWebModal()" class="btn-secondary flex-1 text-center">انصراف</button>
         </div>
     </div>
@@ -329,7 +361,7 @@
     <%- icon('error') %><span id="toast-message"></span></div></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script>window.INIT = <%- json(init) %>; window.__BM_isManager = <%- json(isManager) %>;</script>
+<script>window.INIT = <%- json(init) %>; window.__BM_isManager = <%- json(isManager) %>; window.CSRF = <%- json(csrf) %>;</script>
 <script src="<%- asset('assets/js/emoji-sfx.js') %>"></script>
 <script>
   // Sidebar open/close: one button toggles chat/members/admin on ALL screen sizes.

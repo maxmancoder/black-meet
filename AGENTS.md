@@ -209,6 +209,18 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - Regression: usersdb-test 18/18, shot19 15/15, regress11 14/14. (`e2e.js` / `verify-dom.js` were lost with the temp folder again.)
 - **Still needed from the owner**: a Neon project + connection string, then set it as the `NEON_DATABASE_URL` env var on Render (env-var edits do not restart the instance — trigger a deploy afterwards).
 
+## Batch 14 (shared file in the call — "آپلود فایل")
+
+- A 4th entry in the `#btn-web` menu, **directly under «لینک صدا»**: `openWebModal('file')` swaps the URL field for a drop zone (`#web-file-zone`, drag & drop + click, name/size card, progress bar) and the confirm button becomes «بارگذاری و نمایش». It shows the note that the file only lives as long as the session.
+- **Server** (`server/lib/callfiles.js`): one folder per room under `uploads/call/<roomKey>/`, the file is named by a **random id** (never the original name — the name is only displayed, escaped), the size cap is `BM_CALL_FILE_MAX` (50 MB) and `purgeInactive()` drops every folder of a room that is not active on boot.
+  - `POST /api/call/file` (multer, memory storage, `csrf` **in the form body** — `checkCsrf` only reads `req.body.csrf`, a header is ignored; `call.ejs` had to expose `window.CSRF` for this) and `GET /api/call/file/:id`.
+  - `GET /black-meet/call-file/:id?room=…` in `app.js` serves the bytes **only to members of that meeting**; viewable types are `inline`, everything else gets `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, and `&download=1` forces a download.
+  - **`app.use('/black-meet/uploads', …)` was narrowed to `uploads/avatars`** — mounting all of `uploads/` publicly exposed every shared file to anyone with the URL (they are now 403/404 without a session).
+- **Room state**: `normalizeWebTarget('file', …)` accepts ONLY `/black-meet/call-file/<id>` that exists in this room (a member cannot point the box at a remote page); `publicWeb()` carries `name`/`size`/`viewable`; `CALL_WEB_SYNC` gained the `fscroll` kind so the file box scrolls in sync without colliding with the site box.
+- **Deleted with the session**: `internal.closeMeeting()` calls `callfiles.purgeRoom(roomId)` — shot20 proves that when the second member leaves the folder is gone and the file is no longer downloadable.
+- **Sprite**: `upload`, `download`, `description`, `cloud_upload`, `snippet_folder` added (59 icons). Tests: `%TEMP%\opencode\callfiles-unit.js` **23/23** (name/mime/path handling, traversal, purge), `%TEMP%\opencode\shot20.js` **24/24** (two real accounts, upload → both see it, login-gated download, logout refused, delete-on-last-leave). Regression: shot19 15/15, shot18 22/22, shot17 19/19, shot16 27/27, regress11 14/14. `cleanup20.js` + `tidytmp.js`.
+- **Test trap**: two pages of the SAME account are two devices and the server drops the older socket (`/home`) on purpose — a multi-user test needs two different accounts, not two contexts.
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

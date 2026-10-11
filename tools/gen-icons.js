@@ -27,7 +27,9 @@ const ICONS = [
   'logout',   'mail', 'menu', 'mic', 'mic_off', 'more_vert', 'mood', 'movie',
   'network_check', 'notifications', 'person', 'replay_10', 'volume_down',
   'person_remove', 'phone', 'phone_iphone', 'record_voice_over', 'screen_share',
-  'search', 'send', 'shield_person', 'switch_camera', 'tune', 'video_call', 'video_library',
+  'search', 'send', 'shield_person', 'switch_camera', 'tune', 'upload', 'download',
+  'description', 'snippet_folder', 'cloud_upload',
+  'video_call', 'video_library',
   'videocam', 'videocam_off', 'volume_up',
 ];
 

@@ -162,6 +162,8 @@ function meetingState(roomId, userId) {
 
 function closeMeeting(roomId) {
   dbm.run('UPDATE meetings SET active=0 WHERE room_id=? AND active=1', [String(roomId)]);
+  // a shared call file lives only as long as the session: the room is gone, so are its files
+  try { require('./callfiles').purgeRoom(roomId); } catch (e) { /* never block the teardown */ }
   return { ok: true };
 }
 

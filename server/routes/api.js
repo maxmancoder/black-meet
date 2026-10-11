@@ -20,6 +20,7 @@ const { broadcastSecret } = require('./../lib/config');
 const themesLib = require('./../lib/themes');
 const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
+const callfiles = require('./../lib/callfiles');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -535,6 +536,69 @@ router.post('/profile/avatar', upload.single('avatar'), (req, res) => {
   dbm.run('UPDATE users SET avatar=? WHERE id=?', [rel, me.id]);
   usersdb.syncUser(me.id);
   return ok(res, { ok: true, avatar: avatarUrl(rel, req) });
+});
+
+// ------------------------------------------------------------------
+// shared file inside a call (the "آپلود فایل" entry of the link menu)
+// ------------------------------------------------------------------
+
+const callUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: callfiles.MAX_BYTES, files: 1 },
+});
+
+// the caller must be a participant of THAT room, so nobody can dump files into someone
+// else's session or read a shared link's file from outside
+function callRoomAccess(req, res, roomId) {
+  const me = sessions.currentUser(req);
+  if (!me) { bad(res, { ok: false, msg: 'ابتدا وارد شوید' }); return null; }
+  const m = internal.meetingByRoom(roomId);
+  if (!m || !m.active) { bad(res, { ok: false, msg: 'این جلسه دیگر فعال نیست' }); return null; }
+  const p = internal.participant(m.id, me.id);
+  if (!p) { bad(res, { ok: false, msg: 'شما عضو این جلسه نیستید' }); return null; }
+  return { me, meeting: m, participant: p };
+}
+
+router.post('/call/file', callUpload.single('file'), (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const roomId = String(req.body.room || req.query.room || '').trim();
+  const access = callRoomAccess(req, res, roomId);
+  if (!access) return;
+  if (!req.file) return bad(res, { ok: false, msg: 'فایلی انتخاب نشده است' });
+
+  const saved = callfiles.store(roomId, access.me.id, req.file);
+  if (!saved.ok) {
+    const msg = saved.error === 'too-large'
+      ? 'حجم فایل بیش از ' + Math.round(callfiles.MAX_BYTES / (1024 * 1024)) + ' مگابایت است'
+      : 'فایل قابل ذخیره نبود';
+    return bad(res, { ok: false, msg });
+  }
+  return ok(res, {
+    ok: true,
+    file: {
+      id: saved.file.id,
+      name: saved.file.name,
+      mime: saved.file.mime,
+      size: saved.file.size,
+      viewable: saved.file.viewable,
+      room: saved.file.room,
+      url: '/black-meet/call-file/' + saved.file.id,
+    },
+  });
+});
+
+// a member may re-open the box it uploaded (also how a late joiner finds out its name)
+router.get('/call/file/:id', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const id = String(req.params.id || '');
+  const roomId = String(req.query.room || req.body.room || '').trim();
+  if (!roomId) return bad(res, { ok: false, msg: 'room لازم است' });
+  const access = callRoomAccess(req, res, roomId);
+  if (!access) return;
+  const meta = callfiles.meta(roomId, id);
+  if (!meta) return bad(res, { ok: false, msg: 'فایل پیدا نشد' });
+  return ok(res, { ok: true, file: { id: meta.id, name: meta.name, mime: meta.mime, size: meta.size, viewable: meta.viewable } });
 });
 
 // ------------------------------------------------------------------
