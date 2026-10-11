@@ -221,6 +221,14 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 - **Sprite**: `upload`, `download`, `description`, `cloud_upload`, `snippet_folder` added (59 icons). Tests: `%TEMP%\opencode\callfiles-unit.js` **23/23** (name/mime/path handling, traversal, purge), `%TEMP%\opencode\shot20.js` **24/24** (two real accounts, upload → both see it, login-gated download, logout refused, delete-on-last-leave). Regression: shot19 15/15, shot18 22/22, shot17 19/19, shot16 27/27, regress11 14/14. `cleanup20.js` + `tidytmp.js`.
 - **Test trap**: two pages of the SAME account are two devices and the server drops the older socket (`/home`) on purpose — a multi-user test needs two different accounts, not two contexts.
 
+## Batch 15 (the shared link must survive the login — "درخواست ورود ارسال نمی‌شود")
+
+- **Root cause**: `sessions.requireLogin()` redirected a logged-out visitor to `/login` and **threw the meeting URL away**. They logged in, always landed on `/home`, never joined the room — so **no `CALL_JOIN` ever happened and the admin never got a join request**. It looked like "the request is not sent"; the request could never be created.
+- `requireLogin(req, res, base, next)` now appends `?next=<req.originalUrl>`; `pages.js` `/meeting` passes it. `auth.js` reads `?next` once (`NEXT`) and sends it with every `api/login/phone|verify|email` call; the two login endpoints return `sessions.safeNext(req.body.next, baseUrl(req)) || /home`.
+- `sessions.safeNext()` is the open-redirect guard: **`next` is a PATH and must start with our own mount prefix** (`/black-meet`) — an absolute URL, a protocol-relative `//evil`, a backslash or any CR/LF/tab is refused, and the result is rebuilt on our own origin. (First version compared the path against the *absolute* base URL and silently rejected everything — the test caught it.)
+- Tests: `%TEMP%\opencode\shot21.js` **14/14** — the manager's shared link → a logged-out visitor is bounced to `/login?next=…`, signs up from there, logs in, lands BACK in the room with the waiting screen, the admin sees the toast/beep + pending card + badge, `window.adminApprove(id)` releases them, and `?next=https://evil.example` is refused. Regression: shot20 24/24, shot19 15/15, shot18 22/22, regress11 14/14. `cleanup21.js`.
+- **Test trap (again)**: `evaluateOnNewDocument` + polling for `window.BM_SOCKET` to spy on socket events is unreliable here (the socket object is swapped on reconnect) — assert the OBSERVABLE result instead (toast text, `#join-requests` cards, `#admin-badge`).
+
 ## Security
 
 - Static serving is Express `express.static` over hardened-scoped mounts (`assets`, `fonts`, `shared`, `icons`, `uploads`); avatar uploads validate MIME + 2 MB cap via `multer`. `.htaccess` is deleted; don't reintroduce it.

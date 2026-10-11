@@ -129,15 +129,36 @@ function invalidate(req, res) {
   res.clearCookie(COOKIE, { path: '/' });
 }
 
-function requireLogin(req, res, base) {
+function requireLogin(req, res, base, next) {
   if (currentUser(req) === null) {
-    res.redirect(base + '/login');
+    // keep where the visitor was going (a shared meeting link!) so the login can send them
+    // back instead of silently dropping them on /home
+    const back = next || (req.originalUrl || '');
+    res.redirect(base + '/login' + (back && back !== '/' ? '?next=' + encodeURIComponent(back) : ''));
     return false;
   }
   return true;
 }
 
+// only ever redirect to OUR OWN pages: an absolute or protocol-relative target is refused, so
+// ?next=https://evil.example can not turn the login into an open redirect. `next` is a PATH
+// (e.g. /black-meet/meeting?room=x) and the result is an absolute URL on our own origin.
+function safeNext(next, base) {
+  const v = String(next || '').trim();
+  if (!v) return null;
+  if (!v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\')) return null;
+  if (/[\r\n\t]/.test(v)) return null;
+  let origin = '', prefix = '';
+  try {
+    const u = new URL(String(base || '/black-meet'));
+    origin = u.origin;
+    prefix = u.pathname.replace(/\/$/, '');
+  } catch (e) { return null; }
+  if (prefix && v !== prefix && v.indexOf(prefix + '/') !== 0) return null;
+  return origin + v;
+}
+
 module.exports = {
   loadSession, touch, csrfToken, csrfValid, establishLoginSession,
-  currentUser, invalidate, requireLogin, save,
+  currentUser, invalidate, requireLogin, safeNext, save,
 };

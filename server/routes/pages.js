@@ -208,7 +208,10 @@ router.get('/members', (req, res) => {
 });
 
 router.get('/meeting', (req, res) => {
-  if (!requireLogin(req, res)) return;
+  // a visitor who is not logged in yet keeps the room link: after login they land back
+  // here, which is what actually creates the join request for the meeting admin.
+  // req.originalUrl already carries the /black-meet mount prefix.
+  if (!requireLogin(req, res, baseUrl(req), req.originalUrl)) return;
   const room = String(req.query.room || '').trim();
   if (room === '') return res.redirect(baseUrl(req) + '/home');
 

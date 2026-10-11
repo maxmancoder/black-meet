@@ -234,7 +234,8 @@ router.post('/login/verify', (req, res) => {
   if (!user) return bad(res, { ok: false, msg: 'حساب یافت نشد' });
 
   sessions.establishLoginSession(req, res, user.id);
-  return ok(res, { ok: true, redirect: baseUrl(req) + '/home' });
+  // a visitor who opened a shared meeting link comes back to it (and only to our own pages)
+  return ok(res, { ok: true, redirect: sessions.safeNext(req.body.next, baseUrl(req)) || baseUrl(req) + '/home' });
 });
 
 router.post('/login/email', (req, res) => {
@@ -255,7 +256,7 @@ router.post('/login/email', (req, res) => {
   }
 
   sessions.establishLoginSession(req, res, user.id);
-  return ok(res, { ok: true, redirect: baseUrl(req) + '/home' });
+  return ok(res, { ok: true, redirect: sessions.safeNext(req.body.next, baseUrl(req)) || baseUrl(req) + '/home' });
 });
 
 router.post('/logout', (req, res) => {

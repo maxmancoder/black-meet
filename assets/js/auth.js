@@ -9,6 +9,14 @@
   const VIEWS = ['view-login-options', 'view-login-email', 'view-login-phone', 'view-signup', 'view-signup-pending', 'view-otp'];
   let pendingPhone = '';
 
+  // Where the visitor was heading before the login page (a shared meeting link). Sent with
+  // every login/signup request so the server can send them back there instead of /home.
+  const NEXT = new URLSearchParams(location.search).get('next') || '';
+  function withNext(data) {
+    if (!NEXT) return data;
+    return Object.assign({}, data, { next: NEXT });
+  }
+
   window.switchView = function (id) {
     VIEWS.forEach(v => {
       const el = document.getElementById(v);
@@ -138,7 +146,7 @@
     else code = document.getElementById('otp-input').value.trim();
     if (!code) return showToast('کد تأیید را وارد کنید');
     if (code.length < 6) return showToast('کد ۶ رقمی را کامل وارد کنید');
-    postJSON('api/login/verify', { csrf, phone: currentPhone, code, purpose: currentPurpose })
+    postJSON('api/login/verify', withNext({ csrf, phone: currentPhone, code, purpose: currentPurpose }))
       .then(d => {
         if (d.ok) { celebrateOtp(d.redirect); }
         else { flashOtpError(); showToast(d.msg || 'خطا'); }
@@ -228,7 +236,7 @@
     const email = document.getElementById('le-email').value.trim();
     const password = document.getElementById('le-pass').value;
     if (!email || !password) return showToast('ایمیل و رمز عبور را وارد کنید');
-    postJSON('api/login/email', { csrf, email, password })
+    postJSON('api/login/email', withNext({ csrf, email, password }))
       .then(d => {
         if (d.ok) { persistSession(); location.href = d.redirect; }
         else showToast(d.msg || 'خطا');
