@@ -13,6 +13,7 @@
   let web = null;              // authoritative server state for the active box
   let expanded = false;        // full-stage mode (per client, cosmetic)
   let modalKind = 'site';
+  let modalMode = 'link';
   let applying = false;        // guard so relayed input never echoes back
   let frameBound = false;
   let lastOwnEmit = 0;
@@ -66,29 +67,66 @@
         : (modalKind === 'file'
           ? 'فایلی که می‌خواهید به همه‌ی اعضای این جلسه نشان دهید را انتخاب کنید'
           : 'آدرس سایتی که می‌خواهید به همه نشان دهید را وارد کنید'));
-    const isFile = modalKind === 'file';
-    $('web-url').parentElement.classList.toggle('hidden', isFile);
-    $('web-file-zone').classList.toggle('hidden', !isFile);
-    $('web-file-note-fallback') // no-op guard for older markup
-      ;
+    // 'link' = the URL field, 'upload' = the picker. site is link-only, audio/video have both.
+    const canUpload = (modalKind === 'file' || modalKind === 'audio' || modalKind === 'video');
+    modalMode = (modalKind === 'file') ? 'upload' : 'link';
+    $('web-url').parentElement.classList.toggle('hidden', modalMode !== 'link');
+    $('web-file-zone').classList.toggle('hidden', modalMode !== 'upload');
+    const tabs = $('web-mode-tabs');
+    if (tabs) {
+      tabs.classList.toggle('hidden', !canUpload);
+      const lu = tabs.querySelector('[data-mode="link"]');
+      const uf = tabs.querySelector('[data-mode="upload"]');
+      if (lu) lu.className = 'flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors ' +
+        (modalMode === 'link' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-highest');
+      if (uf) uf.className = 'flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors ' +
+        (modalMode === 'upload' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-highest');
+    }
     const noteEl = $('web-note');
-    if (noteEl) noteEl.classList.toggle('hidden', !isFile);
-    $('web-url').value = web && web.kind === modalKind && !isFile ? web.url : '';
+    if (noteEl) noteEl.classList.toggle('hidden', modalMode !== 'upload');
+    $('web-url').value = web && web.kind === modalKind && modalMode === 'link' ? web.url : '';
     $('web-url').setAttribute('placeholder',
       modalKind === 'video' ? 'https://www.aparat.com/v/xxxx'
         : (modalKind === 'audio' ? 'https://example.com/music.mp3' : 'https://example.com'));
+    const hintEl = $('web-upload-hint');
+    if (hintEl && modalMode === 'upload') {
+      hintEl.textContent = modalKind === 'audio'
+        ? 'فقط فایل صوتی یا آهنگ (mp3 / m4a / ogg / wav)'
+        : (modalKind === 'video'
+          ? 'فقط فایل ویدیویی، حداکثر ۲۰ مگابایت (mp4 / webm)'
+          : 'تصویر، PDF، متن، ویدیو، صدا و… — حداکثر ۵۰ مگابایت');
+    }
     const sw = $('web-follow');
     if (sw) sw.checked = followOn();
-    $('web-submit').textContent = isFile ? 'بارگذاری و نمایش' : 'تایید';
+    $('web-submit').textContent = modalMode === 'upload' ? 'بارگذاری و نمایش' : 'تایید';
     m.classList.remove('hidden');
     setTimeout(() => {
-      if (isFile) { const d = $('web-file-drop'); if (d) d.click(); }
+      if (modalMode === 'upload') { const d = $('web-file-drop'); if (d) d.click(); }
       else { const i = $('web-url'); if (i) i.focus(); }
     }, 60);
   };
+  // switch between "paste a link" and "upload a file" inside the same dialog
+  window.setWebMode = function (mode) {
+    if (mode === modalMode) return;
+    modalMode = (mode === 'upload') ? 'upload' : 'link';
+    $('web-url').parentElement.classList.toggle('hidden', modalMode !== 'link');
+    $('web-file-zone').classList.toggle('hidden', modalMode !== 'upload');
+    const noteEl = $('web-note');
+    if (noteEl) noteEl.classList.toggle('hidden', modalMode !== 'upload');
+    const tabs = $('web-mode-tabs');
+    if (tabs) {
+      const lu = tabs.querySelector('[data-mode="link"]');
+      const uf = tabs.querySelector('[data-mode="upload"]');
+      if (lu) lu.className = 'flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors ' +
+        (modalMode === 'link' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-highest');
+      if (uf) uf.className = 'flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors ' +
+        (modalMode === 'upload' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-highest');
+    }
+    $('web-submit').textContent = modalMode === 'upload' ? 'بارگذاری و نمایش' : 'تایید';
+  };
   window.closeWebModal = function () { const m = $('web-modal'); if (m) m.classList.add('hidden'); };
   window.submitWebModal = function () {
-    if (modalKind === 'file') return uploadWebFile();
+    if (modalMode === 'upload') return uploadWebFile();
     const url = ($('web-url').value || '').trim();
     if (!url) { toast('لینک را وارد کنید'); return; }
     const s = socket();
@@ -119,8 +157,17 @@
   }
   function pickWebFile(f) {
     if (!f) return;
-    const max = window.BM_CALL_FILE_MAX || (50 * 1024 * 1024);
-    if (f.size > max) { toast('حجم فایل بیش از ' + faSize(max) + ' است'); return; }
+    const AUDIO = /^audio\//i;
+    const VIDEO = /^video\//i;
+    const maxVideo = 20 * 1024 * 1024;
+    const maxAll = window.BM_CALL_FILE_MAX || (50 * 1024 * 1024);
+    // the dialog knows which kind of file this box is for
+    if (modalKind === 'audio' && !AUDIO.test(f.type)) { toast('برای این بخش فقط فایل صوتی یا آهنگ می‌توانید آپلود کنید'); return; }
+    if (modalKind === 'video') {
+      if (!VIDEO.test(f.type)) { toast('برای این بخش فقط فایل ویدیویی می‌توانید آپلود کنید'); return; }
+      if (f.size > maxVideo) { toast('حجم ویدیو باید کمتر از ۲۰ مگابایت باشد'); return; }
+    }
+    if (f.size > maxAll) { toast('حجم فایل بیش از ' + faSize(maxAll) + ' است'); return; }
     pickedFile = f;
     const card = $('web-file-card');
     const drop = $('web-file-drop');
@@ -170,7 +217,11 @@
       if (msg) msg.textContent = 'آپلود شد — در حال نمایش به همه…';
       const sw = $('web-follow');
       s.emit(EV.CALL_WEB_OPEN, {
-        kind: 'file', url: d.file.url, follow: !sw || sw.checked,
+        // `kind` = which box, `mode` = that a call-file is shown as audio/video/file
+        kind: modalKind,
+        mode: modalKind === 'file' ? 'file' : modalKind,
+        url: d.file.url,
+        follow: !sw || sw.checked,
       }, (res) => {
         closeWebModal();
         clearWebFile();
@@ -311,6 +362,12 @@
   // the room id is needed to read a shared file: it is only ever readable by members
   function fileRoom() {
     return (I.meeting && I.meeting.room) || (I.room || '');
+  }
+  // a call-file is served by us and gated by ?room=…; leave remote URLs untouched
+  function withRoom(u) {
+    const s = String(u || '');
+    if (s.indexOf('/black-meet/call-file/') !== 0) return s;
+    return s + (s.indexOf('?') === -1 ? '?' : '&') + 'room=' + encodeURIComponent(fileRoom());
   }
 
   function escapeHtml(s) {
@@ -550,7 +607,10 @@ let lastRatio = 0;
 
   // ---------- video box ----------
   function isDirectMedia(u) {
-    return /\.(mp4|webm|ogv|ogg|mov|m4v|m3u8)(\?|#|$)/i.test(u);
+    // an uploaded call-file has no extension to look at — the server tells us the mime
+    const s = String(u || '');
+    if (s.indexOf('/black-meet/call-file/') === 0) return /^video\//i.test(String((web && web.mime) || ''));
+    return /\.(mp4|webm|ogv|ogg|mov|m4v|m3u8)(\?|#|$)/i.test(s);
   }
 
   // One shared video: play/pause/seek go through the socket, so stopping it anywhere
@@ -630,12 +690,12 @@ let lastRatio = 0;
     if (!isEmbed && isDirectMedia(web.url)) {
       const v = document.createElement('video');
       v.id = 'web-video';
-      v.src = web.url;
+      v.src = withRoom(web.url);
       v.controls = false;
       v.playsInline = true;
       v.className = 'absolute inset-0 w-full h-full bg-black';
       body.appendChild(v);
-      v.addEventListener('play', () => { if (canControl()) send('video', { cmd: 'play', t: v.currentTime }); paintControls(); });
+      v.addEventListener('play', () => { if (canControl()) send('video', { cmd: 'play', t: v.currentTime }); paintControls(); hidePlayHint(); });
       v.addEventListener('pause', () => { if (canControl()) send('video', { cmd: 'pause', t: v.currentTime }); paintControls(); });
       v.addEventListener('seeked', () => { if (canControl()) send('video', { cmd: 'seek', t: v.currentTime }); });
       v.addEventListener('timeupdate', () => {
@@ -644,10 +704,7 @@ let lastRatio = 0;
       });
       startVideoControls();
       // the room starts together: the opener plays, everybody else receives the command
-      if (canControl()) {
-        const p = v.play();
-        if (p && p.catch) p.catch(() => {});
-      }
+      if (canControl()) tryPlay(v, 'برای پخش هم‌زمان ویدیو کلیک کنید');
       // late joiners land on the position the room is already at
       setTimeout(() => { if (web && web.video) applyVideoCmd(web.video); }, 500);
       return;
@@ -735,6 +792,34 @@ let lastRatio = 0;
       return;
     }
 
+    // A dedicated viewer per type instead of a bare iframe: an image gets a real
+    // light-box-free fit view, video/audio get the shared player.
+    const mime = String(web.mime || '');
+    if (/^image\//i.test(mime)) {
+      body.innerHTML = `
+        <div class="absolute inset-0 flex items-center justify-center bg-black/90 p-2">
+          <img src="${escapeHtml(url)}" alt="${escapeHtml(web.name || '')}"
+               class="max-w-full max-h-full object-contain rounded-lg"/>
+        </div>`;
+      return;
+    }
+    if (/^video\//i.test(mime)) {
+      body.innerHTML = `<video id="web-file-video" src="${escapeHtml(url)}" controls playsinline
+        class="absolute inset-0 w-full h-full bg-black"></video>`;
+      return;
+    }
+    if (/^audio\//i.test(mime)) {
+      body.innerHTML = `
+        <div class="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+          <div class="w-28 h-28 rounded-full bg-gradient-to-br from-primary-container to-secondary-container flex items-center justify-center shadow-xl shadow-primary/20">
+            ${bmIcon('volume_up', 'text-[46px] text-on-primary-container', true)}
+          </div>
+          <p class="font-body-sm text-body-sm text-on-surface text-center break-all">${escapeHtml(web.name || 'فایل صوتی')}</p>
+          <audio id="web-file-audio" src="${escapeHtml(url)}" controls class="w-full max-w-sm"></audio>
+        </div>`;
+      return;
+    }
+
     const frame = document.createElement('iframe');
     frame.id = 'web-file-frame';
     frame.setAttribute('title', 'shared file');
@@ -776,6 +861,83 @@ let lastRatio = 0;
     } catch (e) { /* not same-origin (pdf): nothing to do */ }
   }
 
+  // ---------- shared playback: autoplay is blocked until the user interacts ----------
+  // Chrome refuses to start media with sound on a page the user has not touched yet, so the
+  // receivers silently stayed paused. We retry a few times and, if it is still refused,
+// show a one-tap overlay. The error used to be swallowed by `.catch(() => {})`, which is
+  // exactly why "play for everybody" looked broken.
+  let playHintEl = null;
+  let playRetry = null;
+  // what the room last asked for — a retry loop must never resurrect a paused player
+  let playWanted = false;
+
+  function stopPlayRetry() {
+    if (playRetry) { clearInterval(playRetry); playRetry = null; }
+    playWanted = false;
+  }
+
+  function showPlayHint(el, what) {
+    hidePlayHint();
+    const box = document.getElementById('web-box');
+    if (!box) return;
+    const hint = document.createElement('button');
+    hint.type = 'button';
+    hint.id = 'web-play-hint';
+    hint.className = 'absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/55 backdrop-blur-sm text-white';
+    hint.innerHTML = bmIcon('play', 'text-[44px]', true) +
+      '<span class="font-body-sm text-body-sm">' + (what || 'برای پخش هم‌زمان کلیک کنید') + '</span>';
+    hint.onclick = (e) => {
+      e.stopPropagation();
+      try { const p = el.play(); if (p && p.catch) p.catch(() => { }); } catch (err) { }
+      hidePlayHint();
+    };
+    box.appendChild(hint);
+    playHintEl = hint;
+  }
+  function hidePlayHint() {
+    if (playHintEl && playHintEl.parentNode) playHintEl.parentNode.removeChild(playHintEl);
+    playHintEl = null;
+  }
+  // returns true when the element is actually playing
+function tryPlay(el, what) {
+    if (!el) return false;
+    playWanted = true;
+    try {
+      const p = el.play();
+      if (!p || !p.catch) { hidePlayHint(); return true; }
+      p.catch(() => {
+        if (!playWanted) return;
+        // NotAllowedError = autoplay blocked. Try once on the next gesture, then ask.
+        const once = () => {
+          document.removeEventListener('pointerdown', once, true);
+          document.removeEventListener('keydown', once, true);
+          if (playWanted) tryPlay(el, what);
+        };
+        document.addEventListener('pointerdown', once, true);
+        document.addEventListener('keydown', once, true);
+        if (playRetry) clearInterval(playRetry);
+        let tries = 0;
+        playRetry = setInterval(() => {
+          if (!playWanted) { clearInterval(playRetry); playRetry = null; return; }
+          tries++;
+          if (tries > 8) { clearInterval(playRetry); playRetry = null; showPlayHint(el, what); return; }
+          try {
+            const q = el.play();
+            if (q && q.then) q.then(() => { if (playRetry) { clearInterval(playRetry); playRetry = null; } hidePlayHint(); }).catch(() => { });
+          } catch (e) { }
+        }, 350);
+      });
+      return true;
+    } catch (e) { showPlayHint(el, what); return false; }
+  }
+  // one user pressed play/pause -> everybody must do the same
+  function broadcastPlayState(el, what) {
+    if (!el) return;
+    const kind = web && web.kind === 'audio' ? 'audio' : 'video';
+    send(kind, { cmd: el.paused ? 'pause' : 'play', t: el.currentTime });
+    if (!el.paused) hidePlayHint();
+  }
+
   function mountAudio(body) {
     body.classList.add('audio-body');
     body.innerHTML = `
@@ -809,7 +971,7 @@ let lastRatio = 0;
       <audio id="web-audio" preload="metadata" class="hidden" src=""></audio>`;
     const a = $('web-audio');
     if (!a) return;
-    a.src = web.url || web.src;
+    a.src = withRoom(web.url || web.src);
     const title = $('web-a-title');
     if (title) {
       title.textContent = decodeURIComponent(String(web.url || '').split('/').pop().split('?')[0]) || 'فایل صوتی';
@@ -835,8 +997,7 @@ let lastRatio = 0;
       // the track from the beginning
       if (canControl() && a.dataset.bmAutoplay !== '1') {
         a.dataset.bmAutoplay = '1';
-        const p = a.play();
-        if (p && p.catch) p.catch(() => {});
+        tryPlay(a, 'برای پخش هم‌زمان صدا کلیک کنید');
       }
     });
     paintAudio();
@@ -863,8 +1024,20 @@ let lastRatio = 0;
   window.audioToggle = function () {
     const a = $('web-audio');
     if (!a) return;
-    if (a.paused) { const p = a.play(); if (p && p.catch) p.catch(() => {}); }
-    else a.pause();
+    if (a.paused) {
+      // the move is applied locally first (no lag) AND relayed, so stopping it anywhere
+      // stops it for everybody
+      const p = a.play();
+      if (p && p.catch) p.catch(() => { });
+      playWanted = true;
+      send('audio', { cmd: 'play', t: a.currentTime });
+    } else {
+      stopPlayRetry();
+      a.pause();
+      send('audio', { cmd: 'pause', t: a.currentTime });
+    }
+    paintAudio();
+    hidePlayHint();
   };
   window.onAudioSeek = function (val) {
     const a = $('web-audio');
@@ -893,8 +1066,10 @@ let lastRatio = 0;
     if (el) {
       try {
         if (Math.abs((el.currentTime || 0) - (Number(v.t) || 0)) > 1.2) el.currentTime = Number(v.t) || 0;
-        if (v.playing) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }
-        else el.pause();
+        if (v.playing) {
+          // autoplay may still be refused on this client -> retry / one-tap overlay
+          tryPlay(el, web && web.kind === 'audio' ? 'برای پخش هم‌زمان صدا کلیک کنید' : 'برای پخش هم‌زمان ویدیو کلیک کنید');
+        } else { stopPlayRetry(); el.pause(); hidePlayHint(); }
       } catch (e) {}
       ytTime = Number(v.t) || 0;
       ytPlaying = !!v.playing;

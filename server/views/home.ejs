@@ -156,16 +156,16 @@
 
 <!-- Mobile bottom nav -->
 <nav class="md:hidden bg-surface-container/60 fixed bottom-0 w-full z-50 rounded-t-xl backdrop-blur-xl border-t border-white/10 shadow-xl flex justify-around items-center h-20 px-md">
-    <a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1" href="<%- url('home') %>">
+    <a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] bg-secondary-container text-on-secondary-container rounded-full px-4 py-1" href="<%- url('home') %>">
         <%- icon('home', '', true) %><span class="font-label-md text-label-md mt-1">خانه</span></a>
     <% if (limited) { %>
-    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="#" onclick="document.getElementById('toast-message').textContent='حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد';document.getElementById('toast').classList.remove('hidden');setTimeout(()=>document.getElementById('toast').classList.add('hidden'),4000);return false;">
+    <a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 text-on-surface-variant" href="#" onclick="document.getElementById('toast-message').textContent='حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد';document.getElementById('toast').classList.remove('hidden');setTimeout(()=>document.getElementById('toast').classList.add('hidden'),4000);return false;">
         <%- icon('video_call') %><span class="font-label-md text-label-md mt-1">تماس</span></a>
     <% } else { %>
-    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="<%- url('create') %>">
+    <a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 text-on-surface-variant" href="<%- url('create') %>">
         <%- icon('video_call') %><span class="font-label-md text-label-md mt-1">تماس</span></a>
     <% } %>
-    <a class="flex flex-col items-center justify-center text-on-surface-variant" href="<%- url('profile') %>">
+    <a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 text-on-surface-variant" href="<%- url('profile') %>">
         <%- icon('person') %><span class="font-label-md text-label-md mt-1">پروفایل</span></a>
 </nav>
 

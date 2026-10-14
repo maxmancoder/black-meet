@@ -40,6 +40,21 @@
             </label>
         </div>
 
+        <!-- "join without approval": off by default, so people still wait for the admin -->
+        <div class="mt-md flex items-center justify-between gap-4 p-4 rounded-xl bg-gradient-to-l from-secondary-container/40 to-primary-container/30 border border-secondary/30 bm-soft">
+            <div class="flex items-center gap-3 min-w-0">
+                <%- icon('group', 'text-secondary flex-shrink-0', false, 'id="openjoin-icon"') %>
+                <div class="min-w-0">
+                    <h3 class="font-body-sm font-semibold text-on-surface">ورود بدون تایید ادمین</h3>
+                    <p class="font-label-sm text-on-surface-variant text-[12px] leading-5" id="openjoin-hint">هر کسی که لینک تماس را داشته باشد مستقیم وارد می‌شود. اگر خاموش باشد، کاربران تا تایید شما منتظر می‌مانند.</p>
+                </div>
+            </div>
+            <label class="bm-switch flex-shrink-0">
+                <input type="checkbox" id="open-join"/>
+                <span class="bm-switch-slider"></span>
+            </label>
+        </div>
+
         <% if (quotaText) { %>
         <div class="mt-md flex items-center justify-between gap-2 p-3 rounded-lg bg-surface-container-low border border-outline-variant/30">
             <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2"><%- icon('calendar_add_on', 'text-[18px] text-primary') %> سقف تماس امروز شما</span>

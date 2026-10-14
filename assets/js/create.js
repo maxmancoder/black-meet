@@ -29,6 +29,18 @@
   }
   if (mediaToggle) mediaToggle.addEventListener('change', updateMediaHint);
 
+  // "ورود بدون تایید ادمین" — off by default; the hint follows the switch
+  const openJoin = document.getElementById('open-join');
+  if (openJoin) {
+    openJoin.addEventListener('change', () => {
+      const icon = document.getElementById('openjoin-icon');
+      setBMIcon(icon, openJoin.checked ? 'group' : 'lock', false);
+      document.getElementById('openjoin-hint').textContent = openJoin.checked
+        ? 'هر کسی که لینک تماس را داشته باشد بدون انتظار وارد می‌شود. می‌توانید همین‌جا خاموشش کنید.'
+        : 'هر کسی که لینک تماس را داشته باشد مستقیم وارد می‌شود. اگر خاموش باشد، کاربران تا تایید شما منتظر می‌مانند.';
+    });
+  }
+
   window.createMeeting = function () {
     const title = document.getElementById('meeting-title').value.trim();
     const btn = document.getElementById('create-btn');
@@ -36,7 +48,11 @@
     fetch('api/meetings/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrf, title, default_media: mediaToggle && mediaToggle.checked ? '1' : '0' })
+      body: new URLSearchParams({
+        csrf, title,
+        default_media: mediaToggle && mediaToggle.checked ? '1' : '0',
+        open_join: openJoin && openJoin.checked ? '1' : '0',
+      })
     })
       .then(r => r.json())
       .then(d => {

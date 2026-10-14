@@ -32,7 +32,7 @@
 <div class="flex-1 flex flex-col min-h-screen relative z-10 w-full md:pl-80">
     <header class="bg-background/80 backdrop-blur-md fixed top-0 w-full z-50 flex items-center justify-between px-lg py-md">
         <a href="<%- url('home') %>" class="font-display-md text-display-md font-bold text-primary">Black Meet</a>
-        <a href="<%- url('home') %>" class="text-on-surface-variant hover:text-on-surface"><%- icon('close') %></a>
+        <a href="<%- url('home') %>" aria-label="بازگشت به خانه" class="-m-2 p-3 text-on-surface-variant hover:text-on-surface rounded-full"><%- icon('close') %></a>
     </header>
 
     <main class="flex-1 pt-24 pb-20 px-4 md:px-lg max-w-3xl mx-auto w-full">
@@ -91,7 +91,7 @@
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کاربری</span><span class="bm-infobox-val" dir="ltr">@<%- esc(me.username) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">نام نمایشی</span><span class="bm-infobox-val"><%- esc(me.display_name) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">ایمیل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.email) %></span></div>
-                <div class="bm-infobox"><span class="bm-infobox-title">رمز هش شده</span><span class="bm-infobox-val"><%- icon('lock', 'text-[16px] align-middle', true) %> هش شده</span></div>
+                <div class="bm-infobox"><span class="bm-infobox-title">رمز عبور</span><span class="bm-infobox-val"><%- icon('lock', 'text-[16px] align-middle', true) %> ****************</span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">شماره موبایل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.phone) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">نقش</span><span class="bm-infobox-val"><%- rankLabel %></span></div>
             </div>

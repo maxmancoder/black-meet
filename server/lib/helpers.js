@@ -134,7 +134,12 @@ function assetUrl(p, req) {
 function avatarUrl(avatar, req) {
   if (!avatar) return '';
   if (/^https?:\/\//i.test(avatar)) return avatar;
-  return baseUrl(req) + '/' + String(avatar).replace(/^\/+/, '');
+  const rel = String(avatar).replace(/^\/+/, '');
+  // cache-bust on the file's mtime: a changed photo gets a NEW url, so a 30-day immutable
+  // cache is safe and profile pictures stop re-downloading on every page view
+  let v = 0;
+  try { v = Math.floor(fs.statSync(path.join(dbm.rootDir, rel)).mtimeMs); } catch (e) { v = 0; }
+  return baseUrl(req) + '/' + rel + (v ? '?v=' + v : '');
 }
 
 function turnConfig() {

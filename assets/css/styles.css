@@ -355,6 +355,22 @@ button, .btn-primary, .btn-secondary, .bm-switch {
 }
 #control-bar.bar-collapsed .bm-bar-item,
 #control-bar.bar-collapsed #btn-bar-hide { display: none; }
+/* "محو کردن منو": on a laptop it only exists while the pointer is over the bar — it
+   slides up from under the bar and goes back down when the pointer leaves. `group/nav`
+   is a custom name, so it lives here instead of in the Tailwind build. */
+#btn-bar-hide {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity .2s ease, transform .22s var(--bm-squish), background-color .2s ease;
+}
+#control-bar:hover #btn-bar-hide,
+#btn-bar-hide:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+@media (max-width: 639px) { #btn-bar-hide { display: none; } }
 #btn-bar-show {
   transform: translateY(26px) scale(.5);
   opacity: 0;

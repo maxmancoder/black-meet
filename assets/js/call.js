@@ -233,6 +233,23 @@
   }
 
   // ---------- Tiles ----------
+  // Start the peer connection a tick later so a member's box appears instantly; the
+  // handshake itself then happens in the background instead of blocking the render.
+  const peerQueue = [];
+  let peerFlushTimer = null;
+  function schedulePeer(userId, polite) {
+    if (pcMap.has(userId)) return;
+    peerQueue.push({ userId, polite });
+    if (peerFlushTimer) return;
+    peerFlushTimer = setTimeout(() => {
+      peerFlushTimer = null;
+      const q = peerQueue.splice(0, peerQueue.length);
+      q.forEach((it, i) => setTimeout(() => {
+        const m = upsertMember({ userId: it.userId });
+        createPC(Object.assign({}, m, { userId: it.userId }), it.polite);
+      }, i * 40));
+    }, 0);
+  }
   function initials(name) {
     const p = (name || '').trim().split(/\s+/);
     if (p.length >= 2) return p[0][0] + p[1][0];
@@ -279,7 +296,7 @@
           ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
         </span>
         <span class="font-label-md text-on-surface">${escapeHtml(I.me.name)} (شما)</span>
-        <button type="button" id="mx-self" onclick="event.stopPropagation(); window.toggleMaximize('self')" class="mx-btn text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
+        <button type="button" id="mx-self" onclick="event.stopPropagation(); window.toggleMaximize('self')" class="mx-btn p-2 -m-1 rounded-full text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
           ${bmIcon('fullscreen', 'text-[14px]')}
         </button>
       </div>
@@ -307,7 +324,7 @@
           ${bmIcon('network_check', 'text-[12px]', false)}<span class="ping-val">—</span>
         </span>
         <span class="font-label-md text-on-surface" id="name-${userId}">${escapeHtml((meta && meta.name) || '')}</span>
-        <button type="button" id="mx-${userId}" onclick="event.stopPropagation(); window.toggleMaximize('${userId}')" class="mx-btn text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
+        <button type="button" id="mx-${userId}" onclick="event.stopPropagation(); window.toggleMaximize('${userId}')" class="mx-btn p-2 -m-1 rounded-full text-on-surface-variant hover:text-on-surface transition-colors" title="بزرگ‌نمایی">
           ${bmIcon('fullscreen', 'text-[14px]')}
         </button>
       </div>
@@ -495,8 +512,10 @@
         });
       }
       if (createPcs && mm.status === 'approved' && mm.userId !== I.me.id) {
+        // the tile first, the peer connection right after: createPC() runs the whole
+        // WebRTC handshake (STUN + candidates) and used to delay the box by seconds
         getOrCreateTile(mm.userId, mm);
-        createPC(mm, I.me.id > mm.userId);
+        schedulePeer(mm.userId, I.me.id > mm.userId);
       }
       renderOneMember(mm);
     });
@@ -578,6 +597,25 @@
       }
       // an already-running site/video box must appear for late joiners too
       if (d.web && window.bmWebInit) window.bmWebInit(d.web);
+      if (d.openJoin !== undefined) paintOpenJoin(!!d.openJoin);
+    });
+    socket.on(EV.OPEN_JOIN_CHANGED, (d) => {
+      paintOpenJoin(!!d.openJoin);
+      showToast(d.openJoin ? 'ورود بدون تایید فعال شد' : 'ورود بدون تایید خاموش شد');
+    });
+    socket.on(EV.ADMIN_CHANGED, (d) => {
+      // the promoted member must GET the admin panel right away (it is hidden client-side)
+      if (d.userId === I.me.id) {
+        I.me.is_admin = true;
+        SELF.is_admin = true;
+        const tab = $('tab-admin');
+        if (tab) tab.classList.remove('hidden');
+        window.__BM_isManager = window.__BM_isManager || true;
+      }
+      showToast(d.toast || 'ادمین جدیدی انتخاب شد');
+      playBeep();
+      renderPendingCards();
+      layoutGrid();
     });
     socket.on(EV.MEMBER_JOINED, ({ member }) => {
       adoptMembers([member], true);
@@ -592,6 +630,11 @@
       layoutGrid();
     });
     socket.on(EV.MEMBER_UPDATED, (d) => {
+      if (d.is_admin !== undefined) {
+        currentList.forEach((m) => { if (m.userId === d.userId) m.is_admin = d.is_admin; });
+        renderPendingCards();
+        updateCounts();
+      }
       const cur = memberStatus.get(d.userId) || {};
       if (d.muted !== undefined) cur.muted = d.muted;
       if (d.cam !== undefined) cur.cam = d.cam;
@@ -1694,8 +1737,32 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
 
   // ---------- Init ----------
   let mediaReady = false;
+  // ---------- "join without approval" ----------
+  function paintOpenJoin(on) {
+    const sw = $('open-join-call');
+    if (sw) sw.checked = !!on;
+    const hint = $('openjoin-hint-call');
+    if (hint) {
+      hint.textContent = on
+        ? 'هر کسی با لینک تماس مستقیم وارد می‌شود'
+        : 'کاربران تا تایید شما منتظر می‌مانند';
+    }
+  }
+  window.setOpenJoin = function (on) {
+    const s = socket;
+    if (!s || !s.connected) { showToast('اتصال زنده برقرار نیست'); return; }
+    s.emit(EV.CALL_SET_OPEN_JOIN, { on: !!on }, (res) => {
+      if (!res || !res.ok) { paintOpenJoin(!on); showToast('تغییر اعمال نشد'); return; }
+      paintOpenJoin(!!res.openJoin);
+      showToast(res.openJoin
+        ? 'ورود بدون تایید فعال شد — هر کسی با لینک وارد می‌شود'
+        : 'ورود بدون تایید خاموش شد — کاربران منتظر تایید شما می‌مانند');
+    });
+  };
+
   function init() {
     renderSelf();
+    paintOpenJoin(!!(I.meeting && I.meeting.open_join));
     if (!approved) $('waiting-overlay').classList.remove('hidden');
     // bootstrap tiles from SSR data (HTTP bootstrap rule) — realtime updates take over after join
     if (I.participants && I.participants.length) {

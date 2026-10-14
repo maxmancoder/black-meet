@@ -39,7 +39,12 @@ function createApp() {
   // ONLY avatars are public. `uploads/call/` holds the files shared inside a call and must
   // never be served statically — it is only reachable through the login-gated route below
   // (mounting all of uploads/ used to expose every shared file to anyone with the URL).
-  app.use('/black-meet/uploads/avatars', express.static(path.join(rootDir, 'uploads/avatars')));
+  // avatars are content-addressed by mtime in the URL (see avatarUrl), so they can be cached
+  // hard; without it the browser re-validated every avatar on every page load, which is what
+  // made profile pictures feel slow (and occasionally not show up at all)
+  app.use('/black-meet/uploads/avatars', express.static(path.join(rootDir, 'uploads/avatars'), {
+    maxAge: '30d', immutable: true, fallthrough: true,
+  }));
 
   // load session + user for everything else
   app.use('/black-meet', (req, res, next) => {
@@ -76,6 +81,7 @@ function createApp() {
     res.setHeader('Content-Disposition',
       disp + '; filename="' + meta.name.replace(/["\\\r\n]/g, '_') + '"');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // private: never a shared proxy cache; the file dies with the session anyway
     res.setHeader('Cache-Control', 'private, max-age=3600');
     if (req.query.download === '1') res.setHeader('Content-Disposition', 'attachment; filename="' + meta.name.replace(/["\\\r\n]/g, '_') + '"');
     res.sendFile(abs);

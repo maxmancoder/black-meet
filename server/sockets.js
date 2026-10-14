@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const crypto = require('crypto');
 const { Server } = require('socket.io');
 const EV = require('../shared/socket-events');
@@ -139,8 +139,8 @@ function attach(httpServer) {
           return;
         }
         const meetingId = st.meeting.id;
-        const role = st.you ? st.you.role : 'member';
-        const approvedBefore = !!(st.you && st.you.status === 'approved');
+        const role = st.isAdmin ? 'admin' : (st.you ? st.you.role : 'member');
+        const approvedBefore = !!(st.you && st.you.status === 'approved') || st.isAdmin;
 
         if (!rooms.has(room)) {
           rooms.set(room, { meetingId, sockets: new Map(), userSockets: new Map(), pending: new Set(), blocked: new Set() });
@@ -172,6 +172,19 @@ function attach(httpServer) {
           // stable per page load: tells a reconnect apart from a second device
           sessionKey: String(payload.sessionKey || '').slice(0, 64),
         };
+        // "ورود بدون تایید ادمین": with the switch on, anyone with the link walks straight in
+        // NOTE: internal.* wraps every helper in a Promise, so a boolean must come from
+        // internalRaw — a Promise is always truthy and would approve EVERYONE.
+        if (!info.approved && internalRaw.isOpenJoin(meetingId)) {
+          dbm.run(
+            "INSERT INTO meeting_participants (meeting_id, user_id, display_name, username, status, role, muted, cam_on, sharing, joined_at) " +
+            'VALUES (?,?,?,?,?,?,0,0,0,?) ' +
+            "ON CONFLICT(meeting_id, user_id) DO UPDATE SET status='approved'",
+            [meetingId, uid, info.name, info.username, 'approved', 'member', require('./lib/helpers').sqlNow()]
+          );
+          info.approved = true;
+          info.openJoin = true;
+        }
         socket.data.room = room;
         socket.data.is_admin = info.is_admin;
         socket.join(room);
@@ -184,7 +197,10 @@ function attach(httpServer) {
           .filter((m) => m.userId !== uid)
           .map((m) => Object.assign(m, { locks: (r.locks && r.locks[m.userId]) || null }));
         you.locks = (r.locks && r.locks[uid]) || null;
-        socket.emit(EV.CALL_WELCOME, { meeting: st.meeting, you, members, blocked: Array.from(r.blocked), web: publicWeb(r) });
+        socket.emit(EV.CALL_WELCOME, {
+          meeting: st.meeting, you, members, blocked: Array.from(r.blocked),
+          web: publicWeb(r), openJoin: internalRaw.isOpenJoin(meetingId),
+        });
         ensurePingTimer(room);
 
         // re-apply this user's admin locks after (re)join — off=true = locked
@@ -310,6 +326,7 @@ function attach(httpServer) {
       return {
         kind: w.kind, url: w.url, src: w.src, host: w.host,
         name: w.name || '', size: Number(w.size) || 0, viewable: w.viewable !== false,
+        mime: w.mime || '', mode: w.mode || '',
         ownerId: w.ownerId, ownerName: w.ownerName || '',
         controlAll: w.controlAll !== false,
         controllers: Array.from(w.controllers || []),
@@ -336,10 +353,31 @@ function attach(httpServer) {
       if (w.viewersAll !== false) return true;
       return !!(s && (w.viewers || new Set()).has(s.userId));
     }
+    // An uploaded file: NEVER a free-form URL. The client posts the bytes to /api/call/file and
+    // gets back an id; only that server-owned path is accepted, so a member cannot point the
+    // box at a remote page and call it "a file". `kind` is the MODE: file | audio | video.
+    function normalizeCallFile(kind, rawUrl) {
+      const m2 = String(rawUrl || '').match(/^\/black-meet\/call-file\/([a-f0-9]{24,64})(?:\?|$)/);
+      if (!m2) return { ok: false, error: 'BAD_URL' };
+      const meta = callfiles.meta(socket.data.room, m2[1]);
+      if (!meta) return { ok: false, error: 'NO_FILE' };
+      const url = '/black-meet/call-file/' + meta.id;
+      const common = {
+        ok: true, url, src: url, host: meta.name,
+        name: meta.name, size: meta.size, viewable: meta.viewable, mime: meta.mime,
+      };
+      // the mode only decides HOW it is shown: in our own player, or as a document
+      if (kind === 'audio') return Object.assign({ audio: true }, common);
+      return common;
+    }
+
     // normalize + validate an incoming web target (server-side, both kinds)
     function normalizeWebTarget(kind, rawUrl) {
       const u = String(rawUrl || '').trim();
       if (u.length > 2000) return { ok: false, error: 'BAD_URL' };
+      // An uploaded file is a PATH of ours, not a URL — check it BEFORE the URL parser
+      // turns it into an absolute https:// URL (that dropped the ?room= the client needs).
+      if (u.indexOf('/black-meet/call-file/') === 0) return normalizeCallFile(kind, u);
       let abs;
       try {
         abs = new URL(/^https?:\/\//i.test(u) ? u : 'https://' + u);
@@ -352,21 +390,6 @@ function attach(httpServer) {
 if (kind === 'audio') {
         // any http(s) URL; the browser decides whether it can stream it
         return { ok: true, url: abs.href, host, src: abs.href, audio: true };
-      }
-      if (kind === 'file') {
-        // an uploaded file: NEVER a free-form URL. The client posts the bytes to
-        // /api/call/file and gets back an id; only that server-owned path is accepted, so a
-        // member cannot point the box at a remote page and call it "a file".
-        const m2 = String(rawUrl || '').match(/^\/black-meet\/call-file\/([a-f0-9]{24,64})(?:\?|$)/);
-        if (!m2) return { ok: false, error: 'BAD_URL' };
-        const meta = callfiles.meta(socket.data.room, m2[1]);
-        if (!meta) return { ok: false, error: 'NO_FILE' };
-        return {
-          ok: true,
-          url: '/black-meet/call-file/' + meta.id,
-          host: meta.name, src: '/black-meet/call-file/' + meta.id,
-          name: meta.name, size: meta.size, viewable: meta.viewable,
-        };
       }
       if (kind === 'video') {
         // embed-ify the known providers, otherwise hand the URL to an <iframe>/<video>
@@ -395,7 +418,9 @@ if (kind === 'audio') {
       if (!s.approved) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_A_MEMBER' }); return; }
       const kind = msg.kind === 'video' ? 'video'
         : (msg.kind === 'audio' ? 'audio' : (msg.kind === 'file' ? 'file' : 'site'));
-      const norm = normalizeWebTarget(kind, msg.url);
+      // a call-file may be shown in one of three modes; 'file' is the default
+      const fileKind = kind === 'file';
+      const norm = normalizeWebTarget(fileKind ? String(msg.mode || 'file') : kind, msg.url);
       if (!norm.ok) {
         socket.emit(EV.WEB_ERR, {
           msg: norm.error === 'NO_FILE' ? 'این فایل دیگر در دسترس نیست' : 'لینک وارد شده معتبر نیست',
@@ -412,8 +437,10 @@ if (kind === 'audio') {
         viewersAll: r.web.viewersAll, viewers: r.web.viewers,
       } : { controlAll: true, controllers: new Set(), viewersAll: true, viewers: new Set() };
       r.web = Object.assign({
-        kind, url: norm.url, src: norm.src, host: norm.host,
+        kind, mode: norm.audio ? 'audio' : (fileKind && norm.embed === false ? 'video' : (fileKind ? 'file' : '')),
+        url: norm.url, src: norm.src, host: norm.host,
         name: norm.name || '', size: norm.size || 0, viewable: norm.viewable !== false,
+        mime: norm.mime || '',
         ownerId: uid, ownerName: s.name || '', scroll: null, video: null,
         // "دسترسی همزمان": when on, one person's scroll/click/play drives everyone
         follow: msg.follow !== false,
@@ -559,6 +586,44 @@ if (kind === 'audio') {
       });
     });
 
+    // the admin switches "join without approval" for THIS call
+    socket.on(EV.CALL_SET_OPEN_JOIN, (msg = {}, cb) => {
+      const r = webRoom();
+      if (!r || !r.sockets.get(socket.id)) return;
+      const me = r.sockets.get(socket.id);
+      if (!me || !me.is_admin) {
+        if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' });
+        return;
+      }
+      const on = !!msg.on;
+      internalRaw.setOpenJoin(r.meetingId, on);
+      r.openJoin = on;
+      io.to(socket.data.room).emit(EV.WEB_STATE, { web: publicWeb(r), openJoin: on });
+      socket.to(socket.data.room).emit(EV.OPEN_JOIN_CHANGED, { openJoin: on });
+      if (on) releasePending(r);
+      if (typeof cb === 'function') cb({ ok: true, openJoin: on });
+    });
+
+    // Turning the switch ON must also release the people who are ALREADY waiting on the
+    // screen — otherwise the admin has to approve them one by one anyway.
+    function releasePending(r) {
+      let n = 0;
+      r.sockets.forEach((s, sid) => {
+        if (s.approved) return;
+        s.approved = true;
+        r.pending.delete(s.userId);
+        try {
+          const pid = dbm.get('SELECT id FROM meeting_participants WHERE meeting_id=? AND user_id=?',
+            [r.meetingId, s.userId]);
+          if (pid) dbm.run("UPDATE meeting_participants SET status='approved' WHERE id=?", [pid.id]);
+        } catch (e) { }
+        io.to(sid).emit(EV.YOU_APPROVED, { ok: true, via: 'open-join' });
+        emitMemberJoined(socket.data.room, memberInfo(s));
+        n++;
+      });
+      if (n) console.log('[call] released ' + n + ' waiting member(s) after the switch was turned on');
+    }
+
     socket.on(EV.CALL_ALERT_ADMIN, () => {
       const room = socket.data.room;
       const r = rooms.get(room);
@@ -625,12 +690,48 @@ r.sockets.forEach((s, sid) => {
           r.userSockets.delete(uid);
           r.pending.delete(uid);
           emitMemberLeft(room, uid);
+          // the host just left: hand the room to the most talkative member (or a random
+          // one) so the call never ends up without an admin
+          if (s && s.is_admin) scheduleAdminHandover(room, r.meetingId, uid);
         }
       }
       if (r.sockets.size === 0) {
         rooms.delete(room);
         scheduleCloseMeeting(room);
       }
+    }
+
+    // A reload looks exactly like a leave: the old socket drops a moment before the new one
+    // registers. Handing the room over immediately therefore moved the admin away on every
+    // refresh (and before the chat had even been written). Wait a beat and check whether the
+    // person came back.
+    const handoverTimers = new Map();
+    function scheduleAdminHandover(room, meetingId, userId) {
+      if (handoverTimers.has(room)) clearTimeout(handoverTimers.get(room));
+      const t = setTimeout(() => {
+        handoverTimers.delete(room);
+        const r = rooms.get(room);
+        if (!r) return;
+        // still here? then it was only a reload
+        for (const [, mem] of r.sockets) { if (mem.userId === userId) return; }
+        try {
+          const next = internalRaw.promoteNewAdmin(meetingId);
+          if (!next) return;
+          r.sockets.forEach((mem, sid) => {
+            mem.is_admin = (mem.userId === next.userId);
+            io.to(sid).emit(EV.MEMBER_UPDATED, { userId: mem.userId, is_admin: mem.is_admin });
+          });
+          io.to(room).emit(EV.ADMIN_CHANGED, {
+            userId: next.userId, name: next.name, reason: 'host-left',
+            toast: (next.messages > 0)
+              ? (next.name || 'یکی از اعضا') + ' به‌عنوان ادمین جدید انتخاب شد (فعال‌ترین در چت)'
+              : (next.name || 'یکی از اعضا') + ' به‌عنوان ادمین جدید انتخاب شد',
+          });
+          console.log('[call] admin handed over to user ' + next.userId + ' in room ' + room);
+        } catch (e) { /* never block the leave */ }
+      }, 2500);
+      if (t.unref) t.unref();
+      handoverTimers.set(room, t);
     }
 
     socket.on(EV.CALL_LEAVE, (_msg, cb) => {

@@ -46,6 +46,9 @@
     CALL_KICK: 'call:kick',
     CALL_BLOCK: 'call:block',
     CALL_ALERT_ADMIN: 'call:alert-admin',
+    CALL_SET_OPEN_JOIN: 'call:set-open-join', // admin: "join without approval"
+    OPEN_JOIN_CHANGED: 'call:open-join-changed',
+    ADMIN_CHANGED: 'admin-changed',
     CALL_LEAVE: 'call:leave',
     CALL_DISABLE: 'call:disable',          // admin force-disable mic/cam/screen
     FORCE_DISABLE: 'force-disable',

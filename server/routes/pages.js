@@ -264,7 +264,11 @@ router.get('/meeting', (req, res) => {
   );
 
   const init = {
-    meeting: { id: Number(meeting.id), room: meeting.room_id, title: meeting.title, default_media: Number(meeting.default_media) !== 0 },
+    meeting: {
+      id: Number(meeting.id), room: meeting.room_id, title: meeting.title,
+      default_media: Number(meeting.default_media) !== 0,
+      open_join: Number(meeting.open_join) === 1,
+    },
     me: {
       id: Number(me.id), name: me.display_name, username: me.username,
       avatar_color: me.avatar_color, avatar: String(me.avatar || ''), is_admin: isAdmin, status: myStatus,

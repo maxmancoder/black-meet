@@ -114,7 +114,8 @@
                 <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۶"/>
             </div>
             <input id="otp-input" class="hidden" type="text" inputmode="numeric" maxlength="6" dir="ltr"/>
-            <button class="btn-primary" onclick="verifyOtp()">تایید و ورود</button>
+            <!-- no confirm button: the six boxes submit themselves on the 6th digit -->
+            <p class="font-body-sm text-[12px] text-on-surface-variant text-center">با وارد کردن کد، ورود به‌صورت خودکار انجام می‌شود</p>
             <div class="text-center mt-4">
                 <p class="font-body-sm text-body-sm text-on-surface-variant" id="timer-text">ارسال مجدد کد تا <span id="countdown">۳۰</span> ثانیه دیگر</p>
             </div>

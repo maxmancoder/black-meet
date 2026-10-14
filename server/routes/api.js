@@ -304,8 +304,10 @@ router.post('/meetings/create', (req, res) => {
 
   const roomId = generateRoomId();
   const defaultMedia = String(req.body.default_media) === '0' ? 0 : 1;
-  const r = dbm.run('INSERT INTO meetings (room_id, title, creator_id, active, default_media, created_at) VALUES (?,?,?,1,?,?)',
-    [roomId, title, me.id, defaultMedia, sqlNow()]);
+  // "join without approval": OFF unless the creator explicitly switches it on
+  const openJoin = String(req.body.open_join) === '1' ? 1 : 0;
+  const r = dbm.run('INSERT INTO meetings (room_id, title, creator_id, active, default_media, open_join, created_at) VALUES (?,?,?,1,?,?,?)',
+    [roomId, title, me.id, defaultMedia, openJoin, sqlNow()]);
   dbm.run(
     'INSERT INTO meeting_participants (meeting_id, user_id, display_name, username, status, role, joined_at) VALUES (?,?,?,?,?,?,?)',
     [r.lastInsertRowid, me.id, me.display_name, me.username, 'approved', 'admin', sqlNow()]

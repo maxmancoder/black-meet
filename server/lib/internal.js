@@ -153,11 +153,66 @@ function meetingState(roomId, userId) {
   const blocked = dbm.get('SELECT 1 AS b FROM meeting_blocks WHERE meeting_id=? AND user_id=?', [Number(m.id), Number(userId)]);
   if (blocked) return { ok: false, error: 'BLOCKED' };
   const p = participant(m.id, userId);
+  // `isAdmin` is the SAME test used everywhere else (host OR role=admin). It used to be
+  // derived from the role alone, so a meeting's creator whose row said role='member' could
+  // approve people but never received their join alerts -> "the admin is not notified".
+  const isAdmin = isMeetingAdmin(m.id, userId);
   return {
     ok: true,
-    meeting: { id: Number(m.id), room: m.room_id, title: m.title },
-    you: p ? { status: p.status, role: p.role } : null,
+    meeting: { id: Number(m.id), room: m.room_id, title: m.title, creatorId: Number(m.creator_id) },
+    you: p ? { status: p.status, role: isAdmin ? 'admin' : p.role, isAdmin } : { isAdmin },
+    isAdmin,
   };
+}
+
+function isOpenJoin(meetingId) {
+  const m = dbm.get('SELECT open_join FROM meetings WHERE id=?', [Number(meetingId)]);
+  return !!(m && Number(m.open_join) === 1);
+}
+function setOpenJoin(meetingId, on) {
+  dbm.run('UPDATE meetings SET open_join=? WHERE id=?', [on ? 1 : 0, Number(meetingId)]);
+  return { ok: true, open_join: on ? 1 : 0 };
+}
+
+// The host leaving must not leave the room without an admin: the most talkative member
+// takes over; if nobody has said anything yet, one of them is picked at random.
+function promoteNewAdmin(meetingId) {
+  const id = Number(meetingId);
+  const m = dbm.get('SELECT creator_id FROM meetings WHERE id=?', [id]);
+  if (!m) return null;
+  // still-connected admins first: if another admin stayed, nothing to do
+  const others = dbm.all(
+    "SELECT p.user_id FROM meeting_participants p WHERE p.meeting_id=? AND p.status='approved' AND p.role='admin' AND p.user_id<>?",
+    [id, Number(m.creator_id)]
+  );
+  if (others.length) return null;
+
+  const members = dbm.all(
+    "SELECT user_id FROM meeting_participants WHERE meeting_id=? AND status='approved' AND user_id<>?",
+    [id, Number(m.creator_id)]
+  );
+  if (!members.length) return null;
+
+  // most chat messages wins; random among equals; nobody chatted -> random of all
+  const counts = dbm.all(
+    'SELECT user_id, COUNT(*) AS c FROM messages WHERE meeting_id=? AND user_id IS NOT NULL GROUP BY user_id',
+    [id]
+  );
+  const map = {};
+  counts.forEach((r) => { map[Number(r.user_id)] = Number(r.c); });
+  let best = null, bestCount = 0;
+  members.forEach((mem) => {
+    const c = map[Number(mem.user_id)] || 0;
+    if (c > bestCount) { bestCount = c; best = mem.user_id; }
+  });
+  let chosen;
+  if (best && bestCount > 0) chosen = best;
+  else chosen = members[Math.floor(Math.random() * members.length)].user_id;
+
+  dbm.run("UPDATE meeting_participants SET role='member' WHERE meeting_id=? AND role='admin'", [id]);
+  dbm.run("UPDATE meeting_participants SET role='admin' WHERE meeting_id=? AND user_id=?", [id, chosen]);
+  const u = userById(chosen);
+  return { userId: Number(chosen), name: u ? u.display_name : '', messages: bestCount };
 }
 
 function closeMeeting(roomId) {
@@ -168,6 +223,6 @@ function closeMeeting(roomId) {
 }
 
 module.exports = {
-  meetingByRoom, participant, userById, isMeetingAdmin,
+  meetingByRoom, participant, userById, isMeetingAdmin, isOpenJoin, setOpenJoin, promoteNewAdmin,
   approve, kick, block, leave, chatPersist, pvPersist, pvUnread, meetingState, closeMeeting,
 };

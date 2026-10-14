@@ -79,6 +79,11 @@ function db() {
   if (cols.indexOf('rank') === -1) {
     _db.exec("ALTER TABLE users ADD COLUMN rank TEXT NOT NULL DEFAULT 'user'");
   }
+  // meetings.open_join: when on, anybody with the link joins without waiting for approval
+  const mcols = _db.prepare('PRAGMA table_info(meetings)').all().map((r) => r.name);
+  if (mcols.indexOf('open_join') === -1) {
+    _db.exec('ALTER TABLE meetings ADD COLUMN open_join INTEGER NOT NULL DEFAULT 0');
+  }
   startBackupLoop();
   return _db;
 }

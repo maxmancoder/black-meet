@@ -5,7 +5,7 @@
 <!-- Top bar -->
 <header class="fixed top-0 w-full z-50 flex justify-between items-center px-3 sm:px-grid-margin py-md bg-background/80 backdrop-blur-xl shadow-md border-b border-white/5">
     <div class="flex items-center gap-2 sm:gap-md min-w-0">
-        <a href="<%- url('home') %>" class="text-on-surface-variant hover:text-primary"><%- icon('arrow_forward') %></a>
+        <a href="<%- url('home') %>" aria-label="بازگشت به خانه" class="-m-2 p-3 rounded-full text-on-surface-variant hover:text-primary"><%- icon('arrow_forward') %></a>
         <span class="font-bold tracking-tight text-primary text-lg sm:font-display-md sm:text-display-md" dir="ltr">Black Meet</span>
         <span class="hidden md:inline text-on-surface-variant">/</span>
         <span id="meeting-title" class="hidden md:inline font-headline-md text-headline-md text-on-surface truncate"><%- esc(meeting.title) %></span>
@@ -90,11 +90,9 @@
         <div class="flex border-b border-outline-variant/20 px-sm pt-sm">
             <button class="flex-1 pb-3 text-center font-label-md text-primary border-b-2 border-primary transition-colors rounded-t-lg" id="tab-members" onclick="switchTab('members')">اعضا</button>
             <button class="hidden flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg" id="tab-chat" onclick="switchTab('chat')">چت</button>
-            <% if (isAdmin) { %>
-            <button class="flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg relative" id="tab-admin" onclick="switchTab('admin')">
-                ادمین <span id="admin-badge" class="absolute top-0 right-2 w-2 h-2 bg-error rounded-full hidden"></span>
+<button class="<%= isAdmin ? '' : 'hidden' %> flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg relative" id="tab-admin" onclick="switchTab('admin')">
+                مدیریت <span id="admin-badge" class="absolute top-0 right-2 w-2 w-2 bg-error rounded-full hidden"></span>
             </button>
-            <% } %>
         </div>
 
         <div class="flex-1 overflow-hidden relative">
@@ -104,21 +102,38 @@
             </div>
             <!-- Chat -->
             <div class="absolute inset-0 p-md pb-28 md:pb-md overflow-y-auto custom-scrollbar hidden flex-col justify-between font-vazir" id="content-chat">
-                <div id="chat-messages" class="flex flex-col gap-4"></div>
+                <div class="flex flex-col gap-4 h-full min-h-0">
+                    <div class="flex items-center gap-2 shrink-0 pb-2 border-b border-outline-variant/20">
+                        <%- icon('forum', 'text-[18px] text-primary') %>
+                        <h3 class="font-headline-md text-headline-md text-on-surface">چت</h3>
+                    </div>
+                    <div id="chat-messages" class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto"></div>
+                </div>
                 <div class="mt-4 pt-4 border-t border-outline-variant/20 relative">
                     <input id="chat-input" class="w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-4 pl-12 text-body-sm text-on-surface focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="پیام خود را بنویسید..." type="text" onkeydown="if(event.key==='Enter')sendChat()"/>
                     <button onclick="sendChat()" class="absolute left-2 top-[26px] text-primary hover:text-primary-fixed"><%- icon('send', '', true) %></button>
                 </div>
             </div>
-            <!-- Admin -->
-            <% if (isAdmin) { %>
-            <div class="absolute inset-0 p-md pb-28 md:pb-md overflow-y-auto custom-scrollbar hidden flex-col gap-sm" id="content-admin">
+            <!-- Admin: rendered for everyone, shown/hidden by the client — a member who is
+                 promoted when the host leaves must get the panel without a reload -->
+            <div class="<%= isAdmin ? '' : 'hidden' %> absolute inset-0 p-md pb-28 md:pb-md overflow-y-auto custom-scrollbar hidden flex-col gap-sm" id="content-admin">
+                <!-- join without approval: per-call switch, the admin can flip it any time -->
+                <label class="flex items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-l from-secondary-container/45 to-primary-container/35 border border-secondary/30 cursor-pointer mb-3">
+                    <span class="min-w-0">
+                        <span class="block font-body-sm text-body-sm text-on-surface">ورود بدون تایید ادمین</span>
+                        <span class="block font-label-sm text-on-surface-variant text-[11px] mt-0.5" id="openjoin-hint-call">کاربران با لینک مستقیم وارد می‌شوند</span>
+                    </span>
+                    <span class="relative inline-flex items-center shrink-0">
+                        <input type="checkbox" id="open-join-call" class="peer sr-only" onchange="setOpenJoin(this.checked)"/>
+                        <span class="w-11 h-6 rounded-full bg-surface-container-highest border border-outline-variant/40 transition-colors peer-checked:bg-primary/80"></span>
+                        <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
+                    </span>
+                </label>
                 <h3 class="font-label-md text-on-surface-variant mb-2">درخواست‌های ورود</h3>
                 <div id="join-requests"></div>
                 <h3 class="font-label-md text-on-surface-variant mb-2 mt-4">مدیریت اعضا</h3>
                 <div id="admin-members"></div>
             </div>
-            <% } %>
         </div>
     </aside>
 
@@ -140,8 +155,9 @@
 
 <!-- Bottom control bar. While a box is maximized it collapses into a small floating
      circle (the × at its top-right hides it, the circle brings it back). -->
-<nav id="control-bar" class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-grid-gutter bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-3 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)]" dir="ltr">
-    <button id="btn-bar-hide" onclick="toggleControlBar(false)" title="محو کردن منو" class="absolute -top-11 right-0 w-9 h-9 rounded-full bg-surface-container-highest/90 backdrop-blur border border-white/15 text-on-surface-variant hover:text-on-surface flex items-center justify-center shadow-lg">
+<nav id="control-bar" class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-grid-gutter bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-3 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)] group/nav" dir="ltr">
+    <button id="btn-bar-hide" onclick="toggleControlBar(false)" title="محو کردن منو"
+            class="hidden sm:flex absolute -top-11 right-0 w-9 h-9 rounded-full bg-surface-container-highest/90 backdrop-blur border border-white/15 text-on-surface-variant hover:text-on-surface items-center justify-center shadow-lg">
         <%- icon('close', 'text-[18px]') %>
     </button>
     <button id="btn-mic" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleMic()">
@@ -245,12 +261,48 @@
                 </span>
                 <span class="bm-caret text-on-surface-variant"></span>
             </button>
-            <div id="share-quality-menu" class="hidden absolute left-0 right-0 top-full mt-2 z-10 glass-panel rounded-xl shadow-2xl border border-outline-variant/30 p-1.5 max-h-[240px] overflow-y-auto custom-scrollbar">
-                <button type="button" data-q="360"  onclick="pickQuality(360)"><span class="block font-body-sm text-body-sm text-on-surface">360p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">کم‌حجم‌ترین، برای اینترنت ضعیف</span></button>
-                <button type="button" data-q="480"  onclick="pickQuality(480)"><span class="block font-body-sm text-body-sm text-on-surface">480p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">سبک و قابل قبول</span></button>
-                <button type="button" data-q="720"  onclick="pickQuality(720)"><span class="block font-body-sm text-body-sm text-on-surface">720p — پیشنهادی</span><span class="block font-label-sm text-on-surface-variant text-[11px]">تعادل کیفیت و روانی</span></button>
-                <button type="button" data-q="1080" onclick="pickQuality(1080)"><span class="block font-body-sm text-body-sm text-on-surface">1080p</span><span class="block font-label-sm text-on-surface-variant text-[11px]">بهترین کیفیت، نیاز به اینترنت خوب</span></button>
-                <button type="button" data-q="0"    onclick="pickQuality(0)"><span class="block font-body-sm text-body-sm text-on-surface">کیفیت اصلی</span><span class="block font-label-sm text-on-surface-variant text-[11px]">بدون محدودیت، مطابق صفحه</span></button>
+            <div id="share-quality-menu" class="hidden absolute left-0 right-0 top-full mt-2 z-30 rounded-2xl overflow-hidden shadow-2xl shadow-black/60 border border-primary/30 bg-gradient-to-b from-surface-container-highest to-surface-container">
+                <div class="flex items-center gap-2 px-3 py-2 bg-gradient-to-l from-primary-container/70 to-secondary-container/50 border-b border-white/10">
+                    <%- icon('tune', 'text-[16px] text-primary') %>
+                    <span class="font-label-md text-on-surface">کیفیت اشتراک صفحه</span>
+                </div>
+                <div class="p-1.5 flex flex-col gap-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    <button type="button" data-q="360" onclick="pickQuality(360)" class="quality-item group w-full text-right px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/25 hover:border-primary/60 hover:bg-primary-container/20 transition-colors flex items-center gap-3">
+                        <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-surface-container-highest to-surface-container border border-outline-variant/30 text-on-surface group-hover:from-primary-container group-hover:to-secondary-container group-hover:text-on-primary-container flex items-center justify-center text-[12px] font-semibold shrink-0 transition-colors">360</span>
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">360p</span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4">کم‌حجم‌ترین، برای اینترنت ضعیف</span>
+                        </span>
+                    </button>
+                    <button type="button" data-q="480" onclick="pickQuality(480)" class="quality-item group w-full text-right px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/25 hover:border-primary/60 hover:bg-primary-container/20 transition-colors flex items-center gap-3">
+                        <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-surface-container-highest to-surface-container border border-outline-variant/30 text-on-surface group-hover:from-primary-container group-hover:to-secondary-container group-hover:text-on-primary-container flex items-center justify-center text-[12px] font-semibold shrink-0 transition-colors">480</span>
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">480p</span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4">سبک و قابل قبول</span>
+                        </span>
+                    </button>
+                    <button type="button" data-q="720" onclick="pickQuality(720)" class="quality-item group w-full text-right px-3 py-2.5 rounded-xl bg-surface-container-low border border-primary/50 bg-primary-container/15 hover:bg-primary-container/25 transition-colors flex items-center gap-3">
+                        <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container flex items-center justify-center text-[12px] font-semibold shrink-0 shadow-sm shadow-primary/25">720</span>
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">720p <span class="text-primary text-[11px]">— پیشنهادی</span></span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4">تعادل کیفیت و روانی</span>
+                        </span>
+                    </button>
+                    <button type="button" data-q="1080" onclick="pickQuality(1080)" class="quality-item group w-full text-right px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/25 hover:border-primary/60 hover:bg-primary-container/20 transition-colors flex items-center gap-3">
+                        <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-surface-container-highest to-surface-container border border-outline-variant/30 text-on-surface group-hover:from-primary-container group-hover:to-secondary-container group-hover:text-on-primary-container flex items-center justify-center text-[12px] font-semibold shrink-0 transition-colors">1080</span>
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">1080p</span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4">بهترین کیفیت، نیاز به اینترنت خوب</span>
+                        </span>
+                    </button>
+                    <button type="button" data-q="0" onclick="pickQuality(0)" class="quality-item group w-full text-right px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/25 hover:border-primary/60 hover:bg-primary-container/20 transition-colors flex items-center gap-3">
+                        <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-surface-container-highest to-surface-container border border-outline-variant/30 text-on-surface group-hover:from-primary-container group-hover:to-secondary-container group-hover:text-on-primary-container flex items-center justify-center shrink-0 transition-colors"><%- icon('tune', 'text-[16px]') %></span>
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">کیفیت اصلی</span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4">بدون محدودیت، مطابق صفحه</span>
+                        </span>
+                    </button>
+                </div>
             </div>
         </div>
         <input type="hidden" id="share-quality" value="720"/>
@@ -287,6 +339,10 @@
             </div>
             <button type="button" onclick="closeWebModal()" class="mr-auto text-on-surface-variant hover:text-on-surface p-1"><%- icon('close') %></button>
         </div>
+        <div id="web-mode-tabs" class="hidden mb-md flex gap-1 p-1 rounded-xl bg-surface-container-low border border-outline-variant/30">
+            <button type="button" data-mode="link" onclick="setWebMode('link')" class="flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors text-on-surface-variant hover:bg-surface-container-highest">درج لینک</button>
+            <button type="button" data-mode="upload" onclick="setWebMode('upload')" class="flex-1 py-2 rounded-xl text-[12px] font-medium transition-colors bg-primary text-on-primary shadow-sm">آپلود فایل</button>
+        </div>
         <div class="relative mb-md">
             <input id="web-url" dir="ltr" class="form-input pr-11" placeholder="https://example.com" type="text" inputmode="url"/>
             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"><%- icon('link', 'text-[18px]') %></span>
@@ -296,7 +352,7 @@
             <label id="web-file-drop" class="flex flex-col items-center justify-center gap-2 px-4 py-7 rounded-2xl border-2 border-dashed border-primary/45 bg-primary-container/15 text-center cursor-pointer transition-colors hover:bg-primary-container/25">
                 <span class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-container to-tertiary-container text-on-primary-container flex items-center justify-center"><%- icon('upload', 'text-[24px]') %></span>
                 <span class="font-body-sm text-body-sm text-on-surface">فایل را اینجا رها کنید یا کلیک کنید</span>
-                <span class="font-label-sm text-on-surface-variant text-[11px]">تصویر، PDF، متن، ویدیو، صدا و… — حداکثر <span id="web-file-max">۵۰</span> مگابایت</span>
+                <span class="font-label-sm text-on-surface-variant text-[11px]" id="web-upload-hint">تصویر، PDF، متن، ویدیو، صدا و… — حداکثر <span id="web-file-max">۵۰</span> مگابایت</span>
                 <input id="web-file-input" type="file" class="hidden"/>
             </label>
             <div id="web-file-card" class="hidden items-center gap-3 px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30 mt-2">
