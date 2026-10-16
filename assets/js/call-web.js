@@ -414,25 +414,12 @@
     relayout();
   }
 
+  // The box's "full screen" is the same full-viewport overlay every tile uses (call.js), so
+// there is no second "expanded" layout here any more: the box is just another grid cell.
   function applyExpanded() {
     const box = $('web-box');
-    const grid = $('video-grid');
-    if (!grid) return;
     if (!box) { restoreTiles(); return; }
-    Array.from(grid.children).forEach((el) => {
-      if (el.id === 'web-box') return;
-      if (expanded) {
-        // full-stage mode: remember what the tile looked like before hiding it
-        if (el.dataset.bmHidden !== '1') {
-          el.dataset.bmPrevDisplay = el.style.display || '';
-          el.dataset.bmHidden = '1';
-        }
-        el.style.display = 'none';
-      } else {
-        restoreTile(el);
-      }
-    });
-    box.classList.toggle('web-expanded', expanded);
+    box.classList.remove('web-expanded');
   }
   function restoreTile(el) {
     if (!el || el.dataset.bmHidden !== '1') return;

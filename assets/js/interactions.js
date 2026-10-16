@@ -111,9 +111,14 @@
   function soften(root) {
     if (isCallPage) return;
     // data-no-soft opts a button out of the squishy transform (e.g. dropdown
-    // toggles that must only change colour, never scale)
+    // toggles that must only change colour, never scale). On an ANCESTOR it opts the
+    // whole subtree out — that is how the members list keeps every card AND every key
+    // completely still.
     (root || doc).querySelectorAll('button:not(.bm-soft):not([data-no-soft]), .btn-primary:not(.bm-soft):not([data-no-soft]), .btn-secondary:not(.bm-soft):not([data-no-soft])')
-      .forEach(function (el) { el.classList.add('bm-soft'); });
+      .forEach(function (el) {
+        if (el.closest && el.closest('[data-no-soft]')) return;
+        el.classList.add('bm-soft');
+      });
   }
   doc.addEventListener('DOMContentLoaded', function () { soften(); });
   if (window.MutationObserver) {

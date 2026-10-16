@@ -43,12 +43,51 @@
       const b = $('mode-btn');
       if (b) b.setAttribute('aria-expanded', 'false');
     }
+    const pm = $('page-size-menu');
+    if (pm && !pm.classList.contains('hidden')) {
+      pm.classList.add('hidden');
+      const pb = $('page-size-btn');
+      if (pb) pb.setAttribute('aria-expanded', 'false');
+    }
+    if (window.bmCloseEditRankMenu) window.bmCloseEditRankMenu();
   }
 
   document.addEventListener('click', (e) => {
     if (!e.target.closest || (!e.target.closest('.rank-menu') && !e.target.closest('.rank-trigger') &&
-      !e.target.closest('#mode-menu') && !e.target.closest('#mode-btn'))) closeMenus();
+      !e.target.closest('#mode-menu') && !e.target.closest('#mode-btn') &&
+      !e.target.closest('#page-size-menu') && !e.target.closest('#page-size-btn') &&
+      !e.target.closest('#ed-rank-menu') && !e.target.closest('#ed-rank-btn'))) closeMenus();
   });
+
+  // ------------------------------------------------------------------
+  // page size (themed dropdown; the hidden <select> keeps holding the value)
+  // ------------------------------------------------------------------
+  const PAGE_SIZES = { 25: '۲۵ کاربر', 50: '۵۰ کاربر', 100: '۱۰۰ کاربر' };
+  function paintPageSize() {
+    const ps = $('page-size');
+    if (!ps) return;
+    const v = String(ps.value || '25');
+    const lbl = $('page-size-label');
+    if (lbl) lbl.textContent = PAGE_SIZES[v] || PAGE_SIZES[25];
+  }
+  window.togglePageSizeMenu = function (e) {
+    if (e) e.stopPropagation();
+    const m = $('page-size-menu');
+    const b = $('page-size-btn');
+    if (!m) return;
+    closeMenus();
+    const show = m.classList.contains('hidden');
+    m.classList.toggle('hidden', !show);
+    if (b) b.setAttribute('aria-expanded', show ? 'true' : 'false');
+  };
+  window.setPageSize = function (n) {
+    const ps = $('page-size');
+    if (!ps) return;
+    ps.value = String(n);
+    paintPageSize();
+    closeMenus();
+    render();
+  };
 
   // ------------------------------------------------------------------
   // section switcher (left sidebar)
@@ -198,7 +237,8 @@
   function cardEl(u) {
     const card = document.createElement('div');
     card.id = 'user-row-' + u.id;
-    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3 bm-soft';
+    // no `bm-soft`: member cards must not shrink/grow on hover (nor their keys)
+    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3';
 
     let info;
     if (u.info_hidden) {
@@ -282,16 +322,24 @@
 
   window.toggleLimit = function (userId) {
     const btn = $('btn-lim-' + userId);
+    const u0 = allUsers.find(x => x.id === userId);
+    // put the real label back on failure — "تلاش مجدد" used to stick to the card
+    const restore = () => {
+      if (!btn) return;
+      btn.disabled = false;
+      const u = allUsers.find(x => x.id === userId);
+      btn.textContent = (u && u.is_limited) ? 'رفع محدودیت' : 'محدود کردن';
+    };
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     post('api/admin/members', { user_id: String(userId) })
       .then(d => {
-        if (!d.ok) { showToast(d.msg || 'خطا'); if (btn) { btn.disabled = false; btn.textContent = 'تلاش مجدد'; } return; }
+        if (!d.ok) { showToast(d.msg || 'خطا'); restore(); return; }
         const u = allUsers.find(x => x.id === userId);
         if (u) u.is_limited = d.is_limited ? 1 : 0;
         render();
         showToast(d.is_limited ? 'کاربر محدود شد' : 'محدودیت برداشته شد', 3000);
       })
-      .catch(() => { showToast('خطای شبکه'); if (btn) { btn.disabled = false; btn.textContent = 'تلاش مجدد'; } });
+      .catch(() => { showToast('خطای شبکه'); restore(); });
   };
 
   // ------------------------------------------------------------------
@@ -326,10 +374,86 @@
     const locked = !!u.is_manager;
     rankSel.disabled = locked;
     $('ed-rank-lock').classList.toggle('hidden', !locked);
-    if (locked) $('ed-rank').classList.add('opacity-60'); else $('ed-rank').classList.remove('opacity-60');
+    const btn = $('ed-rank-btn');
+    if (btn) {
+      btn.disabled = locked;
+      btn.classList.toggle('opacity-60', locked);
+      btn.classList.toggle('cursor-not-allowed', locked);
+    }
+    paintEditRank();
     $('edit-modal').classList.remove('hidden');
     $('ed-username').focus();
   };
+
+  // ---------- the rank dropdown inside the edit modal (themed face) ----------
+  const RANK_TEXT = { user: 'کاربر عادی', admin: 'ادمین', premium: 'ادمین پریمیوم', '': 'مدیر اصلی' };
+  function paintEditRank() {
+    const sel = $('ed-rank');
+    const lbl = $('ed-rank-label');
+    if (!sel || !lbl) return;
+    const v = String(sel.value);
+    const opt = sel.options[sel.selectedIndex];
+    lbl.textContent = (opt && opt.textContent) || RANK_TEXT[v] || 'کاربر عادی';
+    const m = $('ed-rank-menu');
+    if (m) {
+      m.querySelectorAll('[data-rank]').forEach(b => {
+        b.classList.toggle('bm-opt-active', b.getAttribute('data-rank') === v);
+      });
+    }
+  }
+  // the modal is a scroll container, so an absolutely positioned menu inside it gets
+  // clipped — pin the menu to the viewport instead (same trick as the call cam menu)
+  function positionEditRankMenu() {
+    const b = $('ed-rank-btn');
+    const m = $('ed-rank-menu');
+    if (!b || !m || m.classList.contains('hidden')) return;
+    m.style.position = 'fixed';
+    m.style.zIndex = '110';
+    m.style.left = 'auto';
+    m.style.right = 'auto';
+    m.style.top = 'auto';
+    m.style.bottom = 'auto';
+    const r = b.getBoundingClientRect();
+    m.style.right = Math.max(8, Math.min(r.right, window.innerWidth - m.offsetWidth - 8)) + 'px';
+    if (window.innerHeight - r.bottom > m.offsetHeight + 16) {
+      m.style.top = (r.bottom + 8) + 'px';
+    } else {
+      m.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    }
+  }
+  window.toggleEditRankMenu = function (e) {
+    if (e) e.stopPropagation();
+    const m = $('ed-rank-menu');
+    const b = $('ed-rank-btn');
+    const sel = $('ed-rank');
+    if (!m || !sel || sel.disabled) return;
+    const show = m.classList.contains('hidden');
+    m.classList.toggle('hidden', !show);
+    if (b) b.setAttribute('aria-expanded', show ? 'true' : 'false');
+    if (show) positionEditRankMenu();
+  };
+  window.setEditRank = function (rank) {
+    const sel = $('ed-rank');
+    if (!sel || sel.disabled) return;
+    sel.value = rank;
+    paintEditRank();
+    const m = $('ed-rank-menu');
+    if (m) m.classList.add('hidden');
+    const b = $('ed-rank-btn');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  };
+  window.bmCloseEditRankMenu = function () {
+    const m = $('ed-rank-menu');
+    if (m && !m.classList.contains('hidden')) {
+      m.classList.add('hidden');
+      const b = $('ed-rank-btn');
+      if (b) b.setAttribute('aria-expanded', 'false');
+    }
+  };
+  window.addEventListener('resize', function () {
+    const m = $('ed-rank-menu');
+    if (m && !m.classList.contains('hidden')) positionEditRankMenu();
+  });
 
   window.closeEditModal = function () {
     $('edit-modal').classList.add('hidden');
@@ -377,7 +501,7 @@
   function reqCard(r) {
     const card = document.createElement('div');
     card.id = 'req-row-' + r.id;
-    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3 bm-soft';
+    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3';
 
     const pending = r.status === 'pending';
     const msgs = (r.messages || []).map(m =>
@@ -542,7 +666,9 @@
   const ms = $('member-search');
   if (ms) ms.addEventListener('input', render);
   const ps = $('page-size');
-  if (ps) ps.addEventListener('change', render);
+  if (ps) ps.addEventListener('change', () => { paintPageSize(); render(); });
+  paintPageSize();
+  paintEditRank();
 
   setModeUi(signupMode);
   if (PERM.members) render();

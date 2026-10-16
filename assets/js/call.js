@@ -38,6 +38,9 @@
   const remoteStreams = new Map();
   let menuUserId = null;
   let currentList = [];
+  // members the viewer has already seen in the members/admin panel — the dot on the
+  // members key means "somebody new is in the room", not "somebody is still pending"
+  const seenMemberIds = new Set();
   let joinedRoom = false;
   const SELF = {
     userId: I.me.id, name: I.me.name, username: I.me.username,
@@ -131,9 +134,55 @@
       return { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
     }).catch(() => ({ width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }));
   }
+  // ---------- noise suppression (ON by default) ----------
+  // The browser's built-in NS removes fan/hiss/keyboard noise before encoding. It is a
+  // getUserMedia CONSTRAINT, so it has to be set when the mic is captured — and it can be
+  // toggled live by asking the browser for new settings (no re-permission needed).
+  let noiseSuppression = (localStorage.getItem('bm_noise_suppression') !== '0');
+  window.bmNoiseSuppressionOn = function () { return noiseSuppression; };
+
+  function audioConstraints() {
+    if (!noiseSuppression) {
+      // turning it off means asking for exactly that, otherwise the previous ON survives
+      return { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+    }
+    return {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    };
+  }
+
+  // apply the current setting to the live microphone track
+  function applyNoiseSuppression() {
+    if (!localStream) return Promise.resolve(false);
+    const track = localStream.getAudioTracks()[0];
+    if (!track || typeof track.applyConstraints !== 'function') return Promise.resolve(false);
+    const want = {
+      echoCancellation: noiseSuppression ? true : false,
+      noiseSuppression: noiseSuppression ? true : false,
+      autoGainControl: noiseSuppression ? true : false,
+    };
+    return track.applyConstraints({ advanced: [want] })
+      .then(() => { window.bmUpdateNoiseUI && window.bmUpdateNoiseUI(); return true; })
+      .catch(() => false);
+  }
+  window.bmSetNoiseSuppression = function (on) {
+    noiseSuppression = !!on;
+    try { localStorage.setItem('bm_noise_suppression', noiseSuppression ? '1' : '0'); } catch (e) {}
+    return applyNoiseSuppression().then(() => {
+      showToast(noiseSuppression ? 'نویزگیر روشن شد' : 'نویزگیر خاموش شد');
+      return noiseSuppression;
+    });
+  };
+  window.toggleNoiseSuppression = function () { return window.bmSetNoiseSuppression(!noiseSuppression); };
+
   function startMedia() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { renderSelf(); return Promise.resolve(); }
-    return navigator.mediaDevices.getUserMedia({ audio: true })
+    const ac = audioConstraints();
+    return navigator.mediaDevices.getUserMedia(ac)
       .then(audioStream => {
         localStream = audioStream;
         micOn = true;
@@ -564,6 +613,9 @@
     });
     window.BM_SOCKET = socket;
 
+    // the call closes itself when nobody joined within the time limit
+    socket.on(EV.CALL_SOLO_ENDED, onSoloEnded);
+
     socket.on('connect', () => {
       setConn('زنده', 'bg-secondary');
       joinedRoom = false;
@@ -589,6 +641,9 @@
     socket.on(EV.CALL_WELCOME, (d) => {
       // authoritative initial room state — merged, keeps SELF + SSR entries
       adoptMembers(d.members, true);
+      // the room state we just received is not a new arrival
+      (d.members || []).forEach(m => { if (m.userId !== I.me.id) seenMemberIds.add(m.userId); });
+      updateCounts();
       // my own admin locks (server also replays FORCE_DISABLE as catch-up)
       if (d.you && d.you.locks) {
         ['audio', 'video', 'screen'].forEach((k) => {
@@ -700,6 +755,8 @@
     socket.on(EV.YOU_BLOCKED, () => { showToast('شما مسدود شدید'); setTimeout(() => location.href = I.base + '/home?err=blocked', 2000); });
     socket.on(EV.JOIN_ALERT, d => {
       playBeep();
+      // somebody new is in the room: the members key gets a mark until it is pressed
+      updateCounts();
       showToast('درخواست ورود از سمت ' + (d.name || 'یک کاربر'));
       try { if ('Notification' in window && Notification.permission === 'granted') new Notification('درخواست ورود', { body: d.name || '' }); } catch (e) {}
     });
@@ -785,10 +842,18 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   function updateCounts() {
     const n = currentList.length;
     document.querySelectorAll('#participant-count, .participant-count').forEach(el => { el.textContent = String(n); });
-    const pendingCount = currentList.filter(m => m.status !== 'approved' && m.userId !== I.me.id).length;
-    const badge = $('admin-badge'); if (badge) badge.classList.toggle('hidden', pendingCount === 0);
-    const sBadge = $('sidebar-badge'); if (sBadge) sBadge.classList.toggle('hidden', pendingCount === 0);
+    // The members key marks members this admin has NOT looked at yet. The old rule
+    // (any pending member) kept the dot on forever: pressing the key showed the list
+    // but the mark stayed for people who had already been seen.
+    const unseen = currentList.some(m => m.userId !== I.me.id && !seenMemberIds.has(m.userId));
+    const badge = $('admin-badge'); if (badge) badge.classList.toggle('hidden', !unseen);
+    const sBadge = $('sidebar-badge'); if (sBadge) sBadge.classList.toggle('hidden', !unseen);
   }
+  // pressing the "members" key means I have seen who is in the room
+  window.bmClearJoinBadge = function () {
+    currentList.forEach(m => { if (m.userId !== I.me.id) seenMemberIds.add(m.userId); });
+    updateCounts();
+  };
 
   function renderPendingCards() {
     const req = $('join-requests');
@@ -1010,13 +1075,45 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     updateControlUI();
     broadcastStatus();
   };
-  window.toggleCam = function () {
+  // The camera track can be MISSING (never captured — permission denied, or the meeting
+  // was opened with the camera off) or DEAD (the device was released by the browser).
+  // Toggling `enabled` on such a track does nothing at all, which is why turning the
+  // camera back on mid-call left a black tile: capture a fresh one when we have to.
+  async function ensureCameraTrack() {
+    if (cameraTrack && cameraTrack.readyState === 'live') return cameraTrack;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
+    try {
+      const vs = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } });
+      const t = vs.getVideoTracks()[0];
+      if (!t) return null;
+      if (cameraTrack) { try { cameraTrack.stop(); } catch (e) {} }
+      cameraTrack = t;
+      if (!localStream) localStream = new MediaStream();
+      if (localStream.getVideoTracks().indexOf(t) === -1) localStream.addTrack(t);
+      return t;
+    } catch (e) { return null; }
+  }
+
+  window.toggleCam = async function () {
     if (locks.video) { showToast('دوربین توسط ادمین قفل شده است'); return; }
-    if (!localStream) { showToast('دسترسی به دوربین وجود ندارد'); return; }
     camOn = !camOn;
-    localStream.getVideoTracks().forEach(t => t.enabled = camOn);
-    if (camOn && !sharing) { currentVideoTrack = cameraTrack; }
-    else if (!camOn && !sharing) { currentVideoTrack = null; }
+    let fresh = false;
+    if (camOn) {
+      const had = cameraTrack && cameraTrack.readyState === 'live';
+      const t = await ensureCameraTrack();
+      if (!t) { camOn = false; showToast('دسترسی به دوربین وجود ندارد'); updateControlUI(); broadcastStatus(); return; }
+      fresh = !had;
+      t.enabled = true;
+      if (localStream) localStream.getVideoTracks().forEach(x => { x.enabled = (x === t); });
+    } else if (localStream) {
+      localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+    }
+    if (!sharing) {
+      currentVideoTrack = camOn ? cameraTrack : null;
+      // a brand new track has to be handed to every sender (replaceTrack), otherwise
+      // the peers keep the dead one and still see black
+      if (fresh) replaceOutgoingVideo(cameraTrack);
+    }
     updateSelfVideo();
     updateControlUI();
     broadcastStatus();
@@ -1201,6 +1298,12 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     sharing = false;
     shareAudio = false;
     updateTileAudioBadge();
+    // the camera may have been released while we were sharing the screen
+    if (camOn) ensureCameraTrack().then(() => {
+      currentVideoTrack = camOn ? cameraTrack : null;
+      replaceOutgoingVideo(currentVideoTrack);
+      updateSelfVideo();
+    });
     currentVideoTrack = camOn ? cameraTrack : null;
     replaceOutgoingVideo(currentVideoTrack);
     updateControlUI();
@@ -1325,6 +1428,99 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     if (btn && btn.contains(e.target)) return;
     if (menu.contains(e.target)) return;
     closeCamMenu();
+  });
+
+  // registered once the socket exists (see connectSocket) — at module level `socket` is still
+  // null and `socket.on` would throw
+  function onSoloEnded(d) {
+    // nobody joined within the time limit -> the call closes itself
+    try { if (socket) socket.emit(EV.CALL_LEAVE, {}, () => {}); } catch (e) {}
+    pcMap.forEach(({ pc }) => { try { pc.close(); } catch (e) {} });
+    if (localStream) localStream.getTracks().forEach((t) => { try { t.stop(); } catch (e) {} });
+    showAlertAndLeave((d && d.minutes) || 15);
+  }
+
+  // the solo call ended by itself: say why before going back home
+  function showAlertAndLeave(minutes) {
+    const old = $('solo-ended');
+    if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'solo-ended';
+    box.className = 'fixed inset-0 z-[120] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4';
+    box.innerHTML = `
+      <div class="glass-panel rounded-3xl p-xl max-w-[420px] text-center border border-primary/25 shadow-2xl">
+        <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-secondary-container to-primary-container text-on-secondary-container flex items-center justify-center mb-4">
+          ${bmIcon('groups', 'text-[28px]')}
+        </div>
+        <h3 class="font-headline-md text-headline-md text-on-surface mb-2">تماس پایان یافت</h3>
+        <p class="font-body-sm text-body-sm text-on-surface-variant leading-6">
+          در این مدت هیچ کاربر دیگری به تماس نپیوست، بنابراین تماس به‌صورت خودکار بسته شد.
+        </p>
+        <p class="font-label-sm text-on-surface-variant text-[11px] mt-2">محدودیت: ${minutes} دقیقه تنها ماندن</p>
+        <button type="button" onclick="window.showAlertAndLeaveHide()"
+          class="btn-primary mt-6 px-6 py-2.5">بازگشت به خانه</button>
+      </div>`;
+    document.body.appendChild(box);
+  };
+  window.showAlertAndLeaveHide = function () {
+    const el = $('solo-ended');
+    if (el) el.remove();
+    const base = (window.INIT && window.INIT.base) || '/black-meet';
+    location.href = base + '/home';
+  };
+
+  // ---------- noise suppression menu ----------
+  window.bmUpdateNoiseUI = function () {
+    const sw = $('noise-suppression');
+    if (sw) sw.checked = noiseSuppression;
+    const icon = $('ic-noise');
+    if (icon && window.setBMIcon) {
+      // filled + primary while the filter is on, outline + dimmed while it is off
+      window.setBMIcon(icon, 'graphic_eq', noiseSuppression);
+      const svg = icon.tagName === 'svg' ? icon : (icon.closest && icon.closest('svg'));
+      if (svg) { svg.setAttribute('fill', noiseSuppression ? 'currentColor' : 'none'); svg.classList.toggle('text-primary', noiseSuppression); svg.classList.toggle('text-on-surface-variant', !noiseSuppression); }
+    }
+    const b = $('btn-noise');
+    if (b) b.title = noiseSuppression ? 'نویزگیر روشن است' : 'نویزگیر خاموش است';
+  };
+  window.toggleNoiseMenu = function (e) {
+    if (e) e.stopPropagation();
+    const menu = $('noise-menu');
+    if (!menu) return;
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    closeCamMenu();
+    window.bmUpdateNoiseUI();
+    menu.classList.remove('hidden');
+    menu.style.visibility = 'hidden';
+    positionNoiseMenu();
+    menu.style.visibility = 'visible';
+  };
+  function positionNoiseMenu() {
+    const menu = $('noise-menu');
+    const btn = $('btn-noise');
+    if (!menu || !btn) return;
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth || 264;
+    const h = menu.offsetHeight || 120;
+    // above the button, clamped so it never leaves the screen
+    let top = r.top - h - 10;
+    if (top < 8) top = Math.min(window.innerHeight - h - 8, r.bottom + 10);
+    let left = r.left + r.width / 2 - w / 2;
+    left = Math.max(8, Math.min(window.innerWidth - w - 8, left));
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+  }
+  document.addEventListener('click', (e) => {
+    const menu = $('noise-menu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    const btn = $('btn-noise');
+    if (btn && btn.contains(e.target)) return;
+    if (menu.contains(e.target)) return;
+    menu.classList.add('hidden');
+  });
+  window.addEventListener('resize', () => {
+    const menu = $('noise-menu');
+    if (menu && !menu.classList.contains('hidden')) positionNoiseMenu();
   });
 
   window.copyLink = function () {
@@ -1518,6 +1714,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   let focusedKey = null;
   let maximizedKey = null;
   let barCollapsed = false;
+  let maxSidebarWasOpen = false;
 
   // ---------- Maximize: a fixed full-viewport overlay ----------
   // `position: fixed; inset: 0` IS the whole site area — the browser tabs live
@@ -1543,6 +1740,11 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     const back = el.querySelector('.mx-back');
     if (back) back.classList.remove('hidden');
     document.body.classList.add('is-maximized');
+    // the members/admin panel has no business covering the big box — close it, and
+    // remember whether it was open so exiting the box restores the same view
+    const sb = $('call-sidebar');
+    maxSidebarWasOpen = !!(sb && !sb.classList.contains('hidden'));
+    if (window.toggleSidebar) window.toggleSidebar(false);
     setControlBarVisible(false);
   }
 
@@ -1562,6 +1764,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     const back = document.querySelector('.mx-back');
     if (back) back.classList.add('hidden');
     document.body.classList.remove('is-maximized');
+    if (maxSidebarWasOpen && window.toggleSidebar) window.toggleSidebar(true);
+    maxSidebarWasOpen = false;
     setControlBarVisible(true);
     layoutGrid();
   }
@@ -1596,8 +1800,15 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     // both directions are animated: the bar slides out to the side, the dot pops back in
     if (nav) nav.classList.toggle('bar-collapsed', barCollapsed);
     if (dot) {
-      dot.classList.remove('hidden');
-      dot.classList.toggle('bar-in', barCollapsed);
+      // fully hidden once the bar is back, fully visible (and above the maximized layer)
+      // while it is collapsed
+      if (barCollapsed) {
+        dot.classList.remove('hidden');
+        dot.classList.add('bar-in');
+      } else {
+        dot.classList.remove('bar-in');
+        setTimeout(() => { if (!barCollapsed) dot.classList.add('hidden'); }, 300);
+      }
     }
     window.setTimeout(layoutGrid, 340);
   }
@@ -1636,31 +1847,27 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       const tiles = all.filter(t => t !== webBox);
       // rows are sized from the space we actually have, so nothing ever overflows
       const stage = Math.max(0, (grid.clientHeight || 0));
-      if (state.expanded) {
-        grid.style.gridTemplateColumns = 'minmax(0, 1fr)';
-        grid.style.gridTemplateRows = 'minmax(0, 1fr)';
-        grid.style.gridAutoRows = 'minmax(0, 1fr)';
-        grid.style.alignContent = 'stretch';
-        webBox.style.gridColumn = '1';
-        webBox.style.gridRow = '1';
-        webBox.style.height = '';
-      } else {
+            // the box is a normal tile now; the only "big" mode is the full-viewport overlay
+      {
         grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
-        // the box takes the top row, the member tiles share everything below it
-        const webH = Math.max(200, Math.min(430, Math.round(stage * 0.42)));
-        grid.style.gridTemplateRows = webH + 'px minmax(0, 1fr)';
+        // The shared box is a NORMAL member tile: one grid cell, no fixed pixel height and
+        // no full-width row. It used to take the whole first row at up to 430px tall, which
+        // is why it looked nothing like the other boxes.
+        grid.style.gridTemplateRows = '';
         grid.style.gridAutoRows = 'minmax(0, 1fr)';
         grid.style.alignContent = 'stretch';
-        webBox.style.gridColumn = '1 / -1';
-        webBox.style.gridRow = '1';
-        webBox.style.height = webH + 'px';
+        webBox.style.gridColumn = '';
+        webBox.style.gridRow = '';
+        webBox.style.height = '';
       }
       tiles.forEach(t => {
-        if (state.expanded) t.style.display = 'none';
-        else { t.style.display = ''; t.style.gridColumn = ''; t.style.order = ''; }
+        // the shared box is a normal tile: nothing is hidden behind it any more
+        t.style.display = '';
+        t.style.gridColumn = '';
+        t.style.order = '';
       });
-      // clicking a tile still enlarges it: it takes the full width of a row below the box
-      if (!state.expanded && focusedEl && focusedEl.style.display !== 'none') {
+      // clicking a tile still enlarges it, exactly like a normal member tile
+      if (focusedEl && focusedEl.style.display !== 'none') {
         focusedEl.style.gridColumn = '1 / -1';
         focusedEl.style.order = '-1';
       }
@@ -1762,6 +1969,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
 
   function init() {
     renderSelf();
+    window.bmUpdateNoiseUI && window.bmUpdateNoiseUI();
     paintOpenJoin(!!(I.meeting && I.meeting.open_join));
     if (!approved) $('waiting-overlay').classList.remove('hidden');
     // bootstrap tiles from SSR data (HTTP bootstrap rule) — realtime updates take over after join
@@ -1786,6 +1994,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
         if (m.userId !== I.me.id && m.status === 'approved') getOrCreateTile(m.userId, m);
       });
       currentList = mapped;
+      // whoever was already in the room when this page opened is not "new"
+      mapped.forEach(m => { if (m.userId !== I.me.id) seenMemberIds.add(m.userId); });
       mapped.forEach(renderOneMember);
       renderPendingCards();
     }

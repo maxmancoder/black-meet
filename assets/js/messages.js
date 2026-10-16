@@ -119,11 +119,22 @@
     document.getElementById('ph-status').textContent = c.type === 'public' ? 'پیام همگانی' : (isOnline(c.user_id) ? 'آنلاین' : 'آفلاین');
   }
 
+  // Every bubble says WHO wrote it. The rows come with `username` from the server; live
+// and optimistic messages only know a display name (or my own), so fall back to those.
+  function senderName(m, fromMgr) {
+    if (m && m.username) return '@' + m.username;
+    if (m && (m.from_name || m.fromName)) return m.from_name || m.fromName;
+    if (window.MS_USERNAME) return '@' + window.MS_USERNAME;
+    return fromMgr ? 'مدیر' : 'من';
+  }
+
   function appendMessage(m, fromMgr) {
     const box = document.getElementById('chat-area');
     const el = document.createElement('div');
-    el.className = 'flex flex-col ' + (fromMgr ? 'items-start' : 'items-end');
-    el.innerHTML = '<div class="' + (fromMgr ? 'bg-surface-container-high text-on-surface' : 'bg-primary-container text-on-primary-container') + ' p-3 rounded-2xl ' + (fromMgr ? 'rounded-tr-sm' : 'rounded-tl-sm') + ' text-body-sm max-w-[80%] border border-white/5">' + esc(m.body) + '</div>';
+    el.className = 'flex flex-col gap-1 ' + (fromMgr ? 'items-start' : 'items-end');
+    const label = senderName(m, fromMgr);
+    el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' +
+      '<div class="' + (fromMgr ? 'bg-surface-container-high text-on-surface' : 'bg-primary-container text-on-primary-container') + ' p-3 rounded-2xl ' + (fromMgr ? 'rounded-tr-sm' : 'rounded-tl-sm') + ' text-body-sm max-w-[80%] border border-white/5">' + esc(m.body) + '</div>';
     box.appendChild(el);
     box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
@@ -156,7 +167,7 @@
     setMobileChat(true);
     fetch('api/announcements')
       .then(r => r.json())
-      .then(d => { if (d.ok) renderChat((d.announcements || []).map(a => ({ id: a.id, body: a.body, from_manager: 1 })), 'public'); })
+      .then(d => { if (d.ok) renderChat((d.announcements || []).map(a => ({ id: a.id, body: a.body, from_manager: 1, username: a.username, display_name: a.display_name })), 'public'); })
       .catch(() => {});
   }
 
@@ -171,7 +182,7 @@
       const bumpsMe = window.__IS_MANAGER ? !fromMgr : fromMgr;
       const open = view && view.type === 'user' && Number(view.user_id) === fromId;
       if (open) {
-        appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0 }, fromMgr);
+        appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, fromMgr);
         updateConvRow(fromId, { unread: 0 });
         if (bumpsMe) fetch('api/messages/conversations?user_id=' + fromId); // mark seen server-side
       } else if (bumpsMe) {
@@ -195,7 +206,7 @@
     BMLive.on(EV.NOTIF_NEW, a => {
       if (a && Number(a.fromUserId) === Number(window.MS_ID)) return; // my own send — already appended optimistically
       if (view && view.type === 'public' && a && a.body) {
-        appendMessage({ id: a.id, body: a.body, from_manager: 1 }, true);
+        appendMessage({ id: a.id, body: a.body, from_manager: 1, fromName: a.fromName }, true);
       }
     });
 
@@ -230,7 +241,7 @@
     if (!body) return;
     if (view.type === 'public') {
       // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
-      const el = appendMessage({ id: null, body, from_manager: 1 }, true);
+      const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME }, true);
       inp.value = '';
       fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body }) })
         .then(r => r.json()).then(d => {
@@ -240,7 +251,7 @@
     }
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
     const ownMgr = !!window.__IS_MANAGER;
-    appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0 }, ownMgr);
+    appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, ownMgr);
     inp.value = '';
 
     if (!ownMgr) {

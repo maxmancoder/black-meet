@@ -21,13 +21,13 @@ const OUT = path.join(ICONS_DIR, 'sprite.svg');
 
 const ICONS = [
   'arrow_back', 'arrow_forward', 'badge', 'block', 'calendar_add_on', 'call_end',
-  'campaign', 'check_circle', 'close', 'email', 'error', 'forum', 'fullscreen',
+  'campaign', 'check', 'check_circle', 'close', 'edit', 'email', 'error', 'forum', 'fullscreen',
   'forward_10', 'fullscreen', 'fullscreen_exit', 'group',
   'group_off', 'groups', 'help', 'home', 'info', 'key', 'link', 'lock', 'login',
   'logout',   'mail', 'menu', 'mic', 'mic_off', 'more_vert', 'mood', 'movie',
   'network_check', 'notifications', 'person', 'replay_10', 'volume_down',
   'person_remove', 'phone', 'phone_iphone', 'record_voice_over', 'screen_share',
-  'search', 'send', 'shield_person', 'switch_camera', 'tune', 'upload', 'download',
+  'search', 'send', 'shield_person', 'switch_camera', 'tune', 'upload', 'download', 'graphic_eq', 'graphic_eq',
   'description', 'snippet_folder', 'cloud_upload',
   'video_call', 'video_library',
   'videocam', 'videocam_off', 'volume_up',

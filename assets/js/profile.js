@@ -10,24 +10,88 @@
     setTimeout(() => t.classList.add('hidden'), 4000);
   }
 
-  window.saveProfile = function () {
+window.saveProfile = function () {
     const name = document.getElementById('display-name').value.trim();
-    if (!name) return showToast('نام نمایشی الزامی است');
+    if (!name) return showToast('نام نمایشی را وارد کنید');
     fetch('api/profile/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ csrf, display_name: name })
     })
       .then(r => r.json())
-      .then(d => { if (d.ok) showToast('ذخیره شد'); else showToast(d.msg || 'خطا'); });
+      .then(d => {
+        if (d.ok) {
+          showToast('نام نمایشی ذخیره شد');
+          // show the new name right away, then slide the editor away
+          const cur = document.getElementById('dn-current');
+          if (cur) cur.textContent = d.display_name || name;
+          window.toggleDisplayNameEditor(false);
+          refreshDisplayNameState();
+        } else {
+          showToast(d.msg || 'ذخیره نشد');
+          if (d.limited) window.toggleDisplayNameEditor(false);
+        }
+      })
+      .catch(() => showToast('ذخیره نشد'));
   };
 
-  window.logout = function (e) {
-    if (e) e.preventDefault();
-    fetch('api/logout', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'csrf=' + encodeURIComponent(csrf) })
-      .then(r => r.json())
-      .then(d => { localStorage.removeItem('blackmeet_logged_in'); location.href = d.redirect || BASE + '/login'; });
+  // The editor is hidden until its small key is pressed; it then slides out of the
+  // "نام نمایشی" box and back under it when saved or cancelled.
+  let dnCanEdit = true;
+  window.toggleDisplayNameEditor = function (open) {
+    const panel = document.getElementById('dn-panel');
+    if (!panel) return;
+    const btn = document.getElementById('btn-edit-name');
+    const want = !!open;
+    if (want && !dnCanEdit) { showToast('امروز نام نمایشی را عوض کرده‌اید'); return; }
+    panel.classList.toggle('is-open', want);
+    panel.setAttribute('aria-hidden', want ? 'false' : 'true');
+    if (btn) {
+      btn.setAttribute('aria-expanded', want ? 'true' : 'false');
+      btn.classList.toggle('is-active', want);
+    }
+    if (want) {
+      const input = document.getElementById('display-name');
+      if (input) {
+        input.value = (document.getElementById('dn-current') || {}).textContent || input.value;
+        setTimeout(() => { input.focus(); input.select && input.select(); }, 180);
+      }
+    }
   };
+
+  // the server allows one change per day — reflect it instead of letting the user try
+  function refreshDisplayNameState() {
+    fetch('api/profile/display-name-status', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(d => {
+        if (!d || !d.ok) return;
+        dnCanEdit = !!d.canChange;
+        const input = document.getElementById('display-name');
+        const btn = document.getElementById('btn-edit-name');
+        const hint = document.getElementById('display-name-hint');
+        const label = document.getElementById('dn-key-label');
+        if (d.canChange) {
+          if (input) input.disabled = false;
+          if (btn) btn.disabled = false;
+          if (hint) hint.textContent = 'هر روز یک‌بار قابل تغییر است.';
+          if (label) label.textContent = 'تغییر نام نمایشی';
+        } else {
+          if (input) input.disabled = true;
+          if (btn) btn.disabled = true;
+          if (hint) {
+            hint.textContent = 'امروز نام نمایشی را عوض کرده‌اید'
+              + (d.lastChange ? ' (' + d.lastChange + ')' : '') + '؛ فردا دوباره می‌توانید.';
+          }
+          if (label) label.textContent = 'فردا می‌توانید تغییر دهید';
+          // a panel left open when the limit kicked in must not stay open
+          window.toggleDisplayNameEditor(false);
+        }
+      })
+      .catch(() => {});
+  }
+  window.refreshDisplayNameState = refreshDisplayNameState;
+
+  // NOTE: logout() lives in logout-confirm.js (head.ejs) so every page asks first
 
   window.uploadAvatar = function () {
     const inp = document.getElementById('avatar-input');
@@ -125,4 +189,11 @@
       try { xhr.send(fd); } catch (e) { fail('ارسال فایل ممکن نبود'); }
     });
   };
+
+  // apply the once-a-day limit as soon as the page opens (the script sits at the end of
+  // <body>, so DOMContentLoaded may already have fired)
+  if (document.getElementById('display-name')) refreshDisplayNameState();
+  else document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('display-name')) refreshDisplayNameState();
+  });
 })();

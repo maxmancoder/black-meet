@@ -54,6 +54,51 @@ function memberList(roomId) {
   return list;
 }
 
+// ---------- solo call time limit ----------
+// A call nobody joins is a dead call: after SOLO_LIMIT_MS with one participant the room is
+// closed and everyone still inside is told why. It restarts whenever a second person joins.
+const SOLO_LIMIT_MS = Number(process.env.BM_SOLO_LIMIT_MS || 15 * 60 * 1000);
+const soloTimers = new Map();
+
+function cancelSoloTimer(roomId) {
+  const t = soloTimers.get(roomId);
+  if (t) { clearTimeout(t); soloTimers.delete(roomId); }
+}
+function armSoloTimer(roomId) {
+  cancelSoloTimer(roomId);
+  const r = rooms.get(roomId);
+  if (!r) return;
+  const t = setTimeout(() => {
+    soloTimers.delete(roomId);
+    const room = rooms.get(roomId);
+    if (!room) return;
+    // only if still alone AND still connected
+    const people = new Set();
+    room.sockets.forEach((s) => people.add(s.userId));
+    if (people.size !== 1 || room.sockets.size === 0) return;
+    console.log('[call] solo call in room ' + roomId + ' passed the time limit -> closing');
+    try {
+      room.sockets.forEach((s, sid) => {
+        // the socket itself (not the room) — nobody has to have joined the room channel
+        io.to(sid).emit(EV.CALL_SOLO_ENDED, { minutes: Math.round(SOLO_LIMIT_MS / 60000) || SOLO_LIMIT_MS });
+      });
+    } catch (e) { console.log('[call] could not notify the room: ' + e.message); }
+    rooms.delete(roomId);
+    internal.closeMeeting(roomId);
+  }, SOLO_LIMIT_MS);
+  if (t.unref) t.unref();
+  soloTimers.set(roomId, t);
+}
+// keeps the timer honest: run it whenever the room's population changes
+function updateSoloTimer(roomId) {
+  const r = rooms.get(roomId);
+  if (!r) return;
+  const people = new Set();
+  r.sockets.forEach((s) => people.add(s.userId));
+  if (people.size <= 1) armSoloTimer(roomId);
+  else cancelSoloTimer(roomId);
+}
+
 function scheduleCloseMeeting(roomId) {
   if (pendingClose.has(roomId)) return;
   const t = setTimeout(() => {
@@ -218,6 +263,8 @@ function attach(httpServer) {
           r.pending.add(uid);
           io.to(room).emit(EV.MEMBER_PENDING, { member: you });
         }
+        // a call that never gets a second person ends by itself
+        updateSoloTimer(room);
         if (typeof cb === 'function') cb({ ok: true, you, members });
       });
     });
@@ -622,6 +669,7 @@ if (kind === 'audio') {
         n++;
       });
       if (n) console.log('[call] released ' + n + ' waiting member(s) after the switch was turned on');
+      updateSoloTimer(socket.data.room);
     }
 
     socket.on(EV.CALL_ALERT_ADMIN, () => {
@@ -697,7 +745,10 @@ r.sockets.forEach((s, sid) => {
       }
       if (r.sockets.size === 0) {
         rooms.delete(room);
+        cancelSoloTimer(room);
         scheduleCloseMeeting(room);
+      } else {
+        updateSoloTimer(room);
       }
     }
 

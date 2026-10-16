@@ -67,7 +67,7 @@
 }
 </style>
 
-<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>; window.__IS_MANAGER = <%- json(isManager) %>; window.MS_ID = <%- Number(me.id) %>;</script>
+<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>; window.__IS_MANAGER = <%- json(isManager) %>; window.MS_ID = <%- Number(me.id) %>; window.MS_USERNAME = <%- json(me.username) %>;</script>
 <script src="<%- asset('assets/js/messages.js') %>"></script>
 </body>
 </html>

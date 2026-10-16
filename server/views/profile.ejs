@@ -86,10 +86,33 @@
             <% } %>
 
             <!-- Steel info boxes: glowing blue metallic edges -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کامل</span><span class="bm-infobox-val"><%- esc(me.full_name) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کاربری</span><span class="bm-infobox-val" dir="ltr">@<%- esc(me.username) %></span></div>
-                <div class="bm-infobox"><span class="bm-infobox-title">نام نمایشی</span><span class="bm-infobox-val"><%- esc(me.display_name) %></span></div>
+                <!-- the editor slides out DIRECTLY under the display-name box; it is inside the same grid
+                     cell so it can never drift to another column -->
+                <div class="bm-dn-cell">
+                    <div class="bm-infobox bm-dn-host">
+                        <span class="bm-infobox-title">نام نمایشی</span>
+                        <span class="bm-infobox-val" id="dn-current"><%- esc(me.display_name) %></span>
+                        <button type="button" id="btn-edit-name" onclick="toggleDisplayNameEditor(true)"
+                                class="bm-dn-key mt-2" aria-controls="dn-panel" aria-expanded="false">
+                            <%- icon('edit', 'text-[14px]', false, 'id="dn-key-icon"') %>
+                            <span id="dn-key-label">تغییر نام نمایشی</span>
+                        </button>
+                    </div>
+                    <div id="dn-panel" class="bm-dn-panel" aria-hidden="true">
+                        <div class="bm-infobox bm-dn-inner">
+                            <input id="display-name" type="text" maxlength="40" value="<%- esc(me.display_name) %>"
+                                   class="form-input w-full" dir="rtl"/>
+                            <p id="display-name-hint" class="font-label-sm text-on-surface-variant text-[11px] mt-2">هر روز یک‌بار قابل تغییر است.</p>
+                            <div class="flex items-center gap-2 mt-2 w-fit">
+                                <button type="button" onclick="saveProfile()" id="btn-save-name" class="btn-primary px-4 py-1.5 text-[13px] w-auto">ذخیره</button>
+                                <button type="button" onclick="toggleDisplayNameEditor(false)" id="btn-cancel-name" class="btn-secondary px-4 py-1.5 text-[13px] w-auto">لغو</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="bm-infobox"><span class="bm-infobox-title">ایمیل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.email) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">رمز عبور</span><span class="bm-infobox-val"><%- icon('lock', 'text-[16px] align-middle', true) %> ****************</span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">شماره موبایل</span><span class="bm-infobox-val" dir="ltr"><%- esc(me.phone) %></span></div>
@@ -97,7 +120,7 @@
             </div>
 
             <div class="mt-md rounded-lg bg-surface-container-low border border-outline-variant/30 px-4 py-3 text-body-sm text-on-surface-variant">
-                برای تغییر رمز عبور به صفحه فراموشی رمز مراجعه کنید.
+                برای تغییر رمز عبور به ادمین پیام دهید!
             </div>
 
             <% if (me.is_manager) { %>

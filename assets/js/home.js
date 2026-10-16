@@ -34,15 +34,7 @@
       .catch(() => showToast('خطا در برقراری ارتباط'));
   });
 
-  window.logout = function (e) {
-    if (e) e.preventDefault();
-    fetch('api/logout', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'csrf=' + encodeURIComponent(window.CSRF) })
-      .then(r => r.json())
-      .then(d => {
-        localStorage.removeItem('blackmeet_logged_in');
-        location.href = d.redirect || BASE + '/login';
-      });
-  };
+  // NOTE: logout() lives in logout-confirm.js (head.ejs) so every page asks first
 
   // ---- Delete a meeting from the "recent meetings" cards ----
   window.deleteRecent = function (id, btn) {

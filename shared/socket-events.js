@@ -61,6 +61,9 @@
     YOU_APPROVED: 'you-approved',
     YOU_REJECTED: 'you-rejected',
     YOU_REMOVED: 'you-removed',
+    // the call ended because nobody else joined within the time limit
+    CALL_SOLO_ENDED: 'call:alone-ended',
+    CALL_SOLO_ENDED: 'call:alone-ended',
     YOU_BLOCKED: 'you-blocked',
     JOIN_ALERT: 'join-alert',
 

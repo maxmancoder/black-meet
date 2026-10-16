@@ -492,15 +492,57 @@ router.post('/profile/update', (req, res) => {
   if (!requireLoginApi(req, res)) return;
   if (!checkCsrf(req, res)) return;
 
-  const me = sessions.currentUser(req);
+const me = sessions.currentUser(req);
   const display = String(req.body.display_name || '').trim();
-  if (display === '') return bad(res, { ok: false, msg: 'نام نمایشی الزامی است' });
+  if (display === '') return bad(res, { ok: false, msg: 'نام نمایشی نمی‌تواند خالی باشد' });
+  if (display.length > 40) return bad(res, { ok: false, msg: 'نام نمایشی حداکثر ۴۰ حرف است' });
+
+  // the owner asked for a name that can be changed ONCE A DAY — enforced on the server so it
+  // cannot be bypassed by calling the API directly. NB: the key is built in JS — SQLite's
+  // `||` is logical OR, not string concatenation, so the query below must bind it.
+  const today = sqlNow().slice(0, 10);
+  const changeKey = 'display_name_change:' + me.id;
+  const last = dbm.get(
+    'SELECT value FROM bm_settings WHERE key=? AND substr(value,1,10)=?',
+    [changeKey, today]
+  );
+  if (last) {
+    const prev = String(last.value).slice(11);
+    // never let a date-format surprise turn the friendly "come back tomorrow" into a 500
+    let nextAt = '';
+    const t = Date.parse(prev.replace(' ', 'T'));
+    if (!isNaN(t)) nextAt = new Date(t + 86400000).toISOString().slice(0, 16).replace('T', ' ');
+    return bad(res, {
+      ok: false, limited: true,
+      msg: 'امروز نام نمایشی خود را عوض کرده‌اید؛ فردا دوباره می‌توانید.',
+      lastChange: prev,
+      nextAt,
+    }, 429);
+  }
 
   dbm.run('UPDATE users SET display_name=? WHERE id=?', [display, me.id]);
+  dbm.run('INSERT OR REPLACE INTO bm_settings (key, value) VALUES (?,?)', [changeKey, sqlNow()]);
   usersdb.syncUser(me.id);
   if (req.session) req.session.data.display_name = display;
   sessions.save(req);
   return ok(res, { ok: true, display_name: display });
+});
+
+// when may this account change its display name again? (the profile page disables the field)
+router.get('/profile/display-name-status', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  const today = sqlNow().slice(0, 10);
+  const last = dbm.get(
+    'SELECT value FROM bm_settings WHERE key=? AND substr(value,1,10)=?',
+    ['display_name_change:' + me.id, today]
+  );
+  return ok(res, {
+    ok: true,
+    canChange: !last,
+    lastChange: last ? String(last.value).slice(11) : null,
+    displayName: me.display_name,
+  });
 });
 
 const upload = multer({
@@ -685,7 +727,7 @@ router.all('/admin/members', (req, res) => {
   const uid = Number(req.body.user_id || 0);
   if (uid === 0) return bad(res, { ok: false, msg: 'داده ناقص' });
 
-  const row = dbm.get('SELECT id, is_manager, rank, username, email, phone, password_hash FROM users WHERE id=?', [uid]);
+  const row = dbm.get('SELECT id, is_manager, is_limited, rank, username, email, phone, password_hash FROM users WHERE id=?', [uid]);
   if (!row) return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
 
   // the main manager's info may only be changed by himself
@@ -729,7 +771,10 @@ router.all('/admin/members', (req, res) => {
 
   if (action === 'set_rank') {
     const nr = String(req.body.rank || '');
-    if (nr !== 'admin' && nr !== 'premium') return bad(res, { ok: false, msg: 'درجه نامعتبر است' });
+    // The menu offers user | admin | premium, so ALL THREE must be accepted — this
+    // branch only knew admin|premium, which made demoting anyone to «کاربر عادی» fail
+    // with "درجه نامعتبر است".
+    if (VALID_RANKS.indexOf(nr) === -1) return bad(res, { ok: false, msg: 'درجه نامعتبر است' });
     if (uid === Number(me.id)) return bad(res, { ok: false, msg: 'نمی‌توانید درجه خود را تغییر دهید' });
     if (row.is_manager) return bad(res, { ok: false, msg: 'درجه مدیر اصلی قابل تغییر نیست' }, 403);
     dbm.run('UPDATE users SET rank=? WHERE id=?', [nr, uid]);
@@ -753,7 +798,10 @@ router.all('/admin/members', (req, res) => {
   }
 
   // default action: toggle "limited"
-  if (uid === Number(me.id)) return bad(res, { ok: false, msg: 'نمی‌توانید حساب خود را محدود کنید' });
+  // One branch serves both directions, so the self-guard must be direction aware:
+  // restricting YOURSELF is nonsense, but LIFTING your own restriction is exactly what
+  // a restricted premium admin has to be able to do from this very page.
+  if (uid === Number(me.id) && !row.is_limited) return bad(res, { ok: false, msg: 'نمی‌توانید حساب خود را محدود کنید' });
   if (row.is_manager) return bad(res, { ok: false, msg: 'مدیر را نمی‌توان محدود کرد' }, 403);
   dbm.run('UPDATE users SET is_limited = 1 - is_limited WHERE id=?', [uid]);
   usersdb.syncUser(uid);
@@ -886,6 +934,13 @@ router.all('/announcements', (req, res) => {
 
   if (req.method === 'GET') {
     const rows = dbm.all('SELECT id, body, created_at FROM announcements ORDER BY id DESC');
+    // announcements are always posted by a manager/premium — stamp the author so the
+    // bubble can show a name above the text
+    const author = dbm.get('SELECT username, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+    rows.forEach(r => {
+      r.username = author ? author.username : '';
+      r.display_name = author ? author.display_name : '';
+    });
     return ok(res, { ok: true, announcements: rows });
   }
 
@@ -976,6 +1031,22 @@ router.all('/messages/conversations', (req, res) => {
   const isMgr = !!me.is_manager;
   if (!isMgr && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
 
+  // every bubble shows who wrote it: pv rows only carry `from_manager`, so the two
+  // possible senders (the main manager and the other side of the thread) are resolved
+  // once here and stamped onto each row
+  function withSender(rows, mgrUser, otherUser) {
+    return (rows || []).map(m => {
+      const u = m.from_manager ? mgrUser : otherUser;
+      return Object.assign({}, m, {
+        username: u ? u.username : '',
+        display_name: u ? u.display_name : '',
+      });
+    });
+  }
+  function managerUser() {
+    return dbm.get('SELECT id, username, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+  }
+
   if (req.method === 'GET') {
     const uid = Number(req.query.user_id || 0);
 
@@ -1001,7 +1072,8 @@ router.all('/messages/conversations', (req, res) => {
         [me.id]
       );
       dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
-      return ok(res, { ok: true, messages, admin_chat: true });
+      // the "other side" of a premium's single thread is himself when he replies
+      return ok(res, { ok: true, messages: withSender(messages, managerUser(), me), admin_chat: true });
     }
 
     if (uid === 0) {
@@ -1017,7 +1089,8 @@ router.all('/messages/conversations', (req, res) => {
       [uid]
     );
     dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
-    return ok(res, { ok: true, messages });
+    const other = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
+    return ok(res, { ok: true, messages: withSender(messages, me, other) });
   }
 
   if (!checkCsrf(req, res)) return;

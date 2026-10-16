@@ -86,9 +86,14 @@ input[type="search"], input[type="text"].bm-search, .bm-search input {
   --bm-surface-container-high: 34 42 61;
   --bm-on-primary-container: 218 215 255;
 }
-body { font-family: 'Entezar','Tahoma','Arial',sans-serif; }
-.font-fa { font-family: 'Entezar','Tahoma',sans-serif; }
-.font-brand { font-family: 'AFSANEH','Entezar','Tahoma',sans-serif; font-weight: 400; }
+/* The whole app reads in Vazirmatn (the owner asked for it everywhere). Entezar stays
+   declared as a fallback for any glyph Vazirmatn does not cover. */
+body {
+  font-family: 'Vazirmatn', 'Entezar', 'Tahoma', 'Arial', sans-serif;
+  font-feature-settings: 'ss02';
+}
+.font-fa { font-family: 'Vazirmatn', 'Entezar', 'Tahoma', sans-serif; }
+.font-brand { font-family: 'AFSANEH', 'Vazirmatn', 'Tahoma', sans-serif; font-weight: 400; }
 
 /* ===== SVG icons (icons/sprite.svg) ===== */
 .bm-ico {
@@ -121,17 +126,22 @@ body { font-family: 'Entezar','Tahoma','Arial',sans-serif; }
 /* Form inputs */
 .form-input {
   width: 100%;
-  background: #1a2236;
-  border: 1px solid rgb(var(--bm-outline-variant));
+  /* themed (not a hard-coded dark blue) and with a light, readable text colour */
+  background: rgb(var(--bm-surface-container-highest));
+  border: 1px solid rgb(var(--bm-outline-variant) / .6);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
-  color: rgb(var(--bm-background));
+  color: #ffffff;
+  font-family: inherit;
   transition: all .2s ease;
 }
-.form-input::placeholder { color: rgba(var(--bm-background),0.5); }
+.form-input::placeholder { color: rgba(255, 255, 255, .55); }
+.form-input:hover { border-color: rgb(var(--bm-primary) / .45); }
 .form-input:focus {
   outline: none;
   border-color: rgb(var(--bm-primary-container));
+  background: rgb(var(--bm-surface-container-highest));
+  color: #ffffff;
   box-shadow: 0 0 0 2px rgba(79,70,229,0.35);
 }
 .input-glow:focus-within { box-shadow: 0 0 0 2px rgb(var(--bm-primary-container)); border-color: transparent; }
@@ -370,6 +380,21 @@ button, .btn-primary, .btn-secondary, .bm-switch {
   transform: translateY(0);
   pointer-events: auto;
 }
+/* On a phone the bar has more keys than fit: let it scroll sideways INSIDE its own rounded
+   pill instead of pushing the page wide (the noise key used to stick out of the viewport). */
+@media (max-width: 639px) {
+  #control-bar {
+    max-width: calc(100vw - 12px);
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  #control-bar::-webkit-scrollbar { display: none; }
+  #control-bar .bm-bar-item { flex: 0 0 auto; }
+}
 @media (max-width: 639px) { #btn-bar-hide { display: none; } }
 #btn-bar-show {
   transform: translateY(26px) scale(.5);
@@ -377,7 +402,21 @@ button, .btn-primary, .btn-secondary, .bm-switch {
   pointer-events: none;
   transition: transform .38s var(--bm-squish), opacity .3s ease, background-color .2s ease;
 }
-#btn-bar-show.bar-in { transform: none; opacity: 1; pointer-events: auto; }
+/* While a box is maximized it covers the whole viewport with a LAYER (z-90) that also
+   stretches the bar's own clickable area. The floating dot used to shrink back to 28px
+   once the bar reappeared and the layer then swallowed the click, so "نمایش منو" did
+   nothing. Keep the dot above it and full size whenever it is visible. */
+#btn-bar-show:not(.hidden) {
+  z-index: 100;
+  pointer-events: auto;
+}
+#max-overlay ~ #btn-bar-show,
+#control-bar.bar-collapsed ~ #btn-bar-show {
+  z-index: 100;
+}
+/* the dot only becomes visible+clickable with .bar-in; keep it above the maximized layer
+   (z-90) so it can never be covered by the stretched web-frame */
+#btn-bar-show.bar-in { transform: none; opacity: 1; pointer-events: auto; z-index: 100; }
 #btn-bar-show.bar-in:hover { background-color: rgb(var(--bm-surface-container-highest)); }
 #btn-bar-hide { display: inline-flex; }
 .mx-btn { opacity: .55; display: inline-flex; align-items: center; }
@@ -554,7 +593,141 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
 .web-box.web-expanded { height: 100% !important; min-height: 0; }
 .web-box iframe { display: block; }
 
-/* ===== Dedicated player for the shared audio box ===== */
+/* While a box is maximized it sits in a full-viewport layer (z-90). The side panel
+   (z-40) and the chat toast (z-55) used to stay UNDER it, so "نمایش منو", the chat key and
+   an incoming message were all invisible on the big box. Lift them above the layer while
+   it is open — the maximized box itself stays clickable everywhere else. */
+body.is-maximized #call-sidebar,
+body.is-maximized #sidebar-backdrop { z-index: 96; }
+body.is-maximized #chat-toast { z-index: 97; }
+body.is-maximized #emoji-picker { z-index: 97; }
+body.is-maximized #web-menu,
+body.is-maximized #cam-menu,
+body.is-maximized #noise-menu { z-index: 98; }
+/* the control bar itself is z-50 — while a box is maximized (z-90) "نمایش منو" brought
+   the bar back but it painted UNDER the big box, so the keys were dead */
+body.is-maximized #control-bar { z-index: 98; }
+/* the panel only becomes a sheet on the big box — keep it beside the box on a wide screen */
+body.is-maximized #call-sidebar {
+  background: rgb(var(--bm-surface-container-low) / .97);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+}
+
+/* ===== display-name editor (profile): slides out of the info box and back under it ===== */
+.bm-dn-key {
+  display: inline-flex;
+  align-items: center;
+  gap: .375rem;
+  padding: .3125rem .75rem;
+  font-size: 12px;
+  font-family: inherit;
+  color: rgb(var(--bm-primary));
+  background: rgb(var(--bm-primary-container) / .25);
+  border: 1px solid rgb(var(--bm-primary) / .35);
+  border-radius: 9999px;
+  transition: background-color .2s ease, border-color .2s ease, transform .2s var(--bm-squish);
+}
+.bm-dn-key:hover { background: rgb(var(--bm-primary-container) / .45); border-color: rgb(var(--bm-primary) / .6); }
+.bm-dn-key:active { transform: scale(.97); }
+.bm-dn-key[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* collapsed: zero height, hidden, no pointer events */
+.bm-dn-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-10px) scaleY(.96);
+  pointer-events: none;
+  /* visibility flips only AFTER the slide-out finished, so the collapse can be seen */
+  transition: grid-template-rows .32s var(--bm-squish), opacity .24s ease,
+              transform .32s var(--bm-squish), margin-top .32s var(--bm-squish),
+              visibility 0s linear .34s;
+  visibility: hidden;
+  margin-top: 0;
+  height: 0;
+  overflow: hidden;
+}
+.bm-dn-panel > .bm-dn-inner { overflow: hidden; min-height: 0; }
+
+/* opened: expands downward with a soft, bouncy feel */
+.bm-dn-panel.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+  pointer-events: auto;
+  margin-top: .5rem;
+  height: auto;
+  overflow: visible;
+  visibility: visible;
+  transition: grid-template-rows .32s var(--bm-squish), opacity .24s ease,
+              transform .32s var(--bm-squish), margin-top .32s var(--bm-squish),
+              visibility 0s;
+}
+/* the inner box fades in slightly later so it reads as "coming out of" the box */
+.bm-dn-panel.is-open > .bm-dn-inner { animation: bmDnReveal .34s var(--bm-squish) both; }
+@keyframes bmDnReveal {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bm-dn-panel, .bm-dn-panel.is-open > .bm-dn-inner { transition: none; animation: none; }
+}
+/* the host box and the panel share ONE grid cell, so the editor can never drift into
+   the next column of the 2-column info grid; it grows its own cell downwards */
+.bm-dn-cell { min-width: 0; align-self: start; }
+.bm-dn-cell > .bm-infobox { width: 100%; }
+.bm-dn-host { position: relative; z-index: 1; }
+/* ===== logout confirm dialog (assets/js/logout-confirm.js) ===== */
+.bm-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--bm-background) / .78);
+  backdrop-filter: blur(6px);
+}
+#logout-modal > div:last-child { animation: bm-modal-in .26s var(--bm-squish) both; }
+@keyframes bm-modal-in {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+.bm-modal-icon {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: rgb(var(--bm-primary));
+  background: rgb(var(--bm-primary-container) / .45);
+  border: 1px solid rgb(var(--bm-primary) / .35);
+}
+@media (prefers-reduced-motion: reduce) {
+  #logout-modal > div:last-child { animation: none; }
+}
+
+/* ===== message bubbles: the sender's username sits above every bubble ===== */
+.bm-msg-sender {
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgb(var(--bm-on-surface-variant) / .9);
+  padding: 0 .4rem;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== Chrome must not be text-selectable: keys, links and sidebars ===== */
+button, a, nav, aside, label, th, .bm-infobox-title, .bm-bar-item {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* ...but real content stays selectable */
+input, textarea, select, option, [contenteditable="true"], #chat-messages, #chat-area, #member-list {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .web-box.web-kind-audio { background: linear-gradient(160deg, #171b34 0%, #0d1020 60%, #141a33 100%); }
 .web-box.web-kind-audio .web-body { background: transparent; display: flex; align-items: center; justify-content: center; }
 .audio-player {

@@ -106,7 +106,22 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="font-body-sm text-on-surface-variant whitespace-nowrap">نمایش</span>
-                    <select id="page-size" class="bg-surface-container rounded-lg border border-outline-variant/30 py-3 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container transition-all">
+                    <!-- the native <select> stays as the value store (render() reads it);
+                         this is the themed face the user actually clicks -->
+                    <div class="relative">
+                        <button type="button" id="page-size-btn" data-no-loader data-no-soft
+                                onclick="togglePageSizeMenu(event)" aria-haspopup="listbox" aria-expanded="false"
+                                class="flex items-center gap-2 bg-surface-container hover:bg-surface-container-highest border border-outline-variant/30 hover:border-primary-container/60 rounded-lg py-2.5 px-3 text-body-sm text-on-surface transition-colors min-w-[112px] justify-between">
+                            <span id="page-size-label">۲۵ کاربر</span>
+                            <span class="bm-caret"></span>
+                        </button>
+                        <div id="page-size-menu" class="hidden absolute top-full right-0 mt-2 glass-panel rounded-xl border border-outline-variant/30 shadow-2xl p-1.5 min-w-[132px] z-40">
+                            <button type="button" class="mode-opt" data-size="25" onclick="setPageSize(25)">۲۵ کاربر</button>
+                            <button type="button" class="mode-opt" data-size="50" onclick="setPageSize(50)">۵۰ کاربر</button>
+                            <button type="button" class="mode-opt" data-size="100" onclick="setPageSize(100)">۱۰۰ کاربر</button>
+                        </div>
+                    </div>
+                    <select id="page-size" class="hidden" aria-hidden="true" tabindex="-1">
                         <option value="25">۲۵ کاربر</option>
                         <option value="50">۵۰ کاربر</option>
                         <option value="100">۱۰۰ کاربر</option>
@@ -115,7 +130,7 @@
             </div>
             <p id="result-count" class="font-body-sm text-on-surface-variant mb-md"></p>
 
-            <div id="user-cards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start"></div>
+            <div id="user-cards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start" data-no-soft></div>
         </section>
         <% } %>
 
@@ -129,7 +144,7 @@
                     <p class="font-body-sm text-body-sm text-on-surface-variant">درخواست‌های ثبت‌نام کاربران جدید را بررسی کنید؛ پس از تایید، حساب فعال و قابل ورود می‌شود.</p>
                 </div>
             </div>
-            <div id="request-list" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"></div>
+            <div id="request-list" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start" data-no-soft></div>
         </section>
         <% } %>
     </main>
@@ -160,18 +175,37 @@
         <p class="font-label-sm text-on-surface-variant text-[11px] mt-1 mb-2.5">برای تغییر رمز، مقدار جدید (حداقل ۶ کاراکتر) را وارد کنید.</p>
 
         <label class="font-label-sm text-on-surface-variant block mb-1.5">درجه</label>
-        <select id="ed-rank" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-1">
-            <option value="user">کاربر عادی</option>
-            <option value="admin">ادمین</option>
-            <option value="premium">ادمین پریمیوم</option>
-        </select>
+<!-- the native <select> stays the value store (openEditModal/submitEdit read & write
+             .value); this is the themed face the user clicks -->
+            <div class="relative mb-1">
+                <button type="button" id="ed-rank-btn" data-no-soft onclick="toggleEditRankMenu(event)"
+                        aria-haspopup="listbox" aria-expanded="false"
+                        class="w-full flex items-center justify-between gap-2 bg-surface-container-low border border-outline-variant hover:border-primary-container/60 rounded-lg px-3 py-2 text-body-sm text-on-surface transition-colors">
+                    <span id="ed-rank-label">کاربر عادی</span>
+                    <span class="bm-caret"></span>
+                </button>
+            </div>
+            <select id="ed-rank" class="hidden" aria-hidden="true" tabindex="-1">
+                <option value="user">کاربر عادی</option>
+                <option value="admin">ادمین</option>
+                <option value="premium">ادمین پریمیوم</option>
+            </select>
         <p id="ed-rank-lock" class="font-label-sm text-on-surface-variant text-[11px] mt-1 hidden">درجه مدیر اصلی قابل تغییر نیست.</p>
 
         <div class="flex gap-2 mt-4">
-            <button onclick="submitEdit()" class="flex-1 bg-primary text-white rounded-lg py-2.5 font-label-md hover:bg-primary-fixed transition-colors bm-soft">ذخیره</button>
-            <button onclick="closeEditModal()" class="flex-1 bg-surface-container-high text-on-surface rounded-lg py-2.5 font-label-md hover:opacity-80 transition-opacity bm-soft">انصراف</button>
+            <button onclick="submitEdit()" class="flex-1 bg-primary text-white rounded-lg py-2.5 font-label-md hover:bg-primary-fixed transition-colors">ذخیره</button>
+            <button onclick="closeEditModal()" class="flex-1 bg-surface-container-high text-on-surface rounded-lg py-2.5 font-label-md hover:opacity-80 transition-opacity">انصراف</button>
         </div>
     </div>
+</div>
+
+<!-- the rank menu lives OUTSIDE the edit modal: the modal panel is a scroll container
+     with a backdrop-filter, which makes it the containing block for fixed children and
+     clipped the menu away. Here it can never be cut off. -->
+<div id="ed-rank-menu" class="hidden fixed glass-panel rounded-xl border border-outline-variant/30 shadow-2xl p-1.5 min-w-[200px]" style="z-index:110">
+    <button type="button" class="mode-opt" data-rank="user" onclick="setEditRank('user')">کاربر عادی</button>
+    <button type="button" class="mode-opt" data-rank="admin" onclick="setEditRank('admin')">ادمین</button>
+    <button type="button" class="mode-opt" data-rank="premium" onclick="setEditRank('premium')">ادمین پریمیوم</button>
 </div>
 
 <div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
@@ -179,13 +213,17 @@
 
 <style>
 .bm-caret { width: 8px; height: 8px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .2s; flex-shrink: 0; }
-#mode-btn[aria-expanded="true"] .bm-caret { transform: rotate(135deg); }
-.mode-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 8px; transition: background .15s; }
+#mode-btn[aria-expanded="true"] .bm-caret,
+#page-size-btn[aria-expanded="true"] .bm-caret,
+#ed-rank-btn[aria-expanded="true"] .bm-caret { transform: rotate(135deg); }
+.mode-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 8px; transition: background .15s, color .15s; text-align: right; font-size: 13px; color: rgb(var(--bm-on-surface)); }
 .mode-opt:hover { background: rgba(45, 52, 73, .7); }
-.mode-opt.active { background: rgba(79, 70, 229, .18); }
+.mode-opt.active, .mode-opt.bm-opt-active { background: rgba(79, 70, 229, .18); color: rgb(var(--bm-primary)); }
 .mode-opt-icon { display: flex; align-items: center; }
 .req-thread { max-height: 180px; overflow-y: auto; }
 .rank-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 180px; z-index: 40; }
+/* the two new dropdowns live in the sticky toolbar / the modal — give them a bit more room */
+#page-size-menu .mode-opt, #ed-rank-menu .mode-opt { justify-content: flex-start; }
 </style>
 
 <script>
