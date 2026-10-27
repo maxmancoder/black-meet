@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Flux - Create Meeting</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ffb4ab",
+                        "on-primary": "#1d00a5",
+                        "primary-fixed": "#e2dfff",
+                        "tertiary-fixed-dim": "#ffb2b7",
+                        "secondary-container": "#00a572",
+                        "surface-variant": "#2d3449",
+                        "on-error": "#690005",
+                        "on-secondary": "#003824",
+                        "surface-container": "#171f33",
+                        "primary-container": "#4f46e5",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed": "#002113",
+                        "inverse-surface": "#dae2fd",
+                        "on-tertiary-fixed-variant": "#92002a",
+                        "on-background": "#dae2fd",
+                        "surface-container-high": "#222a3d",
+                        "outline-variant": "#464555",
+                        "tertiary": "#ffb2b7",
+                        "on-surface-variant": "#c7c4d8",
+                        "on-secondary-fixed-variant": "#005236",
+                        "outline": "#918fa1",
+                        "on-tertiary-fixed": "#40000d",
+                        "on-secondary-container": "#00311f",
+                        "inverse-primary": "#4d44e3",
+                        "secondary-fixed": "#6ffbbe",
+                        "tertiary-container": "#bf0f3c",
+                        "on-tertiary-container": "#ffd0d2",
+                        "on-primary-fixed": "#0f0069",
+                        "background": "#0b1326",
+                        "surface-dim": "#0b1326",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-tint": "#c3c0ff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "surface-bright": "#31394d",
+                        "surface": "#0b1326",
+                        "on-tertiary": "#67001b",
+                        "inverse-on-surface": "#283044",
+                        "surface-container-lowest": "#060e20",
+                        "surface-container-low": "#131b2e",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface-container-highest": "#2d3449",
+                        "tertiary-fixed": "#ffdadb",
+                        "secondary": "#4edea3",
+                        "on-primary-container": "#dad7ff",
+                        "primary": "#c3c0ff",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "grid-margin": "24px",
+                        "grid-gutter": "16px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "xl": "40px",
+                        "base": "4px",
+                        "md": "16px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Be Vietnam Pro"],
+                        "body-lg": ["Be Vietnam Pro"],
+                        "headline-md": ["Be Vietnam Pro"],
+                        "body-sm": ["Be Vietnam Pro"],
+                        "label-md": ["JetBrains Mono"],
+                        "display-lg": ["Be Vietnam Pro"],
+                        "display-md": ["Be Vietnam Pro"],
+                        "headline-lg": ["Be Vietnam Pro"],
+                        "label-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "display-md": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(45, 52, 73, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .input-glow:focus-within {
+            box-shadow: 0 0 0 2px #4f46e5;
+            border-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col relative overflow-hidden">
+<!-- Background Ambient Element -->
+<div class="absolute inset-0 pointer-events-none opacity-20">
+<div class="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-primary-container rounded-full blur-[100px]"></div>
+<div class="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-tertiary-container rounded-full blur-[120px]"></div>
+</div>
+<!-- Navigation suppressed for linear/transactional flow -->
+<main class="flex-grow flex items-center justify-center p-md sm:p-lg relative z-10">
+<div class="glass-panel w-full max-w-lg rounded-xl shadow-[0_32px_64px_rgba(0,0,0,0.4)] overflow-hidden">
+<div class="p-xl flex flex-col gap-lg">
+<!-- Header -->
+<div class="text-center">
+<span class="material-symbols-outlined text-display-md text-primary mb-sm" style="font-variation-settings: 'FILL' 1;">video_call</span>
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Create Meeting</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Set up a secure space for your team.</p>
+</div>
+<!-- Form -->
+<form class="flex flex-col gap-md" onsubmit="event.preventDefault(); window.location.href='#';">
+<div class="relative input-glow rounded-lg bg-surface-container-high border border-outline-variant transition-all duration-200 group">
+<label class="absolute left-sm top-xs font-label-sm text-label-sm text-on-surface-variant transition-all duration-200 pointer-events-none group-focus-within:-translate-y-[22px] group-focus-within:text-primary group-focus-within:bg-background px-xs rounded" for="meetingTitle">Meeting Title</label>
+<input autofocus="" class="w-full bg-transparent border-none text-on-surface font-body-lg pt-[24px] pb-sm px-sm focus:ring-0 placeholder:text-transparent" id="meetingTitle" placeholder="Enter title" required="" type="text"/>
+</div>
+<!-- Settings (Optional) -->
+<div class="flex flex-col gap-sm mt-sm">
+<label class="flex items-center gap-sm cursor-pointer p-sm rounded-lg hover:bg-surface-variant/20 transition-colors">
+<input checked="" class="rounded text-primary focus:ring-primary bg-surface-container-high border-outline-variant w-4 h-4" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">Enable Waiting Room</span>
+</label>
+<label class="flex items-center gap-sm cursor-pointer p-sm rounded-lg hover:bg-surface-variant/20 transition-colors">
+<input class="rounded text-primary focus:ring-primary bg-surface-container-high border-outline-variant w-4 h-4" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">Record Automatically</span>
+</label>
+</div>
+<!-- Actions -->
+<div class="mt-lg flex justify-end gap-md items-center">
+<button class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface px-md py-sm rounded-lg transition-colors" type="button">Cancel</button>
+<button class="bg-primary-container text-on-primary-container font-label-md text-label-md px-lg py-sm rounded-lg hover:bg-inverse-primary transition-colors duration-200 flex items-center gap-sm shadow-lg" type="submit">
+<span>Continue</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</div>
+</form>
+</div>
+<!-- Contextual Footer Image -->
+<div class="h-32 w-full relative">
+<img class="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-luminosity" data-alt="A dark, modern meeting room interior viewed through a slightly frosted glass pane. The room is softly illuminated by sleek, high-tech blue LED accent lighting along the walls and a faint warm glow from an unseen screen. The setting conveys a sense of secure, professional privacy and high-end digital communication infrastructure. Deep navy blacks and vibrant primary blue accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbqd1aettCBfEVf7OwRvsoIjdrqop5Kig6o6tEcLLnwNx_Xmc5k-aqyBKUAZDrKNjdTtT_rcC6qeq42g3qvv1cqoQm1jTwLX2SXvW1clbuGm0-BVrjMWpQ5JhhvcoRgV6fW5vl0Rna5emef6NsTXOSvjVP1QR0Cs7nGeRwghCLoTj-xXMAgwcgML1J7QM8z4Xo2W9uyXLt7RW-dAV6bvqQpsMQJ4p0joEQylx2zGGBeCM1fHLZ-Jm0"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+</div>
+</div>
+</main>
+<script>
+        // Simple micro-interaction for input label floating
+        const input = document.getElementById('meetingTitle');
+        const label = input.previousElementSibling;
+
+        function checkInput() {
+            if (input.value.trim() !== '') {
+                label.classList.add('-translate-y-[22px]', 'text-primary', 'bg-background');
+            } else {
+                 if(document.activeElement !== input) {
+                     label.classList.remove('-translate-y-[22px]', 'text-primary', 'bg-background');
+                 }
+            }
+        }
+
+        input.addEventListener('focus', checkInput);
+        input.addEventListener('blur', checkInput);
+        input.addEventListener('input', checkInput);
+        // Initial check in case of autofill
+        setTimeout(checkInput, 100);
+    </script>
+</body></html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>تایید کد</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "error": "#ffb4ab",
+                      "on-primary": "#1d00a5",
+                      "primary-fixed": "#e2dfff",
+                      "tertiary-fixed-dim": "#ffb2b7",
+                      "secondary-container": "#00a572",
+                      "surface-variant": "#2d3449",
+                      "on-error": "#690005",
+                      "on-secondary": "#003824",
+                      "surface-container": "#171f33",
+                      "primary-container": "#4f46e5",
+                      "on-error-container": "#ffdad6",
+                      "on-secondary-fixed": "#002113",
+                      "inverse-surface": "#dae2fd",
+                      "on-tertiary-fixed-variant": "#92002a",
+                      "on-background": "#dae2fd",
+                      "surface-container-high": "#222a3d",
+                      "outline-variant": "#464555",
+                      "tertiary": "#ffb2b7",
+                      "on-surface-variant": "#c7c4d8",
+                      "on-secondary-fixed-variant": "#005236",
+                      "outline": "#918fa1",
+                      "on-tertiary-fixed": "#40000d",
+                      "on-secondary-container": "#00311f",
+                      "inverse-primary": "#4d44e3",
+                      "secondary-fixed": "#6ffbbe",
+                      "tertiary-container": "#bf0f3c",
+                      "on-tertiary-container": "#ffd0d2",
+                      "on-primary-fixed": "#0f0069",
+                      "background": "#0b1326",
+                      "surface-dim": "#0b1326",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "surface-tint": "#c3c0ff",
+                      "secondary-fixed-dim": "#4edea3",
+                      "surface-bright": "#31394d",
+                      "surface": "#0b1326",
+                      "on-tertiary": "#67001b",
+                      "inverse-on-surface": "#283044",
+                      "surface-container-lowest": "#060e20",
+                      "surface-container-low": "#131b2e",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "surface-container-highest": "#2d3449",
+                      "tertiary-fixed": "#ffdadb",
+                      "secondary": "#4edea3",
+                      "on-primary-container": "#dad7ff",
+                      "primary": "#c3c0ff",
+                      "error-container": "#93000a",
+                      "on-surface": "#dae2fd"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "grid-margin": "24px",
+                      "grid-gutter": "16px",
+                      "xs": "4px",
+                      "sm": "8px",
+                      "xl": "40px",
+                      "base": "4px",
+                      "md": "16px",
+                      "lg": "24px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "body-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "headline-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "body-sm": [
+                              "Be Vietnam Pro"
+                      ],
+                      "label-md": [
+                              "JetBrains Mono"
+                      ],
+                      "display-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "display-md": [
+                              "Be Vietnam Pro"
+                      ],
+                      "headline-lg": [
+                              "Be Vietnam Pro"
+                      ],
+                      "label-sm": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "56px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "display-md": [
+                              "36px",
+                              {
+                                      "lineHeight": "44px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+            },
+          }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Be Vietnam Pro', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(34, 42, 61, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .otp-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px #c3c0ff;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex items-center justify-center p-grid-margin relative overflow-hidden">
+<!-- Ambient Background Effect -->
+<div class="absolute inset-0 pointer-events-none opacity-20">
+<div class="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-container rounded-full mix-blend-screen filter blur-[100px]"></div>
+<div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary-container rounded-full mix-blend-screen filter blur-[100px]"></div>
+</div>
+<main class="w-full max-w-md z-10">
+<div class="glass-panel rounded-xl p-lg shadow-2xl relative overflow-hidden">
+<!-- decorative header bar -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-secondary"></div>
+<div class="text-center mb-xl mt-sm">
+<div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-surface-container-high mb-sm border border-outline/20">
+<span class="material-symbols-outlined text-[32px] text-primary" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-xs">تایید هویت</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">کد ۶ رقمی ارسال شده را وارد کنید</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">کد شبیه‌سازی شده: <span class="font-label-md text-label-md text-secondary" id="mock-code">123456</span></p>
+</div>
+<form class="space-y-lg" id="otp-form">
+<div class="flex justify-between items-center gap-2" dir="ltr">
+<input autofocus="" class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+<input class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+<input class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+<div class="w-4 flex justify-center text-outline-variant">-</div>
+<input class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+<input class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+<input class="otp-input w-12 h-14 text-center font-display-md text-display-md bg-surface-container-highest border border-outline-variant rounded-lg text-on-surface transition-all duration-200 focus:border-primary" maxlength="1" type="text"/>
+</div>
+<div class="flex flex-col items-center gap-sm mt-md">
+<button class="w-full bg-primary-container text-on-primary-container hover:bg-primary transition-colors duration-200 py-3 rounded-lg font-headline-md text-headline-md shadow-lg" type="submit">
+                        تایید و ادامه
+                    </button>
+<div class="flex items-center justify-between w-full mt-4 font-body-sm text-body-sm">
+<span class="text-on-surface-variant">کد را دریافت نکردید؟</span>
+<button class="text-primary hover:text-primary-fixed transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled="" id="resend-btn" type="button">
+                            ارسال مجدد (<span id="timer">30</span>s)
+                        </button>
+</div>
+</div>
+</form>
+</div>
+<div class="text-center mt-md">
+<button class="inline-flex items-center gap-2 text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-colors">
+<span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                 بازگشت به صفحه قبل
+             </button>
+</div>
+</main>
+<script>
+        // OTP Input Logic
+        const inputs = document.querySelectorAll('.otp-input');
+        inputs.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                if (e.target.value.length > 1) {
+                    e.target.value = e.target.value.slice(0, 1);
+                }
+                if (e.target.value !== '' && index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && e.target.value === '' && index > 0) {
+                    inputs[index - 1].focus();
+                }
+            });
+        });
+
+        // Timer Logic
+        let timeLeft = 30;
+        const timerElement = document.getElementById('timer');
+        const resendBtn = document.getElementById('resend-btn');
+        let timerId;
+
+        function startTimer() {
+            resendBtn.disabled = true;
+            timeLeft = 30;
+            timerElement.parentElement.innerHTML = `ارسال مجدد (<span id="timer">${timeLeft}</span>s)`;
+            
+            timerId = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer').textContent = timeLeft;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerId);
+                    resendBtn.disabled = false;
+                    resendBtn.innerHTML = 'ارسال مجدد';
+                }
+            }, 1000);
+        }
+
+        startTimer();
+
+        resendBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!resendBtn.disabled) {
+                // mock new code
+                document.getElementById('mock-code').textContent = Math.floor(100000 + Math.random() * 900000);
+                startTimer();
+                // reset inputs
+                inputs.forEach(input => input.value = '');
+                inputs[0].focus();
+            }
+        });
+
+        // Form Submit
+        document.getElementById('otp-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            let code = '';
+            inputs.forEach(input => code += input.value);
+            const mockCode = document.getElementById('mock-code').textContent;
+            
+            if (code === mockCode) {
+                alert('کد تایید شد.');
+            } else {
+                alert('کد وارد شده اشتباه است.');
+                inputs.forEach(input => {
+                    input.classList.add('border-error');
+                    setTimeout(() => input.classList.remove('border-error'), 1000);
+                });
+            }
+        });
+    </script>
+</body></html>

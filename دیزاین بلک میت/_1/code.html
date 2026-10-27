@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Flux - Video Call Room</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error": "#ffb4ab",
+                        "on-primary": "#1d00a5",
+                        "primary-fixed": "#e2dfff",
+                        "tertiary-fixed-dim": "#ffb2b7",
+                        "secondary-container": "#00a572",
+                        "surface-variant": "#2d3449",
+                        "on-error": "#690005",
+                        "on-secondary": "#003824",
+                        "surface-container": "#171f33",
+                        "primary-container": "#4f46e5",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed": "#002113",
+                        "inverse-surface": "#dae2fd",
+                        "on-tertiary-fixed-variant": "#92002a",
+                        "on-background": "#dae2fd",
+                        "surface-container-high": "#222a3d",
+                        "outline-variant": "#464555",
+                        "tertiary": "#ffb2b7",
+                        "on-surface-variant": "#c7c4d8",
+                        "on-secondary-fixed-variant": "#005236",
+                        "outline": "#918fa1",
+                        "on-tertiary-fixed": "#40000d",
+                        "on-secondary-container": "#00311f",
+                        "inverse-primary": "#4d44e3",
+                        "secondary-fixed": "#6ffbbe",
+                        "tertiary-container": "#bf0f3c",
+                        "on-tertiary-container": "#ffd0d2",
+                        "on-primary-fixed": "#0f0069",
+                        "background": "#0b1326",
+                        "surface-dim": "#0b1326",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-tint": "#c3c0ff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "surface-bright": "#31394d",
+                        "surface": "#0b1326",
+                        "on-tertiary": "#67001b",
+                        "inverse-on-surface": "#283044",
+                        "surface-container-lowest": "#060e20",
+                        "surface-container-low": "#131b2e",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface-container-highest": "#2d3449",
+                        "tertiary-fixed": "#ffdadb",
+                        "secondary": "#4edea3",
+                        "on-primary-container": "#dad7ff",
+                        "primary": "#c3c0ff",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "grid-margin": "24px",
+                        "grid-gutter": "16px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "xl": "40px",
+                        "base": "4px",
+                        "md": "16px",
+                        "lg": "24px"
+                    },
+                    fontFamily: {
+                        "body-md": ["Be Vietnam Pro"],
+                        "body-lg": ["Be Vietnam Pro"],
+                        "headline-md": ["Be Vietnam Pro"],
+                        "body-sm": ["Be Vietnam Pro"],
+                        "label-md": ["JetBrains Mono"],
+                        "display-lg": ["Be Vietnam Pro"],
+                        "display-md": ["Be Vietnam Pro"],
+                        "headline-lg": ["Be Vietnam Pro"],
+                        "label-sm": ["JetBrains Mono"]
+                    },
+                    fontSize: {
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "display-md": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled-icon {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Floating emoji animation */
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.5); opacity: 0; }
+            20% { transform: translateY(-20px) scale(1.2); opacity: 1; }
+            80% { transform: translateY(-80px) scale(1); opacity: 0.8; }
+            100% { transform: translateY(-120px) scale(0.8); opacity: 0; }
+        }
+        .floating-emoji {
+            position: fixed;
+            bottom: 100px;
+            right: 120px; /* Adjusted for RTL */
+            font-size: 2rem;
+            pointer-events: none;
+            animation: floatUp 2s ease-out forwards;
+            z-index: 100;
+        }
+        
+        /* Custom scrollbar for dark mode */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1); 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2); 
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md h-screen w-screen overflow-hidden flex flex-col antialiased">
+<!-- Top AppBar (Custom for Call Room) -->
+<header class="h-[72px] flex-shrink-0 flex items-center justify-between px-lg border-b border-white/5 bg-surface-container-lowest z-40">
+<div class="flex items-center gap-md">
+<h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">جلسه هماهنگی تیم مهندسی</h1>
+<div class="px-sm py-xs bg-error/20 text-error rounded-md font-label-sm text-label-sm flex items-center gap-xs border border-error/20 shadow-[0_0_8px_rgba(255,180,171,0.2)]">
+<span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+                در حال ضبط
+            </div>
+</div>
+<!-- Public Link Share -->
+<div class="flex items-center gap-sm bg-surface-container-highest px-md py-sm rounded-full border border-white/10 hover:border-white/20 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">link</span>
+<span class="font-label-md text-label-md text-on-surface-variant select-all" dir="ltr">meet.obsidian.com/xyz-123</span>
+<div class="w-px h-4 bg-white/10 mx-xs"></div>
+<button class="text-primary hover:text-primary-fixed font-label-md text-label-md transition-colors" onclick="alert('لینک کپی شد')">
+                کپی لینک
+            </button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 flex overflow-hidden relative">
+<!-- Video Canvas -->
+<section class="flex-1 p-md grid grid-cols-1 md:grid-cols-2 gap-md overflow-y-auto content-start bg-surface-dim relative z-0">
+<!-- Main Active Speaker -->
+<div class="col-span-1 md:col-span-2 aspect-[21/9] relative bg-surface-container rounded-xl overflow-hidden shadow-2xl border-2 border-secondary/50 shadow-[0_0_20px_rgba(78,222,163,0.15)] group">
+<img class="w-full h-full object-cover" data-alt="A highly detailed, cinematic medium shot of a focused professional software engineer presenting in a modern, dimly lit home office. The lighting is sophisticated and moody, featuring a cool blue ambient light contrasted with a warm amber rim light that highlights their face and shoulders, perfectly matching a premium dark-mode aesthetic. The background is slightly blurred, showing a high-end dual monitor setup and subtle technological elements, conveying a sense of authoritative expertise and deep technical collaboration." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD46rgV9m8ouRwpGFYaCRBkk9h5Q8gFRcgcva-7Ps27p0Pny7VzBYSxF5XHJPYeU41Wi8WW4fC1z7ePpREIBbjc8iqswYajEpoyrT4PIthjc1tMh9PxG_XKm4PKB1d_UfygbBb2O4gEo4rP_cbSo_5gsk5hKzTIpv7O7s33c-0VY5SlgVUCTpGQGlT-6Y8KzNXeTCURNzR94_BSCir9nq_TrzsuT5ZuwoCS7bTFLdh2i68hqMi1KdfM"/>
+<!-- Overlay Gradients -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+<!-- Participant Info -->
+<div class="absolute bottom-md right-md flex items-center gap-sm">
+<div class="bg-surface-container-high/80 backdrop-blur-md px-sm py-xs rounded-lg flex items-center gap-xs border border-white/10">
+<span class="font-label-md text-label-md text-white drop-shadow-md">الناز شاکردوست (شما)</span>
+</div>
+</div>
+<!-- Status Indicators -->
+<div class="absolute top-md left-md flex items-center gap-sm">
+<div class="bg-surface-container-highest/80 backdrop-blur-md px-xs py-xs rounded-full border border-white/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px] text-secondary">signal_cellular_alt</span>
+</div>
+</div>
+</div>
+<!-- Participant 2 -->
+<div class="aspect-video relative bg-surface-container rounded-xl overflow-hidden border border-white/5 group">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="A cinematic portrait of a creative director in a sleek, minimalist studio space. The lighting is low-key and dramatic, utilizing deep indigo shadows and crisp white highlights that align flawlessly with a hyper-modern dark-mode design language. The subject is engaged, looking attentively towards the camera. The background features abstract geometric art and a softly glowing ambient lamp, creating a professional yet artistic atmosphere suitable for high-end collaborative sessions." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA7TfsxE9KQcpoTcneIUukGrWjttVXhbGwaWgvK99W4Ba11oxV1TNJV15UeQlqPKQUnvUj_9LdmuNKIFAbW0DM6S4tlzYqmY-pidB3EGoCGVVjWaCTBMp6rTTQ7vrikAsyx5a7Nnh28FlknIAi5fkqYs7jSSm7RaRCmC8HwqSrQEWu-BBMnT2hj0SH7qvMBzHYvgScE_2cP98dlusTMZ9ABhMBDHSjBglIbCQQcVm7en1Vn1ZWlcnnF"/>
+<div class="absolute bottom-sm right-sm bg-surface-container-highest/80 backdrop-blur-md px-sm py-xs rounded-lg flex items-center gap-xs border border-white/10">
+<span class="font-label-sm text-label-sm text-white">علی کریمی</span>
+</div>
+<div class="absolute top-sm right-sm bg-error text-on-error w-8 h-8 rounded-full flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined text-[16px]">mic_off</span>
+</div>
+</div>
+<!-- Participant 3 -->
+<div class="aspect-video relative bg-surface-container rounded-xl overflow-hidden border border-white/5 group">
+<img class="w-full h-full object-cover" data-alt="A stylized, modern headshot of a product manager in an industrial-chic office setting. The environment is rendered in deep, moody tones of navy and slate, punctuated by vibrant accents of emerald green from nearby plants. The lighting is directional and sharp, emphasizing clarity and focus, fitting a premium digital workspace theme. The manager exhibits a thoughtful expression, with subtle reflections in their glasses adding depth to the visual narrative." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcepRllVdSD5rdqNqaXltLt9bXTSHZTw-1GIiJWJZizt97DXGETY7IJ2ZA9_z5v9OT56HJYMuNoJgl8o2hq4QevGH5GReditfIrZ5vPTrupLS5r11LUMAQc5c34fGzThEiPnvOItE4F4w_MW8qOykiULYO7ZF2F_aJ0R14_cPmovdhniG1fbA3zGjipv_d2Ds8UDQIroKCVXWgWUXnksD3iWSgihnUXrlk-DdfdpC3dRmni-L5ednL"/>
+<div class="absolute bottom-sm right-sm bg-surface-container-highest/80 backdrop-blur-md px-sm py-xs rounded-lg flex items-center gap-xs border border-white/10">
+<span class="font-label-sm text-label-sm text-white">سارا بهرامی</span>
+</div>
+</div>
+</section>
+<!-- Sidebar Panel (Chat / Participants) -->
+<aside class="w-80 flex-shrink-0 bg-surface-container-low border-r border-white/5 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.2)] z-10">
+<!-- Tab Navigation -->
+<div class="flex p-sm gap-xs border-b border-white/5 bg-surface-container/50">
+<button class="flex-1 py-sm bg-surface-variant text-on-surface rounded-lg font-label-md text-label-md transition-all shadow-sm" id="tab-chat">
+                    گفتگو
+                </button>
+<button class="flex-1 py-sm text-on-surface-variant hover:bg-surface-variant/30 rounded-lg font-label-md text-label-md transition-all" id="tab-people">
+                    شرکت‌کنندگان
+                </button>
+</div>
+<!-- Tab Content: Chat -->
+<div class="flex-1 flex flex-col overflow-hidden" id="content-chat">
+<div class="flex-1 overflow-y-auto p-md flex flex-col gap-lg">
+<!-- Incoming Message -->
+<div class="flex flex-col gap-xs">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-label-md shadow-inner">س</div>
+<span class="font-label-md text-label-md text-on-surface">سارا بهرامی</span>
+<span class="font-label-sm text-label-sm text-outline-variant mr-auto">10:32</span>
+</div>
+<div class="bg-surface-variant p-sm rounded-xl rounded-tr-sm text-body-sm text-on-surface-variant w-[85%] leading-relaxed shadow-sm">
+                            فایل‌های طراحی رو در پوشه مشترک قرار دادم. لطفا بررسی کنید.
+                        </div>
+</div>
+<!-- Outgoing Message -->
+<div class="flex flex-col gap-xs items-end">
+<div class="flex items-center gap-sm flex-row-reverse">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-label-md shadow-inner">ش</div>
+<span class="font-label-md text-label-md text-on-surface">شما</span>
+<span class="font-label-sm text-label-sm text-outline-variant ml-auto">10:34</span>
+</div>
+<div class="bg-primary/20 border border-primary/30 p-sm rounded-xl rounded-tl-sm text-body-sm text-on-surface w-[85%] leading-relaxed shadow-sm">
+                            عالی، الان نگاهی میندازم. 🚀
+                        </div>
+</div>
+</div>
+<!-- Chat Input -->
+<div class="p-sm border-t border-white/5 bg-surface-container-lowest">
+<div class="flex items-center bg-surface-container p-xs rounded-lg border border-outline-variant/30 focus-within:border-primary focus-within:shadow-[0_0_0_2px_rgba(79,70,229,0.3)] transition-all">
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-body-sm text-body-sm px-sm text-on-surface placeholder:text-outline-variant" placeholder="پیام خود را بنویسید..." type="text"/>
+<button class="w-8 h-8 rounded-md bg-primary text-on-primary flex items-center justify-center hover:bg-primary-fixed transition-colors">
+<span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Tab Content: People (Hidden by default via JS logic, but let's show via CSS for mockup if needed. We'll use inline JS to toggle) -->
+<div class="flex-1 flex-col overflow-hidden hidden" id="content-people">
+<!-- Admin Requests Section -->
+<div class="p-md border-b border-white/5 bg-surface-container/30">
+<h3 class="font-label-md text-label-md text-tertiary mb-sm flex items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+                        درخواست‌های عضویت (۱)
+                    </h3>
+<div class="flex items-center justify-between bg-surface-variant p-sm rounded-lg border border-white/5">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px] text-white">person</span>
+</div>
+<span class="font-body-sm text-body-sm">مهمان ناشناس</span>
+</div>
+<div class="flex items-center gap-xs">
+<button class="w-7 h-7 rounded-md bg-secondary text-on-secondary flex items-center justify-center hover:bg-secondary-fixed">
+<span class="material-symbols-outlined text-[16px]">check</span>
+</button>
+<button class="w-7 h-7 rounded-md bg-error text-on-error flex items-center justify-center hover:bg-error/80">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Participant List -->
+<div class="flex-1 overflow-y-auto p-md flex flex-col gap-xs">
+<div class="flex items-center justify-between p-xs rounded-lg hover:bg-surface-variant/30 group transition-colors">
+<div class="flex items-center gap-sm">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar showing a professional software engineer looking confident against a dark cinematic background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDW3Bll3B6hUjbjNAtLEkt_SzBeD8OVl1LlYQ0wVZBj7uRrFjk57PDdptRXtGr2fAGBJZSi-jwVXati69Uwd0YjA3Aw8oGJUV0vnhVNXI7J7GZLe4suPDRjQS2dOCoTjN0RgovbeHueMQw2pwlC_Rb5bbamcdM9kvQ1d8-3TDSxgxkdaNNOFGknVEFs2vWNL-qCqR6OMGPdtAYbbGHYw0RKgOaYFHoCVAc9kHzr8X1SJ5t1fx0Rj7R1"/>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">الناز شاکردوست (شما)</span>
+<span class="font-label-sm text-label-sm text-outline">میزبان</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between p-xs rounded-lg hover:bg-surface-variant/30 group transition-colors">
+<div class="flex items-center gap-sm">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A small circular avatar of a creative director in a minimalist studio setup with dark blue lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcRwTyXenrhShDLBx1z5Ofv9o7F6-_U7ZPTG53onObKUvq0AcFXsF86g59_CX8iZviDIVaz3QBeSnQlPW3NWt4XxO4eKsAP5vc22SI3fHr9DeNz7kR9yco_0oEJz5chWt3UW4l7yN6krgnMyBerOdC7L0KjfFUibhJPAX4NSBTNSOhDxBgAuAnrTQnTtvDcxyfozHjf12rA8qv8GJqwFnO4K8oTuKeHTJ7ZJjCX2lkWJQ4Z44xUJ8Y"/>
+<span class="font-body-sm text-body-sm text-on-surface-variant">علی کریمی</span>
+</div>
+<!-- Admin Controls (Appear on hover) -->
+<div class="flex items-center gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="w-7 h-7 rounded-md hover:bg-surface-variant flex items-center justify-center text-outline hover:text-white" title="بی‌صدا">
+<span class="material-symbols-outlined text-[16px]">mic_off</span>
+</button>
+<button class="w-7 h-7 rounded-md hover:bg-error/20 flex items-center justify-center text-error" title="حذف">
+<span class="material-symbols-outlined text-[16px]">person_remove</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<!-- Bottom NavBar Controls (Floating Glass Toolbar) -->
+<footer class="absolute bottom-lg left-1/2 -translate-x-1/2 bg-surface-container-high/80 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl flex items-center justify-between px-md py-sm z-50 min-w-[600px]">
+<!-- Call Info (Left) -->
+<div class="flex items-center gap-sm w-32">
+<div class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_rgba(78,222,163,0.8)]"></div>
+<span class="font-label-md text-label-md text-on-surface-variant font-mono" dir="ltr">01:24:45</span>
+</div>
+<!-- Central Actions -->
+<div class="flex items-center gap-md">
+<!-- Mic (Active) -->
+<button class="w-12 h-12 rounded-full bg-surface-variant hover:bg-surface-variant/80 flex items-center justify-center text-on-surface border border-white/5 transition-transform active:scale-95 shadow-md">
+<span class="material-symbols-outlined filled-icon text-[24px]">mic</span>
+</button>
+<!-- Camera (Inactive / Muted) -->
+<button class="w-12 h-12 rounded-full bg-error text-on-error flex items-center justify-center transition-transform active:scale-95 shadow-lg shadow-error/20">
+<span class="material-symbols-outlined text-[24px]">videocam_off</span>
+</button>
+<!-- Screen Share -->
+<button class="w-12 h-12 rounded-full bg-surface-variant hover:bg-surface-variant/80 flex items-center justify-center text-on-surface border border-white/5 transition-transform active:scale-95 shadow-md">
+<span class="material-symbols-outlined text-[24px]">present_to_all</span>
+</button>
+<!-- Emoji Menu Toggle -->
+<div class="relative">
+<button class="w-12 h-12 rounded-full bg-surface-variant hover:bg-surface-variant/80 flex items-center justify-center text-on-surface border border-white/5 transition-transform active:scale-95 shadow-md" id="emoji-btn">
+<span class="material-symbols-outlined text-[24px]">add_reaction</span>
+</button>
+<!-- Emoji Popup -->
+<div class="hidden absolute bottom-[60px] left-1/2 -translate-x-1/2 bg-surface-container-highest border border-white/10 rounded-xl p-sm shadow-2xl flex gap-xs backdrop-blur-xl" id="emoji-popup">
+<button class="w-10 h-10 hover:bg-surface-variant rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110 emoji-trigger">👍</button>
+<button class="w-10 h-10 hover:bg-surface-variant rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110 emoji-trigger">👏</button>
+<button class="w-10 h-10 hover:bg-surface-variant rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110 emoji-trigger">❤️</button>
+<button class="w-10 h-10 hover:bg-surface-variant rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110 emoji-trigger">😂</button>
+<button class="w-10 h-10 hover:bg-surface-variant rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110 emoji-trigger">🎉</button>
+</div>
+</div>
+<div class="w-px h-8 bg-white/10 mx-xs"></div>
+<!-- Leave Call -->
+<button class="h-12 px-lg rounded-full bg-error hover:bg-error/90 flex items-center gap-sm text-on-error font-label-md text-label-md transition-all active:scale-95 shadow-lg shadow-error/20">
+<span class="material-symbols-outlined text-[20px]">call_end</span>
+                ترک تماس
+            </button>
+</div>
+<!-- Utilities (Right) -->
+<div class="flex items-center justify-end gap-sm w-32">
+<button class="w-10 h-10 rounded-full hover:bg-surface-variant/50 flex items-center justify-center text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+</footer>
+<!-- Inline Interaction Logic -->
+<script>
+        // Tab Switching Logic
+        const tabChat = document.getElementById('tab-chat');
+        const tabPeople = document.getElementById('tab-people');
+        const contentChat = document.getElementById('content-chat');
+        const contentPeople = document.getElementById('content-people');
+
+        function setActiveTab(active, inactive, activeContent, inactiveContent) {
+            // Update Tab Styles
+            active.classList.replace('text-on-surface-variant', 'text-on-surface');
+            active.classList.replace('hover:bg-surface-variant/30', 'bg-surface-variant');
+            active.classList.add('shadow-sm');
+            
+            inactive.classList.replace('text-on-surface', 'text-on-surface-variant');
+            inactive.classList.replace('bg-surface-variant', 'hover:bg-surface-variant/30');
+            inactive.classList.remove('shadow-sm');
+
+            // Update Content Visibility
+            activeContent.classList.remove('hidden');
+            activeContent.classList.add('flex');
+            inactiveContent.classList.add('hidden');
+            inactiveContent.classList.remove('flex');
+        }
+
+        tabChat.addEventListener('click', () => setActiveTab(tabChat, tabPeople, contentChat, contentPeople));
+        tabPeople.addEventListener('click', () => setActiveTab(tabPeople, tabChat, contentPeople, contentChat));
+
+        // Emoji Popup Toggle
+        const emojiBtn = document.getElementById('emoji-btn');
+        const emojiPopup = document.getElementById('emoji-popup');
+        
+        emojiBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            emojiPopup.classList.toggle('hidden');
+        });
+
+        // Close popup when clicking outside
+        document.addEventListener('click', (e) => {
+            if(!emojiPopup.contains(e.target) && e.target !== emojiBtn) {
+                emojiPopup.classList.add('hidden');
+            }
+        });
+
+        // Floating Emoji Logic
+        const emojiTriggers = document.querySelectorAll('.emoji-trigger');
+        emojiTriggers.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const char = e.target.textContent;
+                
+                // Create floating element
+                const floater = document.createElement('div');
+                floater.classList.add('floating-emoji');
+                floater.textContent = char;
+                
+                // Add slight random horizontal offset for variety
+                const offset = (Math.random() - 0.5) * 40;
+                floater.style.marginLeft = `${offset}px`;
+                
+                document.body.appendChild(floater);
+                
+                // Remove after animation completes
+                setTimeout(() => {
+                    floater.remove();
+                }, 2000);
+            });
+        });
+    </script>
+</body></html>

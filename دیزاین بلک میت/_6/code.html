@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ورود / ثبت‌نام | Obsidian Flux</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "error": "#ffb4ab",
+                      "on-primary": "#1d00a5",
+                      "primary-fixed": "#e2dfff",
+                      "tertiary-fixed-dim": "#ffb2b7",
+                      "secondary-container": "#00a572",
+                      "surface-variant": "#2d3449",
+                      "on-error": "#690005",
+                      "on-secondary": "#003824",
+                      "surface-container": "#171f33",
+                      "primary-container": "#4f46e5",
+                      "on-error-container": "#ffdad6",
+                      "on-secondary-fixed": "#002113",
+                      "inverse-surface": "#dae2fd",
+                      "on-tertiary-fixed-variant": "#92002a",
+                      "on-background": "#dae2fd",
+                      "surface-container-high": "#222a3d",
+                      "outline-variant": "#464555",
+                      "tertiary": "#ffb2b7",
+                      "on-surface-variant": "#c7c4d8",
+                      "on-secondary-fixed-variant": "#005236",
+                      "outline": "#918fa1",
+                      "on-tertiary-fixed": "#40000d",
+                      "on-secondary-container": "#00311f",
+                      "inverse-primary": "#4d44e3",
+                      "secondary-fixed": "#6ffbbe",
+                      "tertiary-container": "#bf0f3c",
+                      "on-tertiary-container": "#ffd0d2",
+                      "on-primary-fixed": "#0f0069",
+                      "background": "#0b1326",
+                      "surface-dim": "#0b1326",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "surface-tint": "#c3c0ff",
+                      "secondary-fixed-dim": "#4edea3",
+                      "surface-bright": "#31394d",
+                      "surface": "#0b1326",
+                      "on-tertiary": "#67001b",
+                      "inverse-on-surface": "#283044",
+                      "surface-container-lowest": "#060e20",
+                      "surface-container-low": "#131b2e",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "surface-container-highest": "#2d3449",
+                      "tertiary-fixed": "#ffdadb",
+                      "secondary": "#4edea3",
+                      "on-primary-container": "#dad7ff",
+                      "primary": "#c3c0ff",
+                      "error-container": "#93000a",
+                      "on-surface": "#dae2fd"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "grid-margin": "24px",
+                      "grid-gutter": "16px",
+                      "xs": "4px",
+                      "sm": "8px",
+                      "xl": "40px",
+                      "base": "4px",
+                      "md": "16px",
+                      "lg": "24px"
+              },
+              "fontFamily": {
+                      "body-md": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "body-lg": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "headline-md": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "body-sm": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "label-md": ["JetBrains Mono", "Tahoma", "Arial", "sans-serif"],
+                      "display-lg": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "display-md": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "headline-lg": ["Be Vietnam Pro", "Tahoma", "Arial", "sans-serif"],
+                      "label-sm": ["JetBrains Mono", "Tahoma", "Arial", "sans-serif"]
+              },
+              "fontSize": {
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "display-md": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-lg": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Tahoma', 'Arial', sans-serif; /* Fallback for Persian if Be Vietnam Pro doesn't support it well */
+        }
+        /* Custom styles for animations and specific glass effects */
+        .glass-panel {
+            background: rgba(23, 31, 51, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .input-glow:focus-within {
+            box-shadow: 0 0 0 2px #4f46e5;
+            border-color: transparent;
+        }
+
+        .label-float {
+            transition: all 0.2s ease-out;
+        }
+        
+        input:focus + .label-float,
+        input:not(:placeholder-shown) + .label-float {
+            transform: translateY(-120%) scale(0.85);
+            color: #c3c0ff;
+        }
+
+        /* View transitions for login/signup toggle */
+        .view-hidden {
+            display: none;
+            opacity: 0;
+        }
+        
+        .view-active {
+            display: block;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast-enter {
+            animation: slideInBottom 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        @keyframes slideInBottom {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex items-center justify-center relative overflow-hidden" dir="rtl">
+<!-- Ambient Background Effect -->
+<div class="absolute inset-0 z-0 pointer-events-none opacity-40 mix-blend-screen">
+<div class="absolute top-[-20%] left-[-10%] w-[50%] h-[60%] rounded-full bg-primary-container blur-[120px]"></div>
+<div class="absolute bottom-[-20%] right-[-10%] w-[60%] h-[50%] rounded-full bg-secondary-container blur-[150px] opacity-50"></div>
+</div>
+<!-- Main Card Container -->
+<main class="w-full max-w-md mx-auto z-10 p-md">
+<!-- Brand Header -->
+<div class="text-center mb-xl">
+<h1 class="font-display-md text-display-md text-primary mb-sm">Obsidian Flux</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">ورود به پلتفرم ارتباطات امن</p>
+</div>
+<!-- Glassmorphism Card -->
+<div class="glass-panel rounded-xl shadow-2xl p-lg relative overflow-hidden">
+<!-- Toggle Group -->
+<div class="flex p-xs bg-surface-container-highest rounded-lg mb-lg relative">
+<div class="absolute top-xs bottom-xs w-[calc(50%-4px)] bg-primary-container rounded transition-all duration-300 ease-out right-xs" id="toggle-indicator"></div>
+<button class="flex-1 relative z-10 py-sm font-label-md text-label-md text-on-primary-container transition-colors duration-200" id="btn-login-toggle" onclick="switchView('login')">
+                    ورود
+                </button>
+<button class="flex-1 relative z-10 py-sm font-label-md text-label-md text-on-surface-variant transition-colors duration-200" id="btn-signup-toggle" onclick="switchView('signup')">
+                    ثبت‌نام
+                </button>
+</div>
+<!-- ===================== LOGIN VIEW ===================== -->
+<div class="view-active" id="view-login">
+<!-- Login Method Sub-Toggle -->
+<div class="flex justify-center gap-md mb-lg border-b border-white/10 pb-sm">
+<button class="font-label-sm text-label-sm text-primary border-b-2 border-primary pb-sm transition-all" id="btn-method-phone" onclick="switchLoginMethod('phone')">ورود با شماره موبایل</button>
+<button class="font-label-sm text-label-sm text-on-surface-variant border-b-2 border-transparent pb-sm hover:text-on-surface transition-all" id="btn-method-email" onclick="switchLoginMethod('email')">ورود با ایمیل</button>
+</div>
+<!-- Phone Login Form -->
+<form class="space-y-md view-active" id="form-login-phone" onsubmit="event.preventDefault(); showToast('کد تایید ارسال شد');">
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="login-phone" placeholder=" " required="" type="tel"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="login-phone">شماره موبایل</label>
+</div>
+<button class="w-full bg-primary-container hover:bg-inverse-primary text-white font-label-md text-label-md py-md rounded-lg transition-colors flex items-center justify-center gap-sm mt-lg" type="submit">
+<span>ارسال کد تایید</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</form>
+<!-- Email Login Form -->
+<form class="space-y-md view-hidden" id="form-login-email" onsubmit="event.preventDefault(); showToast('ورود موفقیت‌آمیز بود');">
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="login-email" placeholder=" " required="" type="email"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="login-email">ایمیل</label>
+</div>
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="login-password" placeholder=" " required="" type="password"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="login-password">رمز عبور</label>
+</div>
+<div class="flex justify-between items-center px-xs mt-sm">
+<label class="flex items-center gap-sm cursor-pointer group">
+<input class="rounded border-outline-variant bg-surface-container text-primary-container focus:ring-primary-container focus:ring-offset-background" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface-variant group-hover:text-on-surface transition-colors">مرا به خاطر بسپار</span>
+</label>
+<a class="font-label-sm text-label-sm text-primary hover:text-inverse-primary transition-colors" href="#">فراموشی رمز؟</a>
+</div>
+<button class="w-full bg-primary-container hover:bg-inverse-primary text-white font-label-md text-label-md py-md rounded-lg transition-colors flex items-center justify-center gap-sm mt-lg" type="submit">
+<span>ورود به حساب</span>
+<span class="material-symbols-outlined text-[18px]">login</span>
+</button>
+</form>
+</div>
+<!-- ===================== SIGNUP VIEW ===================== -->
+<div class="view-hidden" id="view-signup">
+<form class="space-y-md" id="form-signup" onsubmit="event.preventDefault(); showToast('ثبت‌نام با موفقیت انجام شد');">
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer" id="signup-name" placeholder=" " required="" type="text"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="signup-name">نام و نام خانوادگی</label>
+</div>
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="signup-username" placeholder=" " required="" type="text"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="signup-username">نام کاربری (انگلیسی)</label>
+</div>
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="signup-email" placeholder=" " required="" type="email"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="signup-email">ایمیل</label>
+</div>
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="signup-phone" placeholder=" " required="" type="tel"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="signup-phone">شماره موبایل</label>
+</div>
+<div class="relative bg-surface-container rounded-lg border border-outline-variant input-glow transition-all">
+<input class="w-full bg-transparent px-md pt-lg pb-sm text-on-surface focus:outline-none focus:ring-0 border-none peer dir-ltr text-left" id="signup-password" placeholder=" " required="" type="password"/>
+<label class="absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant font-body-sm text-body-sm label-float pointer-events-none origin-right" for="signup-password">رمز عبور</label>
+</div>
+<button class="w-full bg-primary-container hover:bg-inverse-primary text-white font-label-md text-label-md py-md rounded-lg transition-colors flex items-center justify-center gap-sm mt-lg" type="submit">
+<span>ایجاد حساب کاربری</span>
+<span class="material-symbols-outlined text-[18px]">person_add</span>
+</button>
+<p class="text-center font-body-sm text-body-sm text-on-surface-variant mt-sm">
+                        با ثبت‌نام، <a class="text-primary hover:underline" href="#">قوانین و مقررات</a> را می‌پذیرم.
+                    </p>
+</form>
+</div>
+</div>
+</main>
+<!-- Toast Container -->
+<div class="fixed bottom-lg right-lg z-50 flex flex-col gap-sm pointer-events-none" id="toast-container">
+<!-- Toasts will be injected here -->
+</div>
+<script>
+        // Main Tab Switching Logic
+        function switchView(view) {
+            const loginView = document.getElementById('view-login');
+            const signupView = document.getElementById('view-signup');
+            const toggleIndicator = document.getElementById('toggle-indicator');
+            const btnLogin = document.getElementById('btn-login-toggle');
+            const btnSignup = document.getElementById('btn-signup-toggle');
+
+            if (view === 'login') {
+                loginView.classList.replace('view-hidden', 'view-active');
+                signupView.classList.replace('view-active', 'view-hidden');
+                
+                // RTL adjustment for toggle slider
+                toggleIndicator.style.transform = 'translateX(0)';
+                
+                btnLogin.classList.add('text-on-primary-container');
+                btnLogin.classList.remove('text-on-surface-variant');
+                btnSignup.classList.add('text-on-surface-variant');
+                btnSignup.classList.remove('text-on-primary-container');
+            } else {
+                signupView.classList.replace('view-hidden', 'view-active');
+                loginView.classList.replace('view-active', 'view-hidden');
+                
+                // RTL adjustment for toggle slider (moving left)
+                toggleIndicator.style.transform = 'translateX(-100%)';
+                
+                btnSignup.classList.add('text-on-primary-container');
+                btnSignup.classList.remove('text-on-surface-variant');
+                btnLogin.classList.add('text-on-surface-variant');
+                btnLogin.classList.remove('text-on-primary-container');
+            }
+        }
+
+        // Login Method Sub-tab Logic
+        function switchLoginMethod(method) {
+            const phoneForm = document.getElementById('form-login-phone');
+            const emailForm = document.getElementById('form-login-email');
+            const btnPhone = document.getElementById('btn-method-phone');
+            const btnEmail = document.getElementById('btn-method-email');
+
+            if (method === 'phone') {
+                phoneForm.classList.replace('view-hidden', 'view-active');
+                emailForm.classList.replace('view-active', 'view-hidden');
+                
+                btnPhone.classList.add('text-primary', 'border-primary');
+                btnPhone.classList.remove('text-on-surface-variant', 'border-transparent');
+                btnEmail.classList.add('text-on-surface-variant', 'border-transparent');
+                btnEmail.classList.remove('text-primary', 'border-primary');
+            } else {
+                emailForm.classList.replace('view-hidden', 'view-active');
+                phoneForm.classList.replace('view-active', 'view-hidden');
+                
+                btnEmail.classList.add('text-primary', 'border-primary');
+                btnEmail.classList.remove('text-on-surface-variant', 'border-transparent');
+                btnPhone.classList.add('text-on-surface-variant', 'border-transparent');
+                btnPhone.classList.remove('text-primary', 'border-primary');
+            }
+        }
+
+        // Simple Toast Notification System
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const icon = type === 'success' ? 'check_circle' : 'error';
+            const bgClass = type === 'success' ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container';
+            
+            toast.className = `flex items-center gap-sm px-md py-sm rounded-lg shadow-xl toast-enter pointer-events-auto ${bgClass}`;
+            toast.innerHTML = `
+                <span class="material-symbols-outlined text-[20px]">${icon}</span>
+                <span class="font-body-sm text-body-sm">${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body></html>

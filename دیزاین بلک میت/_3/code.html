@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Flux - خانه</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@500&amp;family=Vazirmatn:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "outline-variant": "#464555",
+                      "background": "#0b1326",
+                      "surface-container-highest": "#2d3449",
+                      "tertiary-container": "#bf0f3c",
+                      "on-surface": "#dae2fd",
+                      "surface-container-lowest": "#060e20",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "inverse-primary": "#4d44e3",
+                      "on-tertiary-fixed": "#40000d",
+                      "primary-container": "#4f46e5",
+                      "on-tertiary-container": "#ffd0d2",
+                      "error": "#ffb4ab",
+                      "inverse-surface": "#dae2fd",
+                      "primary": "#c3c0ff",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "surface-dim": "#0b1326",
+                      "on-secondary-container": "#00311f",
+                      "secondary-container": "#00a572",
+                      "on-surface-variant": "#c7c4d8",
+                      "secondary": "#4edea3",
+                      "outline": "#918fa1",
+                      "tertiary-fixed": "#ffdadb",
+                      "error-container": "#93000a",
+                      "on-secondary": "#003824",
+                      "primary-fixed": "#e2dfff",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary": "#67001b",
+                      "on-secondary-fixed-variant": "#005236",
+                      "surface-variant": "#2d3449",
+                      "inverse-on-surface": "#283044",
+                      "on-secondary-fixed": "#002113",
+                      "surface-bright": "#31394d",
+                      "on-background": "#dae2fd",
+                      "on-error": "#690005",
+                      "tertiary-fixed-dim": "#ffb2b7",
+                      "surface-container-low": "#131b2e",
+                      "surface": "#0b1326",
+                      "secondary-fixed": "#6ffbbe",
+                      "tertiary": "#ffb2b7",
+                      "on-tertiary-fixed-variant": "#92002a",
+                      "secondary-fixed-dim": "#4edea3",
+                      "on-primary-fixed": "#0f0069",
+                      "surface-tint": "#c3c0ff",
+                      "surface-container": "#171f33",
+                      "on-primary": "#1d00a5",
+                      "surface-container-high": "#222a3d",
+                      "on-primary-container": "#dad7ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "grid-margin": "24px",
+                      "base": "4px",
+                      "xl": "40px",
+                      "lg": "24px",
+                      "grid-gutter": "16px",
+                      "xs": "4px",
+                      "sm": "8px",
+                      "md": "16px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "display-md": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "headline-md": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "body-lg": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "body-md": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "body-sm": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "label-md": ["Vazirmatn", "JetBrains Mono", "sans-serif"],
+                      "display-lg": ["Vazirmatn", "Be Vietnam Pro", "sans-serif"],
+                      "label-sm": ["Vazirmatn", "JetBrains Mono", "sans-serif"]
+              },
+              "fontSize": {
+                      "headline-lg": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                      "display-md": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body { font-family: 'Vazirmatn', sans-serif; }
+        .glass-panel {
+            background: rgba(45, 52, 73, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glow-input:focus-within {
+            box-shadow: 0 0 0 2px #4f46e5;
+            border-color: transparent;
+        }
+        /* Subtle background animation */
+        @keyframes subtle-drift {
+            0% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+            50% { transform: translate(-2%, 2%) scale(1.05); opacity: 0.5; }
+            100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+        }
+        .ambient-blob {
+            position: absolute;
+            filter: blur(80px);
+            animation: subtle-drift 20s infinite ease-in-out;
+            z-index: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen overflow-x-hidden relative flex flex-col">
+<!-- Ambient Background Elements -->
+<div class="fixed inset-0 overflow-hidden pointer-events-none">
+<div class="ambient-blob bg-primary-container/20 w-[600px] h-[600px] rounded-full top-[-100px] left-[-200px]"></div>
+<div class="ambient-blob bg-secondary-container/10 w-[500px] h-[500px] rounded-full bottom-[-100px] right-[-100px]" style="animation-delay: -10s;"></div>
+</div>
+<!-- TopNavBar (Web) -->
+<header class="hidden md:flex bg-background/80 backdrop-blur-xl shadow-md fixed top-0 w-full z-50 flex justify-between items-center px-grid-margin py-md">
+<div class="flex items-center gap-md">
+<span class="font-display-md text-display-md font-bold tracking-tight text-primary">Obsidian Flux</span>
+</div>
+<nav class="flex gap-lg">
+<a class="font-headline-md text-headline-md font-bold text-primary border-b-2 border-primary pb-1" href="#">خانه</a>
+<a class="font-headline-md text-headline-md font-bold text-on-surface-variant hover:text-primary transition-colors duration-200 pb-1 scale-95 active:scale-90 transition-transform" href="#">تماس‌ها</a>
+</nav>
+<div class="flex items-center gap-grid-gutter">
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-200 p-2 scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-200 p-2 scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant hover:border-primary transition-colors scale-95 active:scale-90 transition-transform">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="Close up professional portrait of a tech worker in a modern dark office setting. High contrast, cinematic lighting, corporate style, neutral expression, obsidian theme." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiheQj1x8KGOqvPCq5mKAu-BiEWQZyvrf5nPaO0dzDucpt1lIJ1OUUoHXe870T_Hcjko6t_xNeFf6ljdJ81xBX6nNrRccnuM7Ddb-Tw2ErOv_pTa3nK87n2ubhTbCWg0TA5T_vE7cuigHdzYIQcG8UJyDyLw0g_OeCrKpoeAf5z6dwP0mH72Nw-w9vjOuttg0zfWAt3fe5hoaL11d0VzmYb4Hfjn2sIW2vco002u707z_QjB2ML5P7"/>
+</button>
+</div>
+</header>
+<!-- SideNavBar (Mobile/Tablet Hidden on Desktop) - Usually handled by responsive, but keeping desktop focus per prompt -->
+<!-- Content Canvas -->
+<main class="flex-1 relative z-10 flex flex-col items-center justify-center p-grid-margin mt-[80px]">
+<div class="w-full max-w-2xl mx-auto flex flex-col items-center text-center space-y-xl glass-panel p-xl rounded-2xl shadow-2xl">
+<div class="space-y-sm">
+<h1 class="font-display-lg text-display-lg text-on-background">جلسه امن بعدی شما</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant">فضایی متمرکز برای ارتباطات تیمی حرفه‌ای.</p>
+</div>
+<!-- Primary Action: Create Call -->
+<button class="group relative overflow-hidden bg-primary-container text-white px-8 py-4 rounded-xl flex items-center gap-3 font-headline-md text-headline-md hover:bg-inverse-primary transition-all duration-300 shadow-lg shadow-primary-container/30 active:scale-95">
+<div class="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+<span class="material-symbols-outlined relative z-10">video_call</span>
+<span class="relative z-10">ایجاد تماس جدید</span>
+</button>
+<div class="w-full flex items-center gap-4 text-on-surface-variant/50">
+<div class="h-px bg-outline-variant/30 flex-1"></div>
+<span class="font-label-md text-label-md">یا</span>
+<div class="h-px bg-outline-variant/30 flex-1"></div>
+</div>
+<!-- Join Call Form -->
+<form class="w-full max-w-md space-y-md" onsubmit="event.preventDefault(); document.getElementById('approval-notice').classList.remove('hidden');">
+<div class="relative group glow-input bg-surface-container-low rounded-lg border border-outline-variant/50 transition-all duration-300">
+<div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-on-surface-variant group-focus-within:text-primary transition-colors">
+<span class="material-symbols-outlined">link</span>
+</div>
+<input class="w-full bg-transparent border-none text-on-surface font-body-md text-body-md py-3 pr-10 pl-4 focus:ring-0 placeholder:text-on-surface-variant/50" placeholder="لینک دعوت را وارد کنید..." required="" type="text"/>
+</div>
+<button class="w-full bg-surface-container-high text-on-surface hover:bg-surface-bright border border-outline-variant/30 px-6 py-3 rounded-lg font-label-md text-label-md transition-all duration-200 active:scale-[0.98]" type="submit">
+                    پیوستن به تماس
+                </button>
+</form>
+<!-- Admin Approval Notice (Hidden by default) -->
+<div class="hidden w-full max-w-md bg-tertiary-container/10 border border-tertiary-container/30 text-on-tertiary-container rounded-lg p-4 flex items-start gap-3 text-right animate-[fadeIn_0.3s_ease-out]" id="approval-notice">
+<span class="material-symbols-outlined text-tertiary-container shrink-0 mt-0.5">admin_panel_settings</span>
+<div class="space-y-1">
+<p class="font-headline-md text-[16px] font-bold">نیاز به تایید مدیر</p>
+<p class="font-body-sm text-body-sm opacity-80">درخواست شما برای پیوستن ارسال شد. لطفاً منتظر تایید میزبان بمانید.</p>
+</div>
+</div>
+</div>
+</main>
+<style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</body></html>
