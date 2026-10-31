@@ -14,6 +14,38 @@
   ];
   const EMOJIS = ['👍', '❤️', '👏', '😂', '🎉', '😮', '🔥', '✅', '🙏', '💡', '😎', '🌟'];
 
+  // ---------- media playback (browser autoplay policy) ----------
+  // A <video>/<audio> with SOUND never starts on its own unless the visitor has already
+  // interacted with the page: Chrome blocks play() silently, the tile stays black/silent
+  // and a page refresh "fixes" it only because clicking refresh unlocked playback.
+  // Remember what is blocked and retry on every gesture until it really plays.
+  const pendingPlay = new Set();
+  let playHintShown = false;
+  function tryPlay(v) {
+    if (!v || !v.srcObject) return;
+    let p;
+    try { p = v.play(); } catch (e) { return; }
+    if (!p || !p.then) return;
+    p.then(() => { pendingPlay.delete(v); })
+      .catch(() => {
+        pendingPlay.add(v);
+        if (!playHintShown && !v.muted) {
+          playHintShown = true;
+          showToast('برای پخش صدا و تصویر، یک‌بار روی صفحه کلیک کنید');
+        }
+      });
+  }
+  function flushPendingPlays() {
+    if (!pendingPlay.size) return;
+    Array.from(pendingPlay).forEach((v) => {
+      if (!v.isConnected) { pendingPlay.delete(v); return; }
+      tryPlay(v);
+    });
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
+    document.addEventListener(ev, flushPendingPlays, { passive: true, capture: true });
+  });
+
   let socket = null;
   let localStream = null;
   let cameraTrack = null;
@@ -329,6 +361,7 @@
     if (currentVideoTrack) {
       const s = new MediaStream([currentVideoTrack]);
       v.srcObject = s; v.style.display = ''; if (av) av.style.display = 'none';
+      tryPlay(v);
     } else {
       v.srcObject = null; v.style.display = 'none'; if (av) av.style.display = '';
     }
@@ -475,6 +508,11 @@
       </div>`;
     tile.oncontextmenu = (e) => openMemberMenu(e, userId, meta && meta.name);
     grid.appendChild(tile);
+    // the tile may come back AFTER its tracks arrived (rejoin): re-bind the stream
+    // instead of waiting for another ontrack that will never fire
+    const rs0 = remoteStreams.get(userId);
+    const v0 = tile.querySelector('video');
+    if (rs0 && v0 && !v0.srcObject) { v0.srcObject = rs0; tryPlay(v0); }
     applyMediaOverrides(userId);
     updateTileName(userId);
     layoutGrid();
@@ -490,6 +528,49 @@
   }
 
   // ---------- WebRTC: perfect negotiation ----------
+  // ONE place that creates an offer: used by onnegotiationneeded, by the deterministic
+  // initiator at connect time, and by the ICE-recovery paths below. Running them in
+  // parallel used to produce half-finished SDP exchanges that never healed on their own.
+  async function negotiate(st, uid) {
+    const pc = st.pc;
+    if (!socket || !socket.connected) return;
+    // a glare is already in flight (or the state is not answerable right now) — the
+    // spec re-fires negotiationneeded once we are stable again if it is still needed
+    if (st.makingOffer || pc.signalingState !== 'stable') return;
+    try {
+      st.makingOffer = true;
+      await pc.setLocalDescription();
+      socket.emit(EV.CALL_SIGNAL, { to: uid, data: { type: 'desc', sdp: pc.localDescription } });
+    } catch (e) {
+      // a lost offer = a dead call until the next refresh: retry once we are stable
+      if (!st.ignoreOffer) {
+        setTimeout(() => {
+          try {
+            if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') negotiate(st, uid);
+          } catch (e2) {}
+        }, 1200);
+      }
+    } finally {
+      st.makingOffer = false;
+    }
+  }
+
+  // After every (re)join, re-run the handshake for peers whose connection died: a
+  // dropped websocket or a signal that reached a peer who was briefly gone loses the
+  // SDP/ICE exchange on the floor and the call stays silent until F5.
+  function recoverPeers() {
+    pcMap.forEach((st, uid) => {
+      const pc = st.pc;
+      if (!pc || pc.connectionState === 'closed') return;
+      try {
+        const dead = pc.connectionState === 'failed'
+          || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected';
+        if (dead) { st.iceRestartAt = Date.now(); pc.restartIce(); }
+        if (pc.signalingState === 'stable') negotiate(st, uid);
+      } catch (e) { /* one bad peer must not break the rest */ }
+    });
+  }
+
   function createPC(peer, initiator) {
     if (pcMap.has(peer.userId)) return pcMap.get(peer.userId);
     peerMeta.set(peer.userId, { name: peer.name, avatar_color: peer.avatar_color, avatar: peer.avatar || '' });
@@ -516,6 +597,7 @@
       pendingCandidates: [],
       restartTries: 0,
       restartTimer: null,
+      iceRestartAt: 0,
     };
     const pc = st.pc;
     pcMap.set(peer.userId, st);
@@ -535,32 +617,10 @@
       } catch (err) {}
       rs.addTrack(e.track);
       const v = $('vid-' + peer.userId);
-      if (v) v.srcObject = rs;
+      if (v) { v.srcObject = rs; tryPlay(v); }
       applyMediaOverrides(peer.userId);
     };
-    pc.onnegotiationneeded = async () => {
-      if (!socket) return;
-      try {
-        st.makingOffer = true;
-        await pc.setLocalDescription();
-        socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'desc', sdp: pc.localDescription } });
-      } catch (e) {
-        // a lost offer = a dead call until the next refresh: try again in a moment
-        if (!st.ignoreOffer) {
-          setTimeout(() => {
-            try {
-              if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') {
-                pc.setLocalDescription()
-                  .then(() => socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'desc', sdp: pc.localDescription } }))
-                  .catch(() => {});
-              }
-            } catch (e2) {}
-          }, 1200);
-        }
-      } finally {
-        st.makingOffer = false;
-      }
-    };
+    pc.onnegotiationneeded = () => { negotiate(st, peer.userId); };
     // ICE restart: it only works in the 'stable' state, so a request that arrives
     // too early is retried instead of being dropped (that was the "refresh fixes it" bug)
     const askRestart = () => {
@@ -568,6 +628,13 @@
       const attempt = () => {
         st.restartTimer = null;
         if (pc.connectionState === 'closed') return;
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+        // never restart in a storm: one restart every few seconds at most
+        if (Date.now() - (st.iceRestartAt || 0) < 4000) {
+          st.restartTimer = setTimeout(attempt, 4000);
+          if (st.restartTimer && st.restartTimer.unref) st.restartTimer.unref();
+          return;
+        }
         if (pc.signalingState !== 'stable') {
           // not ready yet — try again shortly
           st.restartTimer = setTimeout(attempt, 1200);
@@ -576,7 +643,10 @@
         }
         try {
           pc.restartIce();
+          st.iceRestartAt = Date.now();
           st.restartTries++;
+          // restartIce marks the NEXT offer as an ICE restart — make sure one is sent
+          setTimeout(() => negotiate(st, peer.userId), 300);
         } catch (e) {
           st.restartTimer = setTimeout(attempt, 1200);
           if (st.restartTimer && st.restartTimer.unref) st.restartTimer.unref();
@@ -586,22 +656,30 @@
     };
     st.askRestart = askRestart;
     pc.oniceconnectionstatechange = () => {
+      const s = pc.iceConnectionState;
       // 'disconnected' is the state right before 'failed' — waiting for 'failed' only
-      // meant minutes of silence
-      if (pc.iceConnectionState === 'failed') askRestart();
-      else if (pc.iceConnectionState === 'disconnected') setTimeout(() => {
+      // meant minutes of silence; a healthy state cancels the pending retry
+      if (s === 'connected' || s === 'completed') {
+        if (st.restartTimer) { clearTimeout(st.restartTimer); st.restartTimer = null; }
+        return;
+      }
+      if (s === 'failed') askRestart();
+      else if (s === 'disconnected') setTimeout(() => {
         if (pc.iceConnectionState === 'disconnected') askRestart();
       }, 2500);
     };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'failed') askRestart();
+      else if (pc.connectionState === 'connected' && st.restartTimer) {
+        clearTimeout(st.restartTimer); st.restartTimer = null;
+      }
     };
 
     if (initiator && socket && socket.connected) {
-      // The initial offer comes from onnegotiationneeded (the canonical perfect
-      // negotiation flow). An extra offer here only created a glare: two offers in
-      // parallel, one of them dropped -> no media until a refresh.
-      // The negotiationneeded handler is already armed above, so nothing to do here.
+      // The deterministic initiator sends the first offer. negotiate() guards itself
+      // against the onnegotiationneeded that the added tracks also trigger, so this
+      // can no longer produce a glare (two parallel offers, one of them dropped).
+      negotiate(st, peer.userId);
     }
     return st;
   }
@@ -729,8 +807,15 @@
       }
     }, (resp) => {
       if (resp && resp.ok) {
+        // a reconnect keeps every old RTCPeerConnection around — hadPeers is measured
+        // BEFORE the members are adopted, so only a REAL re-join triggers recovery
+        const hadPeers = pcMap.size > 0;
         // authoritative bootstrap members — merged into the SSR roster
         adoptMembers(resp.members, true);
+        // the server seeds muted/cam/sharing as FALSE at join: say what is really on,
+        // otherwise everyone (and every late joiner) hides a camera that is live
+        broadcastStatus();
+        if (hadPeers) setTimeout(recoverPeers, 500);
       } else if (resp && resp.error === 'BLOCKED') {
         showToast('شما از این تماس مسدود شده‌اید');
         setTimeout(() => location.href = I.base + '/home?err=blocked', 1500);
@@ -788,6 +873,8 @@
       renderPendingCards();
       $('waiting-overlay').classList.add('hidden');
       applyDefaultMedia();
+      // what is actually on right now (the join-time value may predate the media)
+      broadcastStatus();
     });
     socket.on(EV.CALL_WELCOME, (d) => {
       // authoritative initial room state — merged, keeps SELF + SSR entries
@@ -960,7 +1047,9 @@
     const row = document.createElement('div');
     row.className = 'flex items-center gap-3 p-2 hover:bg-surface-container rounded-lg transition-colors group';
     row.dataset.uid = m.userId;
-const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') + '' : '' + bmIcon('mic', 'text-[10px] text-on-secondary') + '';
+    const mutedIcon = m.muted
+      ? bmIcon('mic_off', 'text-[10px] text-on-error')
+      : bmIcon('mic', 'text-[10px] text-on-secondary');
     let actions = `<div class="opacity-0 group-hover:opacity-100 flex gap-1 items-center transition-opacity">
       <button class="p-1.5 text-on-surface-variant hover:text-primary hover:bg-primary/10 rounded-md" title="مشاهده اطلاعات" onclick="openMemberInfo(${m.userId})">${bmIcon('info', 'text-[18px]')}</button>`;
     if (I.me.is_admin && !isSelf) {
@@ -1904,6 +1993,9 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     const hideVideo = blk.video || (st.cam === false && !st.sharing);
     if (hideVideo) { v.style.display = 'none'; if (av) av.style.display = 'flex'; }
     else { v.style.display = ''; if (av) av.style.display = 'none'; }
+    // a tile that becomes visible again (camera back on) must actually be RUNNING —
+    // autoplay with sound is often still blocked at this point
+    if (!hideVideo && v.paused) tryPlay(v);
   }
   function updateTileName(userId) {
     const el = $('name-' + userId);

@@ -1,4 +1,4 @@
-﻿// assets/js/forgot_password.js
+// assets/js/forgot_password.js
 (function () {
   const BASE = window.BASE;
   let currentId = '';

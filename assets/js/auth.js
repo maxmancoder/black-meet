@@ -1,4 +1,4 @@
-﻿// assets/js/auth.js
+// assets/js/auth.js
 (function () {
   const csrf = window.CSRF;
   let currentPhone = '';
