@@ -4,7 +4,8 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title><%- esc(title) %></title>
-<link rel="icon" type="image/svg+xml" href="<%- asset('icons/favicon.svg') %>"/>
+<link rel="icon" href="<%- siteIconUrl() %>"/>
+<link rel="apple-touch-icon" href="<%- siteIconUrl() %>"/>
 <!-- warm up fonts + icon sprite before first paint -->
 <link rel="preload" href="<%- url('fonts/Entezar.v1.00.ttf') %>" as="font" type="font/ttf" crossorigin/>
 <link rel="preload" href="<%- url('fonts/Digi Ghaf Bold.ttf') %>" as="font" type="font/ttf" crossorigin/>

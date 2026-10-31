@@ -8,6 +8,7 @@ const pages = require('./routes/pages');
 const api = require('./routes/api');
 const { handleSiteProxy } = require('./lib/siteproxy');
 const callfiles = require('./lib/callfiles');
+const siteicon = require('./lib/siteicon');
 
 const rootDir = path.resolve(__dirname, '..');
 // small helpers for the call-file route (app.js must not require internal.js at the top:
@@ -53,6 +54,22 @@ function createApp() {
   });
 
   app.use('/black-meet/api', api);
+  // the site icon: it lives in the DB (bm_assets) and is PUBLIC — the login page needs
+  // it too. It is revalidated (ETag) so an admin change shows up immediately.
+  app.get('/black-meet/site-icon', (req, res) => {
+    let icon;
+    try { icon = siteicon.getIcon(); }
+    catch (e) { return res.status(404).type('text').send('no icon'); }
+    if (!icon || !icon.data || !icon.data.length) return res.status(404).type('text').send('no icon');
+    const tag = siteicon.etag(icon);
+    res.setHeader('ETag', tag);
+    res.setHeader('Content-Type', icon.mime);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (req.headers['if-none-match'] === tag) return res.status(304).end();
+    return res.send(icon.data);
+  });
+
   // same-origin proxy behind the call page's shared-website box (login required)
   app.get('/black-meet/site-proxy', (req, res, next) => {
     if (!req.session || !req.session.data || !req.session.data.user_id) {

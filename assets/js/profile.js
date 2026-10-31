@@ -190,6 +190,51 @@ window.saveProfile = function () {
     });
   };
 
+  // ------------------------------------------------------------------
+  // the site icon (admin only): it is stored in the database and used by every page
+  // ------------------------------------------------------------------
+  function paintSiteIcon(url) {
+    document.querySelectorAll('img.bm-brand-mark, #site-icon-preview').forEach((el) => {
+      // cache-bust: the icon is served with an ETag, but the browser may still hold it
+      el.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'v=' + Date.now();
+    });
+    const link = document.querySelector('link[rel="icon"]');
+    if (link) link.href = url + '?v=' + Date.now();
+  }
+
+  window.uploadSiteIcon = function (input) {
+    const f = input && input.files && input.files[0];
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) { showToast('حجم تصویر بیش از ۲ مگابایت است'); input.value = ''; return; }
+    const fd = new FormData();
+    fd.append('csrf', csrf);
+    fd.append('icon', f);
+    fetch('api/admin/site-icon', { method: 'POST', body: fd })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || !d.ok) { showToast((d && d.msg) || 'آپلود ناموفق'); return; }
+        showToast('آیکون سایت تغییر کرد', 2500);
+        paintSiteIcon((window.BASE || '') + '/site-icon');
+        input.value = '';
+      })
+      .catch(() => showToast('خطای شبکه'));
+  };
+
+  window.resetSiteIcon = function () {
+    fetch('api/admin/site-icon/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: csrf }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || !d.ok) { showToast((d && d.msg) || 'بازگشت ناموفق'); return; }
+        showToast('آیکون پیش‌فرض برگشت', 2500);
+        paintSiteIcon((window.BASE || '') + '/site-icon');
+      })
+      .catch(() => showToast('خطای شبکه'));
+  };
+
   // apply the once-a-day limit as soon as the page opens (the script sits at the end of
   // <body>, so DOMContentLoaded may already have fired)
   if (document.getElementById('display-name')) refreshDisplayNameState();

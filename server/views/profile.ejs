@@ -31,7 +31,7 @@
 
 <div class="flex-1 flex flex-col min-h-screen relative z-10 w-full md:pl-80">
     <header class="bg-background/80 backdrop-blur-md fixed top-0 w-full z-50 flex items-center justify-between px-lg py-md">
-        <a href="<%- url('home') %>" class="font-display-md text-display-md font-bold text-primary">Black Meet</a>
+        <a href="<%- url('home') %>" class="flex items-center gap-2"><%- brandMark('w-8 h-8 rounded-xl') %><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></a>
         <a href="<%- url('home') %>" aria-label="بازگشت به خانه" class="-m-2 p-3 text-on-surface-variant hover:text-on-surface rounded-full"><%- icon('close') %></a>
     </header>
 
@@ -125,8 +125,8 @@
 
             <% if (me.is_manager) { %>
             <!-- Manager's extra key card -->
-            <div class="bm-adminkey mt-lg p-5 flex items-center justify-between gap-4">
-                <div class="flex items-center gap-4 min-w-0">
+            <div class="bm-adminkey mt-lg p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div class="flex items-center gap-4 min-w-0 flex-1">
                     <span class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-300 shrink-0" style="background:linear-gradient(150deg,rgba(251,191,36,.28),rgba(251,191,36,.06)); box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 0 14px rgba(251,191,36,.35);">
                         <%- icon('key', 'text-[30px]', true) %>
                     </span>
@@ -135,9 +135,24 @@
                         <p class="font-body-sm text-body-sm text-[#cfd3ff]">شما به‌عنوان مدیر، کلید مدیریت اعضا و پیام‌ها را در اختیار دارید.</p>
                     </div>
                 </div>
-                <a href="<%- url('members') %>" class="shrink-0 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl px-4 py-2.5 font-label-md hover:opacity-90 transition flex items-center gap-2">
+                <a href="<%- url('members') %>" class="shrink-0 w-full sm:w-auto text-center bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl px-4 py-2.5 font-label-md hover:opacity-90 transition flex items-center justify-center gap-2">
                     <%- icon('shield_person', '', true) %> مدیریت اعضا
                 </a>
+            </div>
+
+            <!-- the site icon: it is stored in the database and used everywhere -->
+            <div class="mt-lg rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+                <img id="site-icon-preview" src="<%- siteIconUrl() %>" alt="آیکون سایت" class="w-16 h-16 rounded-2xl shrink-0 shadow-lg shadow-black/30"/>
+                <div class="min-w-0 flex-1">
+                    <p class="font-label-md text-on-surface">آیکون سایت</p>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant">این آیکون در دیتابیس ذخیره می‌شود و در همهٔ صفحه‌ها (نشان مرورگر، سربرگ، صفحهٔ ورود) نمایش داده می‌شود.</p>
+                    <div class="bm-keyrow mt-3">
+                        <button type="button" onclick="document.getElementById('site-icon-input').click()" class="btn-secondary">انتخاب تصویر جدید</button>
+                        <button type="button" onclick="resetSiteIcon()" class="btn-secondary">بازگشت به پیش‌فرض</button>
+                        <input id="site-icon-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" onchange="uploadSiteIcon(this)"/>
+                        <span class="font-label-sm text-on-surface-variant">PNG یا JPG، حداکثر ۲ مگابایت</span>
+                    </div>
+                </div>
             </div>
             <% } %>
         </div>

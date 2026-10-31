@@ -28,6 +28,13 @@ function pageLocals(req, res, extra) {
     },
     esc: e,
     json(v) { return JSON.stringify(v); },
+    // the app icon: it is stored in the DB and served from /site-icon, so the admin can
+    // replace it and every page (favicon, header mark, login page) follows at once
+    siteIconUrl() { return base + '/site-icon'; },
+    brandMark(cls) {
+      const c = cls ? ' ' + String(cls).trim() : '';
+      return `<img src="${base}/site-icon" alt="Black Meet" class="bm-brand-mark${c}" decoding="async"/>`;
+    },
     initials,
     timeAgo,
     toFaDigits,

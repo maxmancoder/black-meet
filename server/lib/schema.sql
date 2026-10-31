@@ -155,5 +155,14 @@ CREATE TABLE IF NOT EXISTS bm_sessions (
   updated_at TEXT NOT NULL
 );
 
+-- site assets (the app icon) live in the DB: every page reads them from here, so the
+-- admin can replace the icon from the profile page and the whole site follows
+CREATE TABLE IF NOT EXISTS bm_assets (
+  name       TEXT PRIMARY KEY,
+  mime       TEXT NOT NULL,
+  data       BLOB NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('001_phase0_schema', '2026-01-01 00:00:00');
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('002_phase1_realtime', '2026-01-01 00:00:00');

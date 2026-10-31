@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Black Meet">
+  <defs>
+    <linearGradient id="bmTile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101636"/>
+      <stop offset="1" stop-color="#070a16"/>
+    </linearGradient>
+    <linearGradient id="bmBlue" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.45" stop-color="#2f7cf6"/>
+      <stop offset="1" stop-color="#3b3fd0"/>
+    </linearGradient>
+    <linearGradient id="bmViolet" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="0.5" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="bmGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- the dark tile -->
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#bmTile)"/>
+
+  <!-- top-left badge (cyan -> indigo) with the person knocked out -->
+  <g filter="url(#bmGlow)">
+    <rect x="96" y="96" width="224" height="224" rx="80" fill="url(#bmBlue)"/>
+    <circle cx="168" cy="140" r="27" fill="#0a0e1e"/>
+    <path d="M116 238a52 52 0 0 1 104 0v18H116z" fill="#0a0e1e"/>
+  </g>
+
+  <!-- bottom-right badge (indigo -> violet) with the person knocked out -->
+  <g filter="url(#bmGlow)">
+    <rect x="192" y="192" width="224" height="224" rx="80" fill="url(#bmViolet)"/>
+    <circle cx="304" cy="252" r="27" fill="#0a0e1e"/>
+    <path d="M252 350a52 52 0 0 1 104 0v18H252z" fill="#0a0e1e"/>
+  </g>
+
+  <!-- the play triangle in the middle -->
+  <path d="M156 208a12 12 0 0 1 18-10l86 54a12 12 0 0 1 0 20l-86 54a12 12 0 0 1-18-10z" fill="#070a16"/>
+</svg>

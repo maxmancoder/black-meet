@@ -21,6 +21,7 @@ const themesLib = require('./../lib/themes');
 const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
 const callfiles = require('./../lib/callfiles');
+const siteicon = require('./../lib/siteicon');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -581,6 +582,30 @@ router.post('/profile/avatar', upload.single('avatar'), (req, res) => {
   dbm.run('UPDATE users SET avatar=? WHERE id=?', [rel, me.id]);
   usersdb.syncUser(me.id);
   return ok(res, { ok: true, avatar: avatarUrl(rel, req) });
+});
+
+// ------------------------------------------------------------------
+// the site icon (stored in the DB — the admin can replace it)
+// ------------------------------------------------------------------
+router.post('/admin/site-icon', upload.single('icon'), (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (!checkCsrf(req, res)) return;
+  if (!req.file) return bad(res, { ok: false, msg: 'فایل انتخاب نشده' });
+  const r = siteicon.setIcon(req.file.buffer, req.file.mimetype);
+  if (!r.ok) return bad(res, { ok: false, msg: r.msg });
+  return ok(res, { ok: true, mime: r.mime, size: r.size });
+});
+
+router.post('/admin/site-icon/reset', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (!checkCsrf(req, res)) return;
+  const icon = siteicon.resetToDefault();
+  if (!icon || icon.empty) return bad(res, { ok: false, msg: 'آیکون پیش‌فرض پیدا نشد' });
+  return ok(res, { ok: true });
 });
 
 // ------------------------------------------------------------------

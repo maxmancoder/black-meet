@@ -6,6 +6,7 @@
 <header class="fixed top-0 w-full z-50 flex justify-between items-center px-3 sm:px-grid-margin py-md bg-background/80 backdrop-blur-xl shadow-md border-b border-white/5">
     <div class="flex items-center gap-2 sm:gap-md min-w-0">
         <a href="<%- url('home') %>" aria-label="بازگشت به خانه" class="-m-2 p-3 rounded-full text-on-surface-variant hover:text-primary"><%- icon('arrow_forward') %></a>
+        <%- brandMark('w-7 h-7 rounded-lg shrink-0') %>
         <span class="font-bold tracking-tight text-primary text-lg sm:font-display-md sm:text-display-md" dir="ltr">Black Meet</span>
         <span class="hidden md:inline text-on-surface-variant">/</span>
         <span id="meeting-title" class="hidden md:inline font-headline-md text-headline-md text-on-surface truncate"><%- esc(meeting.title) %></span>

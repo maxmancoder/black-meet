@@ -26,6 +26,8 @@
   const defaultMedia = !(I.meeting && I.meeting.default_media === 0);
 
   const pcMap = new Map();        // userId -> { pc, polite, makingOffer, ignoreOffer, srdAnswerPending }
+  // the peer connections, exposed for the test suite (and for debugging in the console)
+  window.__bmPcMap = pcMap;
   const peerMeta = new Map();     // userId -> {name, avatar_color, avatar}
   const memberStatus = new Map(); // userId -> {muted,cam,sharing}
   const memberInfo = new Map();    // userId -> {full_name,email,phone,is_manager,role,has_password,...}
@@ -236,6 +238,89 @@
       });
     }
     ensureVideoSender(st);
+    // an audio sender must ALWAYS exist: even with no mic permission we send silence,
+    // so the m-line stays negotiated and the connection keeps its consent alive
+    const asnd = ensureAudioSender(st);
+    if (asnd) {
+      const want = outgoingAudioTrack();
+      if (want && asnd.track !== want) {
+        const p = asnd.replaceTrack(want);
+        if (p && p.catch) p.catch(() => {});
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // AUDIO KEEPALIVE
+  // ------------------------------------------------------------------
+  // A disabled track sends NO RTP at all. When everybody in the call is muted (or
+  // nobody talks for a while) no packets flow, the ICE consent check stops getting
+  // answers, the NAT mapping expires and the peer connection dies — from then on no
+  // sound, and only a page refresh brought it back.
+  // The fix: while the mic is off we keep sending a SILENT track instead of nothing,
+  // so the connection stays alive and the audio can come back at any time.
+  let silentCtx = null;
+  let silentTrack = null;
+  function getSilentTrack() {
+    if (silentTrack && silentTrack.readyState === 'live') return silentTrack;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!silentCtx) silentCtx = new AC();
+      const dest = silentCtx.createMediaStreamDestination();
+      let src = null;
+      if (silentCtx.createConstantSource) {
+        src = silentCtx.createConstantSource();
+        src.offset.value = 0;
+      } else {
+        src = silentCtx.createOscillator();
+        src.frequency.value = 0;
+      }
+      const gain = silentCtx.createGain();
+      gain.gain.value = 0; // absolute silence
+      src.connect(gain);
+      gain.connect(dest);
+      src.start();
+      silentTrack = dest.stream.getAudioTracks()[0] || null;
+    } catch (e) { silentTrack = null; }
+    return silentTrack;
+  }
+
+  // the track the peers must receive right now
+  function outgoingAudioTrack() {
+    if (shareAudio && screenAudioTrack) return screenAudioTrack;
+    if (micOn && localStream) {
+      const t = localStream.getAudioTracks()[0];
+      if (t && t.readyState === 'live') return t;
+    }
+    return getSilentTrack();
+  }
+
+  // one audio sender per peer (tracked, so a replaceTrack(null) can never hide it and
+  // a second audio transceiver can never be added by accident)
+  function ensureAudioSender(st) {
+    if (st.audioSender) return st.audioSender;
+    const senders = st.pc.getSenders();
+    const found = senders.find(s => s.track && s.track.kind === 'audio')
+      || senders.find(s => (s.track && s.track.kind === 'audio') || s._bmKind === 'audio');
+    if (found) { st.audioSender = found; return found; }
+    const t = outgoingAudioTrack();
+    if (!t) return null;
+    st.audioSender = st.pc.addTrack(t, new MediaStream([t]));
+    try { st.audioSender._bmKind = 'audio'; } catch (e) {}
+    return st.audioSender;
+  }
+
+  // hand a new audio track to every peer (mic <-> page audio <-> silence)
+  function setOutgoingAudio(track) {
+    pcMap.forEach((st) => {
+      try {
+        const sender = ensureAudioSender(st);
+        if (!sender) return;
+        const p = sender.replaceTrack(track || null);
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) { /* the pc is closed */ }
+    });
   }
 
   function updateSelfVideo() {
@@ -276,6 +361,8 @@
     if (!sharing) camOn = false;
     if (localStream) localStream.getTracks().forEach(t => t.enabled = false);
     if (!sharing) currentVideoTrack = null;
+    // joined with the mic off: still send silence so the connection does not die
+    setOutgoingAudio(outgoingAudioTrack());
     updateSelfVideo();
     updateControlUI();
     broadcastStatus();
@@ -425,6 +512,10 @@
       ignoreOffer: false,
       srdAnswerPending: false,
       videoSender: null,
+      audioSender: null,
+      pendingCandidates: [],
+      restartTries: 0,
+      restartTimer: null,
     };
     const pc = st.pc;
     pcMap.set(peer.userId, st);
@@ -454,31 +545,63 @@
         await pc.setLocalDescription();
         socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'desc', sdp: pc.localDescription } });
       } catch (e) {
+        // a lost offer = a dead call until the next refresh: try again in a moment
+        if (!st.ignoreOffer) {
+          setTimeout(() => {
+            try {
+              if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') {
+                pc.setLocalDescription()
+                  .then(() => socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'desc', sdp: pc.localDescription } }))
+                  .catch(() => {});
+              }
+            } catch (e2) {}
+          }, 1200);
+        }
       } finally {
         st.makingOffer = false;
       }
     };
+    // ICE restart: it only works in the 'stable' state, so a request that arrives
+    // too early is retried instead of being dropped (that was the "refresh fixes it" bug)
+    const askRestart = () => {
+      if (st.restartTimer) return;
+      const attempt = () => {
+        st.restartTimer = null;
+        if (pc.connectionState === 'closed') return;
+        if (pc.signalingState !== 'stable') {
+          // not ready yet — try again shortly
+          st.restartTimer = setTimeout(attempt, 1200);
+          if (st.restartTimer && st.restartTimer.unref) st.restartTimer.unref();
+          return;
+        }
+        try {
+          pc.restartIce();
+          st.restartTries++;
+        } catch (e) {
+          st.restartTimer = setTimeout(attempt, 1200);
+          if (st.restartTimer && st.restartTimer.unref) st.restartTimer.unref();
+        }
+      };
+      attempt();
+    };
+    st.askRestart = askRestart;
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') {
-        // ICE restart — no page refresh needed for routine recovery
-        try { pc.restartIce(); } catch (e) {}
-      }
+      // 'disconnected' is the state right before 'failed' — waiting for 'failed' only
+      // meant minutes of silence
+      if (pc.iceConnectionState === 'failed') askRestart();
+      else if (pc.iceConnectionState === 'disconnected') setTimeout(() => {
+        if (pc.iceConnectionState === 'disconnected') askRestart();
+      }, 2500);
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
-        try { pc.restartIce(); } catch (e) {}
-      }
+      if (pc.connectionState === 'failed') askRestart();
     };
 
     if (initiator && socket && socket.connected) {
-      // explicit initial offer from the deterministic initiator
-      try {
-        st.makingOffer = true;
-        pc.createOffer().then(async (offer) => {
-          await pc.setLocalDescription(offer);
-          socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'desc', sdp: pc.localDescription } });
-        }).finally(() => { st.makingOffer = false; });
-      } catch (e) { st.makingOffer = false; }
+      // The initial offer comes from onnegotiationneeded (the canonical perfect
+      // negotiation flow). An extra offer here only created a glare: two offers in
+      // parallel, one of them dropped -> no media until a refresh.
+      // The negotiationneeded handler is already armed above, so nothing to do here.
     }
     return st;
   }
@@ -501,25 +624,44 @@
           const rollback = Promise.resolve(pc.setLocalDescription({ type: 'rollback' }));
           await rollback;
         }
+        // a candidate that arrived before the description must not be thrown away
+        st.srdAnswerPending = data.sdp.type === 'offer';
         await pc.setRemoteDescription(data.sdp);
         st.srdAnswerPending = false;
+        // replay the candidates that were waiting for the description
+        const waiting = st.pendingCandidates.splice(0);
+        for (const c of waiting) {
+          try { await pc.addIceCandidate(c); } catch (e) { /* stale candidate */ }
+        }
         if (data.sdp.type === 'offer') {
           await pc.setLocalDescription();
           socket.emit(EV.CALL_SIGNAL, { to: from, data: { type: 'desc', sdp: pc.localDescription } });
         }
       } else if (data.type === 'ice') {
+        if (!pc.remoteDescription) {
+          // no description yet: keep the candidate and add it later
+          st.pendingCandidates.push(data.candidate);
+          return;
+        }
         try {
           await pc.addIceCandidate(data.candidate);
         } catch (err) {
-          if (!st.ignoreOffer) throw err;
+          if (!st.ignoreOffer) { /* a stale candidate is normal */ }
         }
       }
-    } catch (e) { /* recoverable: ICE restart will kick in on failure states */ }
+    } catch (e) {
+      // a failed negotiation must not leave the pair mute forever: ask for a restart
+      if (st.askRestart) st.askRestart();
+    }
   }
 
   function destroyPC(userId) {
     const st = pcMap.get(userId);
-    if (st) { try { st.pc.close(); } catch (e) {} pcMap.delete(userId); }
+    if (st) {
+      if (st.restartTimer) { clearTimeout(st.restartTimer); st.restartTimer = null; }
+      try { st.pc.close(); } catch (e) {}
+      pcMap.delete(userId);
+    }
   }
 
   function replaceOutgoingVideo(track) {
@@ -620,6 +762,15 @@
       setConn('زنده', 'bg-secondary');
       joinedRoom = false;
       if (mediaReady) doJoin();
+      // the network flapped: the peer connections are probably dead. Ask every peer
+      // for a fresh ICE session instead of waiting for a page refresh.
+      pcMap.forEach((st) => {
+        try {
+          if (st.pc.connectionState === 'connected' || st.pc.connectionState === 'connecting') {
+            if (st.askRestart) st.askRestart();
+          }
+        } catch (e) {}
+      });
     });
     socket.on('disconnect', () => {
       setConn('قطع', 'bg-error');
@@ -730,10 +881,14 @@
         if (d.off) {
           locks.audio = true;
           if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
-          micOn = false; updateControlUI(); broadcastStatus();
+          micOn = false;
+          setOutgoingAudio(outgoingAudioTrack()); // silence, not nothing
+          updateControlUI(); broadcastStatus();
         } else {
           // unlock only — the mic stays off until the user turns it back on
-          locks.audio = false; updateControlUI();
+          locks.audio = false;
+          setOutgoingAudio(outgoingAudioTrack());
+          updateControlUI();
         }
       } else if (d.kind === 'video') {
         if (d.off) {
@@ -762,7 +917,18 @@
     });
 
     // WebRTC signals (new contract) — legacy 'signal' also kept briefly for safety
-    socket.on(EV.CALL_SIGNAL, ({ from, data }) => { handleSignal(from, data); });
+    socket.on(EV.CALL_SIGNAL, ({ from, data }) => {
+      // one chain per peer: a description and a candidate must not be processed at the
+      // same time, or the candidate is dropped before the description is set
+      const st = pcMap.get(from);
+      if (st) {
+        st.signalChain = (st.signalChain || Promise.resolve())
+          .then(() => handleSignal(from, data))
+          .catch(() => {});
+      } else {
+        handleSignal(from, data).catch(() => {});
+      }
+    });
 
     socket.on(EV.CHAT_NEW_MESSAGE, d => {
       memberNames.set(d.userId, d.name);
@@ -785,6 +951,7 @@
     socket.on(EV.WEB_SYNC, d => { if (window.bmWebSync) window.bmWebSync(d); });
     socket.on(EV.WEB_ERR, d => showToast((d && d.msg) || 'خطا'));
     startPingLoop();
+    startConnectionWatchdog();
   }
 
   // ---------- Sidebar / members (incremental) ----------
@@ -1035,6 +1202,20 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     }, 3000);
   }
 
+  // Watchdog: a peer connection that is not 'connected' any more gets a fresh ICE
+  // session. Without it a dead connection stayed dead until the page was reloaded —
+  // that was the "the sound only comes back after a refresh" complaint.
+  function startConnectionWatchdog() {
+    setInterval(() => {
+      pcMap.forEach((st) => {
+        try {
+          const s = st.pc.connectionState;
+          if ((s === 'failed' || s === 'disconnected') && st.askRestart) st.askRestart();
+        } catch (e) {}
+      });
+    }, 15000);
+  }
+
   // ---------- Emoji ----------
   function buildEmojiGrid() {
     const g = $('emoji-grid');
@@ -1067,11 +1248,37 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   };
 
   // ---------- Controls ----------
-  window.toggleMic = function () {
+  // The mic can be missing (permission denied) or DEAD (the device was released).
+  // Toggling `enabled` on such a track does nothing — which looked exactly like
+  // "the sound only comes back after a refresh". Re-capture when we have to.
+  async function ensureMicTrack() {
+    if (localStream) {
+      const t = localStream.getAudioTracks()[0];
+      if (t && t.readyState === 'live') return t;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
+    try {
+      const vs = await navigator.mediaDevices.getUserMedia(audioConstraints());
+      const t = vs.getAudioTracks()[0];
+      if (!t) return null;
+      if (!localStream) localStream = new MediaStream();
+      if (localStream.getAudioTracks().indexOf(t) === -1) localStream.addTrack(t);
+      return t;
+    } catch (e) { return null; }
+  }
+
+  window.toggleMic = async function () {
     if (locks.audio) { showToast('میکروفون توسط ادمین قفل شده است'); return; }
-    if (!localStream) { showToast('دسترسی به میکروفون وجود ندارد'); return; }
     micOn = !micOn;
-    localStream.getAudioTracks().forEach(t => t.enabled = micOn);
+    if (micOn) {
+      const t = await ensureMicTrack();
+      if (!t) { micOn = false; showToast('دسترسی به میکروفون وجود ندارد'); updateControlUI(); broadcastStatus(); return; }
+      t.enabled = true;
+    }
+    if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = micOn);
+    // muted = keep sending SILENCE, not nothing: the connection stays alive and the
+    // sound can come back without a refresh
+    setOutgoingAudio(outgoingAudioTrack());
     updateControlUI();
     broadcastStatus();
   };
@@ -1211,7 +1418,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
       if (at) {
         screenAudioTrack = at;
         at.enabled = true;
-        replaceOutgoingAudio(at);
+        setOutgoingAudio(at);
       } else if (wantAudio) {
         showToast('صدای صفحه انتخاب نشد؛ فقط تصویر پخش می‌شود');
       }
@@ -1244,13 +1451,7 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
   }
   // swap the outgoing audio sender (mic <-> page audio) without touching the local track
   function replaceOutgoingAudio(track) {
-    pcMap.forEach((st) => {
-      try {
-        const sender = st.pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
-        if (sender) sender.replaceTrack(track || null);
-        else if (track) st.pc.addTrack(track);
-      } catch (e) { /* pc closed */ }
-    });
+    setOutgoingAudio(track);
   }
   function updateTileAudioBadge() {
     const b = $('sa-self');
@@ -1291,9 +1492,8 @@ const mutedIcon = m.muted ? '' + bmIcon('mic_off', 'text-[10px] text-on-error') 
     if (screenAudioTrack) {
       try { screenAudioTrack.stop(); } catch (e) {}
       screenAudioTrack = null;
-      // the mic must go back out to everyone
-      const mic = localStream && localStream.getAudioTracks()[0];
-      replaceOutgoingAudio(mic || null);
+      // the mic (or silence) must go back out to everyone
+      setOutgoingAudio(outgoingAudioTrack());
     }
     sharing = false;
     shareAudio = false;

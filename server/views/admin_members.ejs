@@ -7,7 +7,7 @@
 <header class="sticky top-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
     <a href="<%- url('home') %>" class="flex items-center gap-3">
         <%- icon('arrow_forward', 'text-on-surface-variant') %>
-        <span class="font-display-md text-display-md font-bold text-primary">Black Meet</span>
+        <div class="flex items-center gap-2"><%- brandMark('w-7 h-7 rounded-lg') %><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></div>
     </a>
     <span class="font-headline-md text-headline-md text-on-surface">مدیریت اعضا</span>
     <button id="side-toggle" data-no-loader onclick="toggleSidePanel()" title="منو" class="md:hidden text-on-surface-variant hover:bg-surface-variant/20 p-2 rounded-full">
