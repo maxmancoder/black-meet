@@ -2,7 +2,7 @@
 // The site icon lives in the DATABASE (bm_assets), not in a file: every page reads it
 // from there, so the admin can change it from the profile page and the whole site
 // (favicon, header mark, login page) follows at once. The file that ships with the app
-// (icons/site-icon.png) is only the seed for the very first request.
+// (icons/SiteIcon.png) is only the seed for the very first request.
 const fs = require('fs');
 const path = require('path');
 const dbm = require('./db');
@@ -20,6 +20,9 @@ const ALLOWED = {
 
 function defaultFile() {
   const root = dbm.rootDir;
+  // the shipped default (the app icon the owner picked); the older files stay as fallbacks
+  const primary = path.join(root, 'icons', 'SiteIcon.png');
+  if (fs.existsSync(primary)) return { file: primary, mime: 'image/png' };
   const png = path.join(root, 'icons', 'site-icon.png');
   if (fs.existsSync(png)) return { file: png, mime: 'image/png' };
   const svg = path.join(root, 'icons', 'site-icon.svg');

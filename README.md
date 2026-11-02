@@ -212,8 +212,8 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 ## آیکون سایت در دیتابیس
 
 - جدول `bm_assets` (`server/lib/siteicon.js`) نام/نوع/بایت/زمان را نگه می‌دارد.
-- در اولین خواندن از `icons/site-icon.png` پر می‌شود؛ بعد از آن **دیتابیس تنها منبع است**
-  (فایل فقط بذر اولیه است).
+- در اولین خواندن از `icons/SiteIcon.png` (آیکون پیش‌فرض) پر می‌شود؛ بعد از آن **دیتابیس تنها منبع است**
+  (فایل‌های `site-icon.png`/`site-icon.svg` فقط فالبک‌اند).
 - سرو: `GET /black-meet/site-icon` با `ETag` و `Cache-Control: no-cache` → تغییر فوری دیده می‌شود.
 - در `head.ejs` هم `<link rel="icon">` و هم `apple-touch-icon` به همین روت اشاره می‌کنند.
 - **نشان برند** (`<img class="bm-brand-mark">`) در ۷ صفحه کنار نام Black Meet:
@@ -304,7 +304,7 @@ black-meet/
 │                       messages.js, profile.js, admin_members.js, auth.js, live.js,
 │                       icons.js, interactions.js, logout-confirm.js, create.js,
 │                       forgot_password.js
-├─ icons/               sprite.svg + site-icon.png/svg (بذر آیکون دیتابیس) + مبدأها
+├─ icons/               sprite.svg + SiteIcon.png (آیکون پیش‌فرض سایت) + site-icon.png/svg + مبدأها
 ├─ fonts/               Vazirmatn-Regular/Medium/Bold.woff2, Entezar, Digi Ghaf Bold,
 │                       AFSANEH, material-symbols.woff2 (همه محلی، بدون CDN)
 ├─ دیزاین بلک میت/       DESIGN.md + ماکاپ‌ها + فایل تم obsidian_flux.css
