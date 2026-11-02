@@ -1,17 +1,34 @@
 ﻿# Black Meet — سایت تماس صوتی/تصویری گروهی
 
 یک سیستم تماس گروهی (مشابه Google Meet) با یک پروسه **Node.js** واحد:
-Express (سرو صفحات)، Socket.IO (سیگنالینگ + ریل‌تایم) و SQLite (`node:sqlite`).
-شامل احراز هویت (شماره/ایمیل + OTP، یا ایمیل + رمز عبور با bcrypt)، مدیریت تماس‌ها،
-چت، اشتراک‌گذاری صفحه، ایموجی زنده و کنترل دسترسی مبتنی بر نقش (ادمین/عضو).
+Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل‌تایم) و SQLite (`node:sqlite`).
 هیچ وابستگی به PHP/Apache/MySQL ندارد.
+
+**وضعیت فعلی قابلیت‌ها:**
+
+- **ورود و ثبت‌نام:** ایمیل+رمز (bcrypt) یا شماره موبایل+کد OTP، با سه حالت ثبت‌نام
+  (آزاد / فقط با تایید مدیر / بسته) و چت متقاضی با مدیر تا زمان تایید.
+- **اتاق تماس:** میکروفون، دوربین، اشتراک صفحه با انتخاب کیفیت و صدای صفحه، سرکوب نویز،
+  انتخاب دوربین، ایموجی زنده با صدا، چت، نمایش پینگ، بزرگ‌نمایی تمام‌صفحه،
+  و **سطح‌های مشترک:** باکس سایت، ویدیوی مشترک (YouTube/Aparat)، پخش صوتی مشترک و فایل مشترک.
+- **پیام‌رسانی:** صفحهٔ «پیام‌ها» با چت مدیر/ادمین، گفتگوهای خصوصی و پیام عمومی (اعلان)؛
+  در خانه زنگ اعلان‌ها با فهرست و نشان «جدید».
+- **مدیریت اعضا:** درجه‌ها، سقف ساخت جلسه در روز، محدودیت حساب، درخواست‌های ثبت‌نام با چت و تایید/رد.
+- **آیکون سایت در دیتابیس:** ذخیره در `bm_assets`، سرو از `GET /black-meet/site-icon`
+  و تعویض توسط مدیر از پروفایل — در همهٔ صفحات، تب مرورگر و آیکون گوشی دیده می‌شود.
+- **آرشیو کاربران:** آینهٔ فایلی (`users_archive.db`) + آینهٔ Neon/Postgres، تا حساب‌ها بعد از
+  هر استقرار (دیتابیس SQLite روی Render پاک می‌شود) از بین نروند.
 
 ---
 
 ## پیش‌نیازها
-- **Node.js نسخه ۲۲+** (به‌خاطر `node:sqlite`؛ روی v24 تست شده).
-- مرورگر مدرن با پشتیبانی WebRTC + دسترسی میکروفون/دوربین.
+- **Node.js نسخه ۲۴** (الزام `package.json`: `>=24 <25` — به‌خاطر `node:sqlite`).
+- مرورگر مدرن با پشتیبانی WebRTC و دسترسی میکروفون/دوربین.
 - فقط برای تونل عمومی: `bin\cloudflared.exe` (محلی است) و اتصال اینترنت.
+- بعد از کلون یا آپدیت: `npm install`.
+  برای ابزارهای جانبی هم `npm i --no-save fontkit wawoff2 puppeteer-core` بزنید —
+  **هر `npm install` معمولی پکیج‌های `--no-save` را حذف می‌کند**
+  (دوتای اول برای بازتولید sprite آیکون، سومی برای تست اسکرین‌شات).
 
 ---
 
@@ -35,6 +52,14 @@ Express (سرو صفحات)، Socket.IO (سیگنالینگ + ریل‌تایم)
 - لاگ‌ها در پوشه `logs/`: `node.log`، `turn.log`، `turn-proxy.log`، `dev_otp.log` و `%TEMP%\bm-tunnel\bmt-chain.log`.
 
 اجرا بدون تانل (مثلاً توسعه داخلی): `node server\index.js`.
+همهٔ مسیرهای اپ زیر `/black-meet/` هستند (به‌جز `/socket.io/`).
+
+اسکریپت‌های npm:
+| دستور | کار |
+|---|---|
+| `npm start` | اجرای اپ |
+| `npm run start:turn` / `start:turn-proxy` | TURN (UDP) و پراکسی TCP |
+| `npm run tailwind:build` | بازسازی `assets/css/tailwind.css` بعد از افزودن کلاس جدید |
 
 ---
 
@@ -50,16 +75,152 @@ Express (سرو صفحات)، Socket.IO (سیگنالینگ + ریل‌تایم)
 ## تنظیمات (`config.json`)
 - `secret`: کلید HMAC برای توکن سوکت و نشست‌ها.
 - `DEV_MODE: true` → کد OTP در پاسخ API و `logs\dev_otp.log` برمی‌گردد (فقط توسعه؛ در پروداکشن `false`).
-- `socket_port`، `base_url`، `turn` (کاربر/رمز relay).
+- `socket_port`، `base_url`، `turn` (کاربر/رمز relay)، بخش `admin`.
 - `config.json` در `.gitignore` است؛ مقدار فعلی‌اش را هرگز push نکنید.
+
+---
+
+## متغیرهای محیطی
+
+| متغیر | پیش‌فرض / نقش |
+|---|---|
+| `PORT` | 3000 — پورت اپ (Render از همین استفاده می‌کند) |
+| `BM_DB_PATH` | مسیر دیتابیس SQLite (پیش‌فرض `black_meet.db` در ریشه) |
+| `BM_SECRET` | جایگزین `secret` از config.json |
+| `BM_BASE_URL` | پایهٔ URL عمومی |
+| `BM_DEV_MODE` | `true`/`false` — جایگزین `DEV_MODE` |
+| `BM_ADMIN_USER` / `BM_ADMIN_PASS` / `BM_ADMIN_EMAIL` / `BM_ADMIN_PHONE` | ساخت مدیر روی دیتابیس خالی |
+| `BM_SOLO_LIMIT_MS` | سقف تماس تک‌نفره (پیش‌فرض ۱۵ دقیقه؛ بعد از آن اتاق بسته می‌شود) |
+| `BM_CALL_FILE_MAX` | حداکثر حجم فایل مشترک اتاق (پیش‌فرض ۵۰ مگابایت) |
+| `BM_DB_BACKUP_DIR` / `BM_DB_BACKUP_MIN` | پشتیبان‌گیری دوره‌ای از دیتابیس (نگه‌داشتن ۵ نسخهٔ آخر) |
+| `BM_USERS_DB_PATH` / `BM_USERS_DB_EXPORT_DIR` | مسیر آرشیو کاربران و پوشهٔ خروجی JSON |
+| `NEON_DATABASE_URL` (یا `BM_NEON_DATABASE_URL`) | آینهٔ Postgres کاربران؛ بدون آن Neon غیرفعال است |
+| `BM_STORE_PLAINTEXT_PASSWORDS` | پیش‌فرض روشن (جدول `user_passwords`)؛ با `false` خاموش می‌شود |
+
+---
+
+## صفحات و API
+
+**صفحات** (همه زیر `/black-meet`):
+
+| مسیر | قالب | توضیح |
+|---|---|---|
+| `/` و `/login` | `index.ejs` | ورود/ثبت‌نام (ایمیل، موبایل+OTP، حالت انتظار تایید) |
+| `/home` | `home.ejs` | جلسه‌های اخیر، ساخت/پیوستن با لینک یا کد، زنگ اعلان‌ها |
+| `/create` | `create.ejs` | ساخت جلسه (کیفیت، خصوصی/عمومی، ورود بدون تایید) |
+| `/meeting?room=…` | `call.ejs` | اتاق تماس |
+| `/messages` | `messages.ejs` | چت مدیر/ادمین، گفتگوها، پیام عمومی |
+| `/members` | `admin_members.ejs` | مدیریت اعضا، درجات، درخواست‌ها (با دسترسی نقش) |
+| `/profile` | `profile.ejs` | نام نمایشی، آواتار، آیکون سایت (مدیر)، خروج |
+| `/forgot-password?id=…` | `forgot_password.ejs` | بازیابی رمز / چت با مدیر |
+| `/theme.css` | — | تم انتخاب‌شده از کوکی `bm_theme` |
+| `/site-icon` | — | آیکون سایت از دیتابیس (`Cache-Control: no-cache`) |
+| `/site-proxy?u=…` | — | پروکسی سایت مشترک (هم‌مبدأ، با محافظت SSRF) |
+| `/call-file/:id` | — | فایل مشترک اتاق (فقط برای اعضا؛ خروجی پیوست برای غیرقابل‌نمایش) |
+
+**API** (همه زیر `/black-meet/api`):
+
+- **احراز هویت:** `signup`، `login/phone`، `login/resend`، `login/verify`، `login/email`، `logout`، `socket-token`
+- **جلسه‌ها:** `meetings/create`، `meetings/info`، `meetings/message`، `meetings/emoji`،
+  `meetings/approve|reject|remove|mute|delete|leave`
+- **پروفایل:** `profile/update`، `profile/avatar`، `profile/display-name-status`
+- **پیام‌ها و اعلان‌ها:** `messages/user`، `messages/conversations`، `messages/unread`،
+  `messages/read-all`، `announcements`
+- **مدیریت:** `admin/members`، `admin/signup-mode`، `admin/signup-requests` (+ `…/message`)،
+  `admin/block`، `admin/site-icon`، `admin/site-icon/reset`
+- **آرشیو کاربران (مدیر):** `admin/users-archive`، `…/download`، `…/restore`، `…/export`
+- **فایل تماس:** `POST call/file`، `GET call/file/:id`
+- **سایر:** `themes`، `GET members/:userId` (برای دو کاربرِ هم‌اتاق یا خود فرد)، `internal`
+
+نام رویدادهای Socket.IO فقط در `shared/socket-events.js` تعریف می‌شوند (گلوبال `BMEv` در مرورگر و
+`require` در Node) — هرگز به‌صورت رشتهٔ inline استفاده نشود.
 
 ---
 
 ## نحوه استفاده
 1. **ورود:** با ایمیل+رمز، یا شماره موبایل+کد OTP (در `DEV_MODE` کد در خود صفحه دیده می‌شود).
-2. **ایجاد تماس:** از داشبورد «ایجاد جلسه جدید»؛ لینک عمومی می‌گیرید.
-3. **پیوستن:** لینک/کد تماس را در باکس جستجوی داشبورد وارد کنید (بسته به «حالت ایجاد حساب» مدیر، ثبت‌نام یا آزاد است، یا نیاز به تایید مدیر دارد).
-4. **اتاق تماس:** میکروفون/دوربین/اشتراک صفحه، چت زنده، لیست اعضا؛ مدیر می‌تواند عضو را حذف/ساکت/مسدود کند.
+   در حالت «فقط با تایید مدیر»، فرم ثبت‌نام به‌جای ساخت حساب، درخواست ثبت می‌کند و متقاضی
+   با مدیر چت می‌کند تا تایید شود.
+2. **ایجاد تماس:** از داشبورد «ایجاد جلسه جدید»؛ لینک عمومی می‌گیرید. سقف روزانهٔ هر درجه
+   در همان صفحه نمایش داده می‌شود.
+3. **پیوستن:** لینک/کد تماس را در باکس جستجوی داشبورد وارد کنید.
+   اگر «ورود بدون تایید ادمین» خاموش باشد، ورود عضو به‌صورت **درخواست ورود** به ادمین می‌رسد
+   (اعلان + صدا + کارت در پنل ادمین) و ادمین تایید/رد می‌کند.
+4. **اتاق تماس:** میکروفون/دوربین/اشتراک صفحه، چت، ایموجی، لیست اعضا؛ ادمین می‌تواند عضو را
+   حذف/مسدود کند، صدای همه را قطع کند و میکروفون/دوربین/اشتراک را **قفل** کند
+   (قفل فقط آزادسازی است، روشن‌کنندهٔ اجباری نیست).
+
+---
+
+## اتاق تماس (جزئیات)
+
+**کنترل‌های رسانه**
+- میکروفون با **سرکوب نویز** (کلید `#btn-noise`، در localStorage ذخیره می‌شود).
+- دوربین با منوی ⋮ برای انتخاب دستگاه (جلو/عقب + همهٔ `videoinput`ها).
+- اشتراک صفحه با پنل از پیش‌تنظیم کیفیت (360/480/720/1080/اصلی) + چک‌باکس **صدای صفحه**؛
+  در موبایل که `getDisplayMedia` ندارد، دوربین به‌عنوان اشتراک فعال می‌شود.
+- **پینگ** روی هر کاشی (ms، با رنگ سبز/زرد/قرمز).
+- **ایموجی زنده با صدا** (صداها با Web Audio ساخته می‌شوند، فایل صوتی/CDN در کار نیست).
+- **چت با نوتیفیکیشن شناور** داخل اتاق (کلیک → باز شدن پنل چت).
+
+**چیدمان**
+- بزرگ‌نمایی تمام‌صفحهٔ هر کاشی (`#max-overlay`) با حفظ نوار کنترل (قابل مخفی‌کردن و برگرداندن).
+- چیدمان واکنش‌گرا: دسکتاپ چندستونه، موبایل ۲ ستونه و تک‌ستونه در حالت بزرگ‌نمایی.
+- نوار کنترل تلفن داخل خودش اسکرول افقی دارد (صفحه اصلی اسکرول نمی‌شود).
+
+**سطح‌های مشترک (منوی `#btn-web`)**
+- **لینک سایت:** iframe از طریق `/site-proxy` (هم‌مبدأ تا اسکرول/کلیک هم‌زمان ممکن باشد)؛
+  اسکرول، کلیک و جابه‌جایی صفحه بین همه منتقل می‌شود؛ سایت‌های خصوصی/داخلی بلاک‌اند (محافظت SSRF).
+- **لینک ویدیو:** YouTube/Aparat (تبدیل خودکار به embed) با پخش/توقف/seek مشترک.
+- **لینک صدا:** پخش‌کنندهٔ صوتی مشترک (دیسک، نوار پیشروی، صدا) — یکی پخش/توقف کند همه با هم.
+- **فایل مشترک:** آپلود (drag&drop یا کلیک) و نمایش برای همه؛ فقط تا پایان جلسه نگه داشته می‌شود
+  و با بستن اتاق پاک می‌شود.
+- کلید **«دسترسی همزمان»**: روشن = همه با هم می‌رانند؛ خاموش = هر کس نسخهٔ خودش را دارد.
+- هر سطح بزرگ‌نمایی کلی دارد و ادمین می‌تواند همه را حذف کند.
+
+**ابزارهای ادمین**
+- پنل اعضا/ادمین داخل اتاق: حذف، مسدودسازی، قفل صدا/تصویر/اشتراک، سوئیچ «ورود بدون تایید».
+- **تحویل ادمین:** وقتی آخرین ادمین اتاق برود، بعد از چند ثانیه یکی از اعضا ادمین می‌شود
+  (با اولویت بیشترین فعالیت در چت) و `ADMIN_CHANGED` به همه اطلاع می‌دهد.
+- **سقف تک‌نفره:** تماسی که فقط یک نفر در آن بماند بعد از `BM_SOLO_LIMIT_MS` (پیش‌فرض ۱۵ دقیقه)
+  بسته می‌شود؛ با آمدن نفر دوم لغو می‌شود.
+
+**پایداری صدا/تصویر** (مهم‌ترین بخش پایداری تماس)
+- وقتی میکروفون بی‌صداست، یک **ترک بی‌صدا (silent keepalive)** جای آن ارسال می‌شود تا RTP و
+  ICE زنده بمانند و وسط صحبت صدا قطع نشود.
+- بازیابی خودکار ICE (`disconnected`/`failed` → `restartIce` با مهلت ۴ ثانیه + offer مجدد).
+- باز کردن **قفل autoplay مرورگر** با اولین لمس (`tryPlay`)؛ ترک مردهٔ دوباره‌گرفته می‌شود
+  (`ensureMicTrack`/`ensureCameraTrack`) — دیگر «تا رفرش بی‌صدا» نداریم.
+
+---
+
+## پیام‌رسانی، اعلان‌ها و پروفایل
+
+- **صفحهٔ پیام‌ها:** لیست گفتگوها در سایدبار + مکالمه با **مدیر/ادمین** (`messages?chat=admin`)
+  + گفتگوهای خصوصی بین کاربران + **پیام عمومی (اعلان)** برای مدیر/پریمیوم.
+  نام فرستندهٔ هر پیام روی حباب نمایش داده می‌شود (هم به‌صورت زنده، هم بعد از رفرش).
+- **نشان ناخوانده:** در خانه روی زنگ (`bell-btn`) و روی هر گفتگو؛ باز کردن صفحهٔ پیام‌ها
+  همه را خوانده می‌کند (طبق درخواست).
+- **زنگ اعلان‌ها:** باز شدن پنل با فهرست، مرتب‌سازی جدید/قدیمی، نشان «جدید» تا زمان دیده‌شدن
+  و ماندگاری بعد از رفرش.
+- **پروفایل:** نام نمایشی (حداکثر **یک بار در روز** — سمت سرور اعمال می‌شود)، آواتار،
+  کلیدهای دسترسی (پیام‌ها/اعضا در موبایل)، **کارت «آیکون سایت» فقط برای مدیر**،
+  و دیالوگ تایید خروج.
+
+---
+
+## آیکون سایت در دیتابیس
+
+- جدول `bm_assets` (`server/lib/siteicon.js`) نام/نوع/بایت/زمان را نگه می‌دارد.
+- در اولین خواندن از `icons/site-icon.png` پر می‌شود؛ بعد از آن **دیتابیس تنها منبع است**
+  (فایل فقط بذر اولیه است).
+- سرو: `GET /black-meet/site-icon` با `ETag` و `Cache-Control: no-cache` → تغییر فوری دیده می‌شود.
+- در `head.ejs` هم `<link rel="icon">` و هم `apple-touch-icon` به همین روت اشاره می‌کنند.
+- **نشان برند** (`<img class="bm-brand-mark">`) در ۷ صفحه کنار نام Black Meet:
+  ورود، خانه، پروفایل، پیام‌ها، مدیریت اعضا، فراموشی رمز و اتاق تماس.
+- تعویض: پروفایل مدیر → کارت «آیکون سایت» → انتخاب تصویر (png/jpeg/webp/gif/svg، سقف ۲ مگابایت)
+  یا بازگشت به پیش‌فرض؛ بدون رفرش همه جا عوض می‌شود.
+  API: `POST api/admin/site-icon` و `POST api/admin/site-icon/reset` (فقط مدیر).
 
 ---
 
@@ -79,6 +240,42 @@ Express (سرو صفحات)، Socket.IO (سیگنالینگ + ریل‌تایم)
   - **فقط با تایید مدیر:** اطلاعات در `signup_requests` ذخیره می‌شود، حساب تا تایید ساخته نمی‌شود و متقاضی می‌تواند از همان صفحه با دکمه «شروع چت با مدیر» پیام بفرستد.
   - **غیرفعال:** هیچ حساب جدیدی ساخته نمی‌شود.
 - **صفحه «مدیریت اعضا»** (`/members`، سایدبار دو بخشی): لیست کاربران با ویرایش/درجه/محدودیت + لیست درخواست‌های ثبت‌نام با چت، «تایید و فعال‌سازی» و «رد».
+- اطلاعات تماس مدیر اصلی برای بقیه پنهان است (`info_hidden`) و در API هم قرمز می‌شود.
+
+---
+
+## آرشیو کاربران، رمزهای خوانا و Neon
+
+- **`users_archive.db`** (`server/lib/usersdb.js`): آینهٔ کامل جدول `users` در فایلی جدا،
+  بعد از هر نوشتن به‌روز می‌شود و هر ۱۰ دقیقه هم‌گام‌سازی ایمن انجام می‌دهد.
+- **بازیابی هنگام بالا آمدن:** اگر دیتابیس اصلی خالی باشد، حساب‌ها از آرشیو (یا Neon)
+  قبل از ساخت مدیر برمی‌گردند.
+- **Neon (Postgres):** با تنظیم `NEON_DATABASE_URL` جدول `bm_users` روی Neon نگه داشته می‌شود؛
+  بدون آن همهٔ توابع بی‌اثرند و پکیج `pg` هم اصلاً لود نمی‌شود. رمز اتصال هرگز لاگ نمی‌شود.
+- **API مدیر:** `GET api/admin/users-archive` (آمار + فهرست بدون هش)،
+  `…/download` (خود فایل)، `POST …/restore {overwrite}`، `POST …/export`.
+- **رمز خوانا برای مالک** (`server/lib/plaintext.js`، پیش‌فرض روشن؛ با
+  `BM_STORE_PLAINTEXT_PASSWORDS=false` خاموش): متن رمز در جدول `user_passwords`
+  (و `user_passwords_pending` برای درخواست‌های در انتظار) کنار bcrypt نگه داشته می‌شود.
+  **هیچ API‌ای آن را برنمی‌گرداند** — فقط با دسترسی مستقیم به `black_meet.db` دیده می‌شود.
+- **پشتیبان دیتابیس:** با `BM_DB_BACKUP_DIR` هر `BM_DB_BACKUP_MIN` دقیقه (و موقع خروج)
+  اسکریپت ۵ نسخهٔ آخر را نگه می‌دارد و هنگام نبودِ فایل اصلی، جدیدترین را برمی‌گرداند.
+
+---
+
+## استقرار (Render)
+
+- سرویس تکی `black-meet` با `npm start` روی پورت `PORT`؛ URL عمومی:
+  `https://black-meet.onrender.com` (همهٔ مسیرها زیر `/black-meet/`).
+- **استقرار خودکار ندارد** (ریپوی عمومی) — بعد از `git push` باید دستی اجرا شود:
+  `POST https://api.render.com/v1/services/<id>/deploys` با توکن، یا از داشبورد Render.
+- پیکربندی با env: `PORT`، `BM_DB_PATH`، `BM_SECRET`، `BM_BASE_URL`، `BM_DEV_MODE`،
+  `BM_ADMIN_*`، `NEON_DATABASE_URL`. تغییر env **ری‌استارت نمی‌کند**؛ بعد از تغییر، deploy بزنید.
+- **نکات پلن رایگان:** دیسک موقت است → با هر deploy دیتابیس SQLite پاک می‌شود
+  (کاربران از Neon/آرشیو برمی‌گردند)، سایت هنگام بی‌کاری می‌خوابد (سرد ~۳۰-۶۰ ثانیه،
+  `/login` موقع بوت `503` می‌دهد) و TURN اختصاصی ندارد (فالبک `openrelay.metered.ca`).
+- سلامت‌سنجی بعد از deploy: `GET /black-meet/login` باید `200` بدهد و
+  `GET /black-meet/site-icon` باید بایت تصویر برگرداند.
 
 ---
 
@@ -87,26 +284,37 @@ Express (سرو صفحات)، Socket.IO (سیگنالینگ + ریل‌تایم)
 black-meet/
 ├─ server/
 │  ├─ index.js          نقطه ورود Express + Socket.IO (پورت process.env.PORT یا 3000)
-│  ├─ app.js            مونت روت‌ها («/black-meet/*») + استاتیک hardened
-│  ├─ sockets.js        سیگنالینگ WebRTC + رویدادهای ریل‌تایم
-│  ├─ routes/           pages.js (صفحات EJS + /theme.css) و api.js (REST)
-│  ├─ lib/              config, db (SQLite), helpers, sessions, otp, pwd, themes, bus,
-│  │                    ranks (درجات + سقف روزانه), settings (حالت ثبت‌نام), schema.sql
-│  └─ views/            قالب‌های EJS (فارسی RTL)؛ head.ejs پارشال مشترک، admin_members.ejs پنل مدیریت اعضا
+│  ├─ app.js            مونت روت‌ها («/black-meet/*») + استاتیک‌های hardened
+│  │                    + /site-icon + /site-proxy + /call-file (فقط برای اعضای اتاق)
+│  ├─ sockets.js        سیگنالینگ WebRTC، قفل‌های ادمین، درخواست ورود، سقف تک‌نفره
+│  ├─ routes/pages.js   صفحات EJS + /theme.css + pageLocals (icon/asset/siteIconUrl/brandMark)
+│  ├─ routes/api.js     REST (احراز هویت، جلسه‌ها، پیام‌ها، مدیریت، آرشیو، آیکون)
+│  ├─ lib/              config, db (+پشتیبان), helpers, sessions, otp, pwd, ranks, settings,
+│  │                    themes, bus, internal, state, schema.sql,
+│  │                    siteicon (آیکون دیتابیس), siteproxy (پروکسی سایت + SSRF guard),
+│  │                    callfiles (فایل مشترک), usersdb (آرشیو), neon (آینه Postgres),
+│  │                    plaintext (رمزهای خوانا)
+│  └─ views/            index (ورود), home, create, call, messages, profile,
+│                       admin_members, forgot_password + head.ejs (پارشال مشترک)
 ├─ shared/socket-events.js   تک‌منبع نام رویدادهای Socket.IO (BMEv)
 ├─ assets/
 │  ├─ css/styles.css    استایل سفارشی + @font-face + پیش‌فرض رنگ‌های --bm-*
 │  ├─ css/tailwind.css  خروجی build (کامیت می‌شود)
-│  └─ js/               icons.js, live.js (سوکت مشترک), call.js, auth.js, ...
-├─ icons/               sprite.svg (آیکون‌های SVG) + favicon.svg + فایل‌های مبدأ SVG
-├─ fonts/               Entezar.ttf, Digi Ghaf Bold.ttf, AFSANEH.ttf, material-symbols.woff2
-├─ دیزاین بلک میت/       DESIGN.md + ماکاپ‌ها + فایل‌های تم obsidian_flux.css
+│  └─ js/               call.js, call-web.js (سطح‌های مشترک), emoji-sfx.js, home.js,
+│                       messages.js, profile.js, admin_members.js, auth.js, live.js,
+│                       icons.js, interactions.js, logout-confirm.js, create.js,
+│                       forgot_password.js
+├─ icons/               sprite.svg + site-icon.png/svg (بذر آیکون دیتابیس) + مبدأها
+├─ fonts/               Vazirmatn-Regular/Medium/Bold.woff2, Entezar, Digi Ghaf Bold,
+│                       AFSANEH, material-symbols.woff2 (همه محلی، بدون CDN)
+├─ دیزاین بلک میت/       DESIGN.md + ماکاپ‌ها + فایل تم obsidian_flux.css
 ├─ bin/tunnel.ps1       زنجیره تانل وب (cloudflared محلی در bin/)
 ├─ tools/gen-icons.js   بازتولید icons/sprite.svg از فونت Material (fontkit + wawoff2)
 ├─ turn.js  turn-proxy.js   سرور TURN (UDP) و پراکسی TCP
 ├─ start.bat            اجرای همه خدمات (دوبار کلیک)
 ├─ logs/                خروجی لاگ‌ها (در .gitignore)
 ├─ config.json          تنظیمات (در .gitignore)
+├─ users_archive.db     آرشیو کاربران (در .gitignore)
 └─ black_meet.db        دیتابیس SQLite (در .gitignore)
 ```
 
@@ -120,24 +328,35 @@ black-meet/
   خروجی همیشه `<svg class="bm-ico"><use href=".../icons/sprite.svg#ic-name"></use></svg>` است.
   بازتولید sprite: `npm i --no-save fontkit wawoff2` سپس `node tools/gen-icons.js`
   (هر `npm install` معمولی این دو پکیج را حذف می‌کند و باید دوباره نصب شوند).
-- **فونت‌ها:** متن فارسی `Entezar`، هدلاگ/برند لاتین `Digi Ghaf Bold`،
-  `AFSANEH` (نستعلیق) فقط با کلاس `.font-brand` (فعلاً جایی استفاده نمی‌شود).
-  فونت‌ها محلی و در `fonts/` هستند؛ CDN گوگل حذف شده (فیلتر).
+- **فونت‌ها:** متن فارسی **`Vazirmatn`** (سه وزن Regular/Medium/Bold، با `Entezar` به‌عنوان
+  فالبک)، هدلاگ/برند لاتین **`Digi Ghaf Bold`**، و `AFSANEH` (نستعلیق) فقط با کلاس `.font-brand`
+  (فعلاً جایی استفاده نمی‌شود). همه محلی در `fonts/` هستند؛ CDN گوگل حذف شده (فیلتر).
+- **آیکون سایت:** از دیتابیس می‌آید (بخش «آیکون سایت در دیتابیس»)؛ `icons/favicon.svg`
+  فقط برای کسی است که قبلاً ذخیره کرده.
 - **تم:** رنگ‌های Tailwind به متغیر `--bm-*` وصل‌اند. پیش‌فرض‌ها در `:root`
   داخل `assets/css/styles.css` است و فایل‌های `دیزاین بلک میت/<id>.css` روشان می‌شوند.
   روت‌ها: `GET /black-meet/theme.css` (کوکی `bm_theme`) و `GET /black-meet/api/themes`.
   برای افزودن تم: فایل CSS جدید در `دیزاین بلک میت/` بگذارید و `bm_theme=<id>` ست کنید.
-- **Tailwind:** بعد از افزودن کلاس جدید: `npm run tailwind:build`.
+- **Tailwind:** بعد از افزودن کلاس جدید: `npm run tailwind:build`
+  (JIT فقط `server/views/**/*.ejs`، `assets/js/**/*.js` و `shared/**/*.js` را اسکن می‌کند).
 
 ---
 
 ## امنیت
 - رمزها با `bcryptjs`؛ نشست‌ها SQLite (`bm_sessions`) با کوکی httpOnly + SameSite=Lax
   و CSRF (توکن ۳۲هگز در نشست) روی همه POSTها.
-- توکن سوکت با HMAC و TTL ۲۴ ساعت (`makeSocketToken`/`verifySocketToken`).
+- توکن سوکت با HMAC و TTL ۲۴ ساعت (`makeSocketToken`/`verifySocketToken`)؛
+  `socket.data.isManager` فقط از دیتابیس خوانده می‌شود (نه از payload کلاینت).
 - خروجی EJS escape می‌شود؛ آپلود آواتار MIME + سقف ۲ مگابایت (multer).
-- فایل‌های حساس (`config.json`, `.env`, `tunnel_url.txt`, `dev_otp.log`, `black_meet.db*`)
-  در `.gitignore` هستند؛ قبل از push اگر tracked شده‌اند `git rm --cached` بزنید.
+- **فایل‌های اشتراکی اتاق** فقط برای اعضا سرو می‌شوند؛ نوع غیرقابل‌نمایش با
+  `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` دانلود می‌شود
+  و مونت `/uploads` فقط به `uploads/avatars` محدود است.
+- **پروکسی سایت** فقط http(s) می‌گیرد، میزبان‌های loopback/private/link-local/CGNAT را
+  بلاک می‌کند، سقف ۴ ریدایرکت، ۱۵ ثانیه timeout و ۴ مگابایت دارد.
+- رمزهای خوانا (جدول `user_passwords`) با `BM_STORE_PLAINTEXT_PASSWORDS=false` قابل خاموش‌کردن‌اند؛
+  هیچ endpoint آن را برنمی‌گرداند.
+- فایل‌های حساس (`config.json`, `.env`, `tunnel_url.txt`, `dev_otp.log`, `black_meet.db*`,
+  `users_archive.db*`) در `.gitignore` هستند؛ قبل از push اگر tracked شده‌اند `git rm --cached` بزنید.
 
 ---
 
@@ -145,13 +364,24 @@ black-meet/
 - **تماس برقرار نمی‌شود (میان NAT):** `turn.js` و `turn-proxy.js` باید روی 3478
   اجرا باشند (`start.bat` این کار را می‌کند)؛ فالبک آزاد `openrelay.metered.ca`
   هم در `turnConfig()` هست.
+- **صدای وسط صحبت قطع می‌شود / تا رفرش بی‌صدا است:** این باگ‌ها حل شده‌اند
+  (ترک بی‌صدا برای زنده نگه‌داشتن RTP/ICE، بازیابی خودکار ICE، باز کردن قفل autoplay با اولین لمس
+  و دوباره گرفتن ترک مرده). اگر باز هم دیدید: `window.__bmPcMap` را در کنسول باز کنید و با
+  `getStats()` ببینید `outbound-rtp` بایت ارسال می‌کند یا نه.
 - **تانل عمومی نمی‌آید:** لاگ `%TEMP%\bm-tunnel\bmt-chain.log` را ببینید؛
   در برخی شبکه‌ها SSH (localhost.run/serveo) resolve نمی‌شود و فقط Cloudflare کار می‌کند —
   زنجیره خودش تا سالم شدن CF تلاش می‌کند.
 - **صدا/تصویر نمی‌آید:** دسترسی میکروفون/دوربین را بدهید؛ روی URL عمومی **https**
   مرورگر دسترسی می‌دهد (روی http فقط `localhost` استثناست).
+- **آیکون سایت عوض نمی‌شود:** از پروفایل مدیر (کارت «آیکون سایت») انجام شود؛
+  `GET /black-meet/site-icon` باید بایت‌های جدید بدهد (بدون کش، `no-cache`).
 - **تغییرات CSS دیده نمی‌شود:** همه URLها با `asset_url()`/`asset()` ساخته شوند
   (‎`?v=mtime` می‌گیرند)؛ مسیرهای hardcode کلاسیک‌ترین باگ است.
+- **کلاس Tailwind جدید اعمال نمی‌شود:** `npm run tailwind:build` بزنید (فایل خروجی کامیت می‌شود).
+- **استقرار Render:** بعد از push، deploy دستی است؛ بعد از آن سایت ~۳۰-۶۰ ثانیه سرد است و
+  `/login` موقع بوت `503` می‌دهد. دیتابیس SQLite با هر deploy پاک می‌شود —
+  کاربران باید از Neon برگردند (وگرنه دوباره ساخت مدیر انجام می‌شود).
 - **تست بصری:** `npm i --no-save puppeteer-core` و اسکرین‌شات با کروم سیستم
   (`C:\Program Files\Google\Chrome\Application\chrome.exe`) گرفته می‌شود؛
-  این پکیج هم با `npm install` بعدی حذف می‌شود.
+  این پکیج هم با `npm install` بعدی حذف می‌شود. برای تست تماس، **همیشه جلسهٔ تازه بسازید**
+  (با آخرین نفر خارج‌شدن، `room` غیرفعال و آدرس به `nomeeting` ریدایرکت می‌شود).
