@@ -6,11 +6,15 @@
 (function () {
   const I = window.INIT;
   const EV = window.BMEv;
+  // Fallback only — the server hands the real list in INIT.iceServers (STUN + TURN).
+  // A relay is NOT optional: without one, two people on different networks (mobile
+  // data vs home wifi, CGNAT, symmetric NAT) never connect and the call is silent
+  // in both directions with no error at all.
   const ICE = (I && I.iceServers && I.iceServers.length) ? I.iceServers : [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.l.google.com:19302?transport=udp' },
+    { urls: ['turn:turn.jami.net:3478?transport=udp', 'turn:turn.jami.net:3478?transport=tcp'], username: 'ring', credential: 'ring' },
   ];
   const EMOJIS = ['👍', '❤️', '👏', '😂', '🎉', '😮', '🔥', '✅', '🙏', '💡', '😎', '🌟'];
 
@@ -44,6 +48,9 @@
   }
   ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
     document.addEventListener(ev, flushPendingPlays, { passive: true, capture: true });
+    // the silent keepalive track lives in an AudioContext, which starts suspended
+    // until the page is touched — a suspended one sends nothing, so resume it too
+    document.addEventListener(ev, () => { if (window.bmResumeSilence) window.bmResumeSilence(); }, { passive: true, capture: true });
   });
 
   let socket = null;
@@ -213,34 +220,71 @@
   };
   window.toggleNoiseSuppression = function () { return window.bmSetNoiseSuppression(!noiseSuppression); };
 
+  // A capture failure must say WHAT failed. Silence here was indistinguishable
+  // from a network problem: the call page just looked empty.
+  function mediaErrorText(err, kind) {
+    const name = (err && err.name) || '';
+    const what = kind === 'audio' ? 'میکروفون' : 'دوربین';
+    if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+      return 'دسترسی به ' + what + ' داده نشد — از آیکون قفل/دوربین کنار آدرس سایت اجازه بدهید';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return what + 'ی پیدا نشد';
+    if (name === 'NotReadableError' || name === 'TrackStartError') return what + ' در برنامهٔ دیگری مشغول است';
+    if (name === 'OverconstrainedError') return what + ' با این تنظیمات پشتیبانی نمی‌شود';
+    return 'راه‌اندازی ' + what + ' ناموفق بود';
+  }
+
+  // Audio and video are captured INDEPENDENTLY and on purpose: the old chain took
+  // the microphone FIRST and a denied/failed mic aborted the whole function, so the
+  // camera was never even requested — one permission problem looked like a dead app.
   function startMedia() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { renderSelf(); return Promise.resolve(); }
-    const ac = audioConstraints();
-    return navigator.mediaDevices.getUserMedia(ac)
-      .then(audioStream => {
-        localStream = audioStream;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // getUserMedia only exists on https:// or localhost. Opening the LAN address
+      // over plain http:// (http://192.168.x.x:3000) has no media API at all.
+      showToast('این آدرس اجازهٔ میکروفون/دوربین نمی‌دهد؛ صفحه را از آدرس https یا localhost باز کنید');
+      renderSelf();
+      updateControlUI();
+      return Promise.resolve();
+    }
+    if (!localStream) localStream = new MediaStream();
+
+    const audioP = navigator.mediaDevices.getUserMedia(audioConstraints())
+      .then((s) => {
+        const t = s.getAudioTracks()[0];
+        if (!t) throw new Error('no audio track');
+        localStream.addTrack(t);
         micOn = true;
-        return navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } })
-          .then(videoStream => {
-            const first = videoStream.getVideoTracks()[0] || null;
-            if (!first) { cameraTrack = null; camOn = false; return; }
-            const keep = () => { cameraTrack = first; localStream.addTrack(first); camOn = true; };
-            if (!looksVirtual(first.label)) { keep(); return; }
-            return preferRealCamera().then(real => {
-              if (real) { try { first.stop(); } catch (e) {} cameraTrack = real; localStream.addTrack(real); camOn = true; }
-              else keep();
-            }).catch(keep);
-          })
-          .catch(() => { camOn = false; cameraTrack = null; });
       })
-      .then(() => {
-        currentVideoTrack = cameraTrack;
-        updateSelfVideo();
-        updateControlUI();
-        if (approved) applyDefaultMedia();
-        pcMap.forEach((st) => addLocalTracks(st));
+      .catch((err) => {
+        micOn = false;
+        silenceCtxResume(); // the silent keepalive track needs a running context
+        showToast(mediaErrorText(err, 'audio'));
+      });
+
+    const videoP = navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } })
+      .then((videoStream) => {
+        const first = videoStream.getVideoTracks()[0] || null;
+        if (!first) { cameraTrack = null; camOn = false; return; }
+        const keep = () => { cameraTrack = first; localStream.addTrack(first); camOn = true; };
+        if (!looksVirtual(first.label)) { keep(); return; }
+        return preferRealCamera().then((real) => {
+          if (real) { try { first.stop(); } catch (e) {} cameraTrack = real; localStream.addTrack(real); camOn = true; }
+          else keep();
+        }).catch(keep);
       })
-      .catch(() => { micOn = false; camOn = false; renderSelf(); updateControlUI(); });
+      .catch((err) => {
+        camOn = false;
+        cameraTrack = null;
+        showToast(mediaErrorText(err, 'video'));
+      });
+
+    return Promise.all([audioP, videoP]).then(() => {
+      currentVideoTrack = cameraTrack;
+      updateSelfVideo();
+      updateControlUI();
+      if (approved) applyDefaultMedia();
+      pcMap.forEach((st) => addLocalTracks(st));
+    });
   }
 
   // the outgoing VIDEO track currently being sent (camera, or screen while sharing)
@@ -317,6 +361,16 @@
     } catch (e) { silentTrack = null; }
     return silentTrack;
   }
+
+  // Resume the silent-track AudioContext (it starts suspended until the page is
+  // touched). Called on gestures and whenever the microphone is unavailable.
+  function silenceCtxResume() {
+    try {
+      getSilentTrack();
+      if (silentCtx && silentCtx.state === 'suspended') silentCtx.resume().catch(() => {});
+    } catch (e) {}
+  }
+  window.bmResumeSilence = silenceCtxResume;
 
   // the track the peers must receive right now
   function outgoingAudioTrack() {
@@ -602,6 +656,7 @@
     const pc = st.pc;
     pcMap.set(peer.userId, st);
     addLocalTracks(st);
+    armNetTimer(st, peer.userId);
 
     pc.onicecandidate = e => {
       if (e.candidate && socket) socket.emit(EV.CALL_SIGNAL, { to: peer.userId, data: { type: 'ice', candidate: e.candidate } });
@@ -669,9 +724,21 @@
       }, 2500);
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') askRestart();
-      else if (pc.connectionState === 'connected' && st.restartTimer) {
+      if (pc.connectionState === 'connected') {
+        if (st.netTimer) { clearTimeout(st.netTimer); st.netTimer = null; }
+        setNetBad(peer.userId, false);
+        if (st.restartTries) st.restartTries = 0;
+      }
+      if (pc.connectionState === 'failed') {
+        // report it right away — waiting for the ICE retry loop to give up could
+        // hide a relay-less network behind 30+ seconds of silence
+        setNetBad(peer.userId, true);
+        askRestart();
+      } else if (pc.connectionState === 'connected' && st.restartTimer) {
         clearTimeout(st.restartTimer); st.restartTimer = null;
+      } else if (pc.connectionState === 'disconnected') {
+        // transient on a bad network — only complain if it does not recover
+        armNetTimer(st, peer.userId);
       }
     };
 
@@ -737,6 +804,8 @@
     const st = pcMap.get(userId);
     if (st) {
       if (st.restartTimer) { clearTimeout(st.restartTimer); st.restartTimer = null; }
+      if (st.netTimer) { clearTimeout(st.netTimer); st.netTimer = null; }
+      setNetBad(userId, false);
       try { st.pc.close(); } catch (e) {}
       pcMap.delete(userId);
     }
@@ -1336,7 +1405,83 @@
     p.classList.toggle('hidden');
   };
 
+  // ------------------------------------------------------------------
+  // CONNECTION HEALTH (silent-failure killer)
+  // ------------------------------------------------------------------
+  // When a relay is missing/blocked, ICE finds no working candidate pair, the peer
+  // connection never leaves `checking`, the remote tile stays black/avatar and
+  // nobody hears anybody — and NOTHING on the page says why. That is exactly the
+  // "no audio in the call page" report. Now the page admits it and offers a retry.
+  const netBad = new Set();
+  function peerLabel(userId) {
+    const meta = peerMeta.get(userId);
+    return memberNames.get(userId) || (meta && meta.name) || 'طرف مقابل';
+  }
+  function updateNetBanner() {
+    const el = $('net-banner');
+    if (!el) return;
+    const bad = netBad.size > 0;
+    el.classList.toggle('hidden', !bad);
+    if (!bad) return;
+    const t = $('net-banner-text');
+    if (!t) return;
+    if (netBad.size === 1) {
+      const only = netBad.values().next().value;
+      t.textContent = 'اتصال صدا و تصویر با «' + peerLabel(only) + '» برقرار نشد. احتمالاً شبکه اجازهٔ عبور رسانه را نمی‌دهد.';
+    } else {
+      t.textContent = 'اتصال صدا و تصویر با ' + netBad.size + ' نفر برقرار نشد. احتمالاً شبکه اجازهٔ عبور رسانه را نمی‌دهد.';
+    }
+  }
+  function setNetBad(userId, bad) {
+    const key = String(userId);
+    if (bad) netBad.add(key); else netBad.delete(key);
+    updateNetBanner();
+  }
+  window.bmCloseNetBanner = function () {
+    const el = $('net-banner');
+    if (el) el.classList.add('hidden');
+  };
+  // a fresh ICE session for every peer + a new grace window (what F5 used to do)
+  window.bmRetryIce = function () {
+    netBad.clear();
+    updateNetBanner();
+    let n = 0;
+    pcMap.forEach((st, uid) => {
+      try {
+        st.restartTries = 0;
+        st.iceRestartAt = 0;
+        armNetTimer(st, uid);
+        if (st.askRestart) st.askRestart();
+        else if (st.pc.signalingState === 'stable') negotiate(st, uid);
+        n++;
+      } catch (e) { /* one broken peer must not stop the rest */ }
+    });
+    if (n === 0) {
+      // no peer objects at all: re-run the join so the server sends the roster again
+      if (socket && socket.connected) doJoin();
+    }
+    showToast('در حال تلاش دوباره برای برقراری اتصال…');
+  };
+
+  // a peer that is not 'connected' after this long is reported (relay setup on a bad
+  // network can legitimately take 5-8s, so do not cry wolf earlier)
+  const NET_GRACE_MS = 12000;
+  function armNetTimer(st, userId) {
+    if (st.netTimer) { clearTimeout(st.netTimer); st.netTimer = null; }
+    setNetBad(userId, false);
+    st.netTimer = setTimeout(() => {
+      st.netTimer = null;
+      try {
+        const ok = st.pc.connectionState === 'connected'
+          || st.pc.iceConnectionState === 'connected'
+          || st.pc.iceConnectionState === 'completed';
+        if (!ok) setNetBad(userId, true);
+      } catch (e) {}
+    }, NET_GRACE_MS);
+  }
+
   // ---------- Controls ----------
+
   // The mic can be missing (permission denied) or DEAD (the device was released).
   // Toggling `enabled` on such a track does nothing — which looked exactly like
   // "the sound only comes back after a refresh". Re-capture when we have to.

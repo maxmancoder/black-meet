@@ -152,6 +152,21 @@
             </div>
         </div>
     </main>
+
+    <!-- Media-connection banner. A missing/blocked relay keeps ICE in `checking`
+         forever: black tiles, no sound either way, and no hint why. It is now
+         visible and gives a one-click ICE retry (the old "fix" was pressing F5). -->
+    <div id="net-banner" class="bm-netbanner hidden" dir="rtl">
+        <div class="bm-netbanner-ico"><%- icon('network_check', 'text-[22px]') %></div>
+        <div class="bm-netbanner-body">
+            <p id="net-banner-text" class="bm-netbanner-text">اتصال صدا و تصویر برقرار نشد.</p>
+            <p class="bm-netbanner-sub">اگر هر دو نفر یک شبکه دارید مشکل از شبکه نیست؛ در غیر این صورت یک VPN روشن کنید یا دوباره تلاش کنید.</p>
+            <div class="bm-netbanner-actions">
+                <button type="button" data-no-soft onclick="bmRetryIce()" class="bm-netbanner-retry">تلاش دوباره</button>
+                <button type="button" data-no-soft onclick="bmCloseNetBanner()" class="bm-netbanner-close">بستن</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Bottom control bar. While a box is maximized it collapses into a small floating

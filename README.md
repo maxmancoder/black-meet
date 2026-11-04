@@ -96,6 +96,9 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 | `BM_USERS_DB_PATH` / `BM_USERS_DB_EXPORT_DIR` | مسیر آرشیو کاربران و پوشهٔ خروجی JSON |
 | `NEON_DATABASE_URL` (یا `BM_NEON_DATABASE_URL`) | آینهٔ Postgres کاربران؛ بدون آن Neon غیرفعال است |
 | `BM_STORE_PLAINTEXT_PASSWORDS` | پیش‌فرض روشن (جدول `user_passwords`)؛ با `false` خاموش می‌شود |
+| `CF_TURN_KEY_ID` / `CF_TURN_TOKEN` | رلهٔ Cloudflare TURN (رایگان) — اعتبارنامهٔ کوتاه‌عمر خودکار ساخته می‌شود |
+| `BM_TURN_SERVERS` | رلهٔ خودتان: `turn:host:3478\|user\|pass;…` یا JSON مثل `iceServers` |
+| `BM_TURN_PUBLIC` | `0` = بدون فالبک عمومی، `1` = فالبک حتی وقتی رلهٔ مالک هست (پیش‌فرض: فقط بدون رلهٔ مالک) |
 
 ---
 
@@ -192,6 +195,28 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 - باز کردن **قفل autoplay مرورگر** با اولین لمس (`tryPlay`)؛ ترک مردهٔ دوباره‌گرفته می‌شود
   (`ensureMicTrack`/`ensureCameraTrack`) — دیگر «تا رفرش بی‌صدا» نداریم.
 
+**رله (TURN) و تماس بین دو شبکه**
+- دو نفر روی شبکه‌های مختلف (موبایل + وای‌فای، CGNAT، NAT متقارن) با STUN تنها به هم
+  نمی‌رسند؛ بدون رله، ICE در حالت `checking` می‌ماند و تماس **بی‌صدا و بی‌تصویر** است،
+  بدون هیچ خطایی. رله این را حل می‌کند.
+- فهرست ICE از `server/lib/turn.js` می‌آید (`turnConfig()` در helpers آن را به
+  `window.INIT.iceServers` می‌دهد) به این ترتیب:
+  1. رلهٔ خودِ مالک: `BM_TURN_SERVERS` یا `turnServers` در `config.json`
+     (فرمت فشرده `turn:host:3478|user|pass;…` یا JSON مثل `iceServers`).
+  2. **Cloudflare TURN** (رایگان): با ست‌کردن `CF_TURN_KEY_ID` + `CF_TURN_TOKEN`
+     اعتبارنامه‌های کوتاه‌عمر خودکار ساخته و در بوت + هر ۶ ساعت تازه می‌شوند.
+  3. رلهٔ محلی `turn_host.txt` (فقط اگر `turn.user`/`turn.pass` در config باشد).
+  4. فالبک عمومی `turn.jami.net` (UDP/TCP) — از ایران تست شده: Allocate و عبور واقعی
+     صدا+تصویر. با `BM_TURN_PUBLIC=0` خاموش و با `=1` اجباری می‌شود.
+- اعتبارنامه‌ها هیچ‌وقت لاگ نمی‌شوند (فقط `summary()` که `auth: true/false` می‌دهد).
+- **بنر «اتصال برقرار نشد»** (`#net-banner` در `call.ejs`): اگر بعد از ۱۲ ثانیه هیچ peer
+  به `connected` نرسد (یا `failed` شود)، نام طرف مقابل و علت شبکه نمایش داده می‌شود با
+  دکمهٔ **تلاش دوباره** (`bmRetryIce()` = ICE تازه برای همه بدون رفرش) و بستن.
+  عمداً «بی‌صدا» نیست: قبلاً همین حالت شبیه خرابی کل اپ به‌نظر می‌رسید.
+- میکروفون و دوربین **جدا** گرفته می‌شوند؛ رد شدن اجازهٔ یکی، دیگری را از کار نمی‌اندازد و
+  علت دقیق (اجازه/مشغول/پیدا نشد) به‌صورت toast گفته می‌شود. اگر صفحه روی http (غیر
+  localhost) باز شود، `mediaDevices` وجود ندارد و همان لحظه پیام می‌دهد.
+
 ---
 
 ## پیام‌رسانی، اعلان‌ها و پروفایل
@@ -270,10 +295,15 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 - **استقرار خودکار ندارد** (ریپوی عمومی) — بعد از `git push` باید دستی اجرا شود:
   `POST https://api.render.com/v1/services/<id>/deploys` با توکن، یا از داشبورد Render.
 - پیکربندی با env: `PORT`، `BM_DB_PATH`، `BM_SECRET`، `BM_BASE_URL`، `BM_DEV_MODE`،
-  `BM_ADMIN_*`، `NEON_DATABASE_URL`. تغییر env **ری‌استارت نمی‌کند**؛ بعد از تغییر، deploy بزنید.
+  `BM_ADMIN_*`، `NEON_DATABASE_URL`، و برای تماس بین شبکه‌ای `CF_TURN_KEY_ID` +
+  `CF_TURN_TOKEN` (Cloudflare TURN) یا `BM_TURN_SERVERS` (رلهٔ خودتان).
+  تغییر env **ری‌استارت نمی‌کند**؛ بعد از تغییر، deploy بزنید.
 - **نکات پلن رایگان:** دیسک موقت است → با هر deploy دیتابیس SQLite پاک می‌شود
   (کاربران از Neon/آرشیو برمی‌گردند)، سایت هنگام بی‌کاری می‌خوابد (سرد ~۳۰-۶۰ ثانیه،
-  `/login` موقع بوت `503` می‌دهد) و TURN اختصاصی ندارد (فالبک `openrelay.metered.ca`).
+  `/login` موقع بوت `503` می‌دهد) و **نمی‌تواند خودش TURN میزبانی کند** (فقط HTTP/HTTPS
+  باز است؛ TURN به UDP/TCP روی 3478 نیاز دارد). رله از `server/lib/turn.js` می‌آید:
+  Cloudflare TURN رایگان (با `CF_TURN_*`)، رلهٔ مالک (`BM_TURN_SERVERS`) یا فالبک عمومی
+  `turn.jami.net` — و برای بار مصرف بالا رلهٔ اختصاصی توصیه می‌شود.
 - سلامت‌سنجی بعد از deploy: `GET /black-meet/login` باید `200` بدهد و
   `GET /black-meet/site-icon` باید بایت تصویر برگرداند.
 
@@ -290,7 +320,7 @@ black-meet/
 │  ├─ routes/pages.js   صفحات EJS + /theme.css + pageLocals (icon/asset/siteIconUrl/brandMark)
 │  ├─ routes/api.js     REST (احراز هویت، جلسه‌ها، پیام‌ها، مدیریت، آرشیو، آیکون)
 │  ├─ lib/              config, db (+پشتیبان), helpers, sessions, otp, pwd, ranks, settings,
-│  │                    themes, bus, internal, state, schema.sql,
+│  │                    themes, bus, internal, state, schema.sql, turn (فهرست ICE/TURN),
 │  │                    siteicon (آیکون دیتابیس), siteproxy (پروکسی سایت + SSRF guard),
 │  │                    callfiles (فایل مشترک), usersdb (آرشیو), neon (آینه Postgres),
 │  │                    plaintext (رمزهای خوانا)
@@ -310,7 +340,8 @@ black-meet/
 ├─ دیزاین بلک میت/       DESIGN.md + ماکاپ‌ها + فایل تم obsidian_flux.css
 ├─ bin/tunnel.ps1       زنجیره تانل وب (cloudflared محلی در bin/)
 ├─ tools/gen-icons.js   بازتولید icons/sprite.svg از فونت Material (fontkit + wawoff2)
-├─ turn.js  turn-proxy.js   سرور TURN (UDP) و پراکسی TCP
+├─ turn.js  turn-proxy.js   TURN محلی (UDP) و پراکسی TCP — فقط برای شبکهٔ خودی؛
+│                       اپ آن را آگهی نمی‌کند (رلهٔ واقعی: server/lib/turn.js)
 ├─ start.bat            اجرای همه خدمات (دوبار کلیک)
 ├─ logs/                خروجی لاگ‌ها (در .gitignore)
 ├─ config.json          تنظیمات (در .gitignore)
@@ -361,9 +392,13 @@ black-meet/
 ---
 
 ## عیب‌یابی
-- **تماس برقرار نمی‌شود (میان NAT):** `turn.js` و `turn-proxy.js` باید روی 3478
-  اجرا باشند (`start.bat` این کار را می‌کند)؛ فالبک آزاد `openrelay.metered.ca`
-  هم در `turnConfig()` هست.
+- **تماس برقرار نمی‌شود / صدا و تصویر دوطرفه نمی‌آید (میان NAT):** اول ببینید بنر
+  «اتصال صدا و تصویر با … برقرار نشد» بالا آمده یا نه؛ اگر آمده یعنی ICE راه ندارد.
+  فهرست رله را چک کنید: `node -e "console.log(require('./server/lib/turn').summary())"`
+  باید حداقل یک ورودی `turn:` با `auth:true` داشته باشد. برای رلهٔ پایدار
+  `CF_TURN_KEY_ID`/`CF_TURN_TOKEN` (Cloudflare، رایگان) یا `BM_TURN_SERVERS` را ست کنید؛
+  فالبک عمومی `turn.jami.net` هست اما برای بار زیاد ساخته نشده و با `BM_TURN_PUBLIC=0`
+  خاموش می‌شود. `turn.js`/`turn-proxy.js` محلی را اپ آگهی نمی‌کند.
 - **صدای وسط صحبت قطع می‌شود / تا رفرش بی‌صدا است:** این باگ‌ها حل شده‌اند
   (ترک بی‌صدا برای زنده نگه‌داشتن RTP/ICE، بازیابی خودکار ICE، باز کردن قفل autoplay با اولین لمس
   و دوباره گرفتن ترک مرده). اگر باز هم دیدید: `window.__bmPcMap` را در کنسول باز کنید و با
@@ -372,7 +407,10 @@ black-meet/
   در برخی شبکه‌ها SSH (localhost.run/serveo) resolve نمی‌شود و فقط Cloudflare کار می‌کند —
   زنجیره خودش تا سالم شدن CF تلاش می‌کند.
 - **صدا/تصویر نمی‌آید:** دسترسی میکروفون/دوربین را بدهید؛ روی URL عمومی **https**
-  مرورگر دسترسی می‌دهد (روی http فقط `localhost` استثناست).
+  مرورگر دسترسی می‌دهد (روی http فقط `localhost` استثناست). اگر اجازه رد شود یا دستگاه
+  مشغول باشد، حالا پیام دقیق (toast) می‌آید و گرفتن میکروفون و دوربین مستقل است —
+  رد شدن یکی، دیگری را از کار نمی‌اندازد. اگر همه‌چیز اجازه دارد ولی کاشی طرف مقابل
+  آواتار/سیاه ماند، مشکل شبکه/رله است (بنر بالا را ببینید).
 - **آیکون سایت عوض نمی‌شود:** از پروفایل مدیر (کارت «آیکون سایت») انجام شود؛
   `GET /black-meet/site-icon` باید بایت‌های جدید بدهد (بدون کش، `no-cache`).
 - **تغییرات CSS دیده نمی‌شود:** همه URLها با `asset_url()`/`asset()` ساخته شوند

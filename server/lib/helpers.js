@@ -3,10 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const dbm = require('./db');
+const turnLib = require('./turn');
 const { appConfig } = require('./config');
 
 const TUNNEL_URL_FILE = path.join(dbm.rootDir, 'tunnel_url.txt');
-const TURN_HOST_FILE = path.join(dbm.rootDir, 'turn_host.txt');
 
 function stripBom(s) {
   return s.replace(/^\uFEFF/, '').trim();
@@ -142,34 +142,11 @@ function avatarUrl(avatar, req) {
   return baseUrl(req) + '/' + rel + (v ? '?v=' + v : '');
 }
 
+// STUN + TURN for the call page. All the relay logic (owner config, Cloudflare,
+// local turn_host.txt, public fallback) lives in lib/turn.js — see its header for
+// why a relay is mandatory for calls between two different networks.
 function turnConfig() {
-  const cfg = appConfig();
-  const t = cfg.turn || null;
-  const servers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
-  if (t && t.user && t.pass) {
-    let line = '';
-    try { line = stripBom(fs.readFileSync(TURN_HOST_FILE, 'utf8')); } catch (e) { /* no tunnel */ }
-    let th = null, tp = 3478;
-    if (line !== '') {
-      const m = /^([^:]+):(\d+)$/.exec(line);
-      if (m) { th = m[1]; tp = Number(m[2]); }
-      else th = line;
-    }
-    if (th) {
-      servers.push({
-        urls: 'turn:' + th + ':' + tp + '?transport=tcp',
-        username: t.user,
-        credential: t.pass,
-      });
-    }
-  }
-  servers.push({ urls: 'turn:openrelay.metered.ca:3478', username: 'openrelayproject', credential: 'openrelayproject' });
-  servers.push({ urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' });
-  servers.push({ urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' });
-  return servers;
+  return turnLib.iceServers();
 }
 
 function makeSocketToken(userId, meetingId) {

@@ -6,6 +6,7 @@ const bus = require('./lib/bus');
 const { appConfig } = require('./lib/config');
 const db = require('./lib/db');
 const usersdb = require('./lib/usersdb');
+const turn = require('./lib/turn');
 const { sqlNow } = require('./lib/helpers');
 const { hashPassword, looksLikeHash } = require('./lib/pwd');
 const plainPw = require('./lib/plaintext');
@@ -96,6 +97,12 @@ async function main() {
   if (ustats.neon && ustats.neon.enabled) {
     console.log('[neon] mirror active on ' + ustats.neon.host + '/' + (ustats.neon.database || '?'));
   }
+
+  // ICE relays for the call page. Cloudflare TURN mints short-lived credentials, so
+  // warm them at boot (a cold call page would otherwise only get STUN and two people
+  // on different networks would hear/see nothing). No-op unless CF_TURN_* is set.
+  turn.warm();
+  setInterval(() => { turn.warm(); }, 6 * 60 * 60 * 1000).unref();
 
   const app = createApp();
   const server = http.createServer(app);
