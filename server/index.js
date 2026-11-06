@@ -98,11 +98,13 @@ async function main() {
     console.log('[neon] mirror active on ' + ustats.neon.host + '/' + (ustats.neon.database || '?'));
   }
 
-  // ICE relays for the call page. Cloudflare TURN mints short-lived credentials, so
-  // warm them at boot (a cold call page would otherwise only get STUN and two people
-  // on different networks would hear/see nothing). No-op unless CF_TURN_* is set.
+  // ICE relays for the call page. The free public fallback (Jami, no account and no
+  // card) ships by default; the optional credential providers mint short-lived creds,
+  // so warm them at boot too. Then probe every relay with a real TURN Allocate so a
+  // dead relay is visible in the log instead of turning into a silent call.
   turn.warm();
   setInterval(() => { turn.warm(); }, 6 * 60 * 60 * 1000).unref();
+  turn.startHealthLoop();
 
   const app = createApp();
   const server = http.createServer(app);

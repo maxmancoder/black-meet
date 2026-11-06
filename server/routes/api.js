@@ -22,6 +22,7 @@ const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
 const callfiles = require('./../lib/callfiles');
 const siteicon = require('./../lib/siteicon');
+const turnLib = require('./../lib/turn');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -734,6 +735,18 @@ router.post('/admin/users-archive/export', (req, res) => {
   const n = usersdb.syncAll();
   const exported = usersdb.exportSnapshot();
   return ok(res, { ok: true, synced: n, exported, dir: usersdb.EXPORT_DIR || null });
+});
+
+// ICE/relay health for the call page: what every client is being offered and whether
+// each relay answered a real TURN Allocate. Manager only; never carries a credential.
+router.get('/turn-status', async (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (req.query.probe === '1') {
+    try { await turnLib.probeAll(); } catch (e) { /* probeAll never throws */ }
+  }
+  return ok(res, turnLib.status());
 });
 
 router.all('/admin/members', (req, res) => {

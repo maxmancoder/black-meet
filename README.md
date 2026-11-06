@@ -39,8 +39,8 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 | سرویس | فایل | پورت |
 |---|---|---|
 | اپلیکیشن (صفحات + API + Socket.IO + SQLite) | `server\index.js` | TCP 3000 |
-| TURN relay (رسانه بین شبکه‌های مختلف) | `turn.js` | UDP 3478 |
-| پراکسی TCP همان TURN | `turn-proxy.js` | TCP 3478 |
+| TURN محلی برای تست در شبکهٔ خودی (**از طرف اپ آگهی نمی‌شود**) | `turn.js` | UDP 3478 |
+| پراکسی TCP همان TURN محلی | `turn-proxy.js` | TCP 3478 |
 | تانل عمومی سایت | `bin\tunnel.ps1` | — |
 
 - **تانل وب** با ترتیب فالبک: **Cloudflare quick tunnel ← SSH (localhost.run) ← SSH (serveo.net)**.
@@ -96,9 +96,11 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 | `BM_USERS_DB_PATH` / `BM_USERS_DB_EXPORT_DIR` | مسیر آرشیو کاربران و پوشهٔ خروجی JSON |
 | `NEON_DATABASE_URL` (یا `BM_NEON_DATABASE_URL`) | آینهٔ Postgres کاربران؛ بدون آن Neon غیرفعال است |
 | `BM_STORE_PLAINTEXT_PASSWORDS` | پیش‌فرض روشن (جدول `user_passwords`)؛ با `false` خاموش می‌شود |
-| `CF_TURN_KEY_ID` / `CF_TURN_TOKEN` | رلهٔ Cloudflare TURN (رایگان) — اعتبارنامهٔ کوتاه‌عمر خودکار ساخته می‌شود |
 | `BM_TURN_SERVERS` | رلهٔ خودتان: `turn:host:3478\|user\|pass;…` یا JSON مثل `iceServers` |
-| `BM_TURN_PUBLIC` | `0` = بدون فالبک عمومی، `1` = فالبک حتی وقتی رلهٔ مالک هست (پیش‌فرض: فقط بدون رلهٔ مالک) |
+| `BM_TURN_PUBLIC` | `0` = بدون رلهٔ عمومی، `1` = رلهٔ عمومی حتی وقتی رلهٔ مالک هست (پیش‌فرض: فقط بدون رلهٔ مالک) |
+| `BM_TURN_CREDS_URL` / `BM_TURN_CREDS_TOKEN` | هر سرویس TURN رایگانی که اعتبارنامهٔ کوتاه‌عمر JSON می‌دهد (اختیاری؛ پیش‌فرض لازم نیست) |
+| `BM_TURN_PROBE_MIN` / `BM_TURN_PROBE_TIMEOUT_MS` | دورهٔ بررسی سلامت رله (پیش‌فرض ۳۰ دقیقه؛ `0` = خاموش) و مهلت هر تلاش (پیش‌فرض ۴۰۰۰ms) |
+| `CF_TURN_KEY_ID` / `CF_TURN_TOKEN` | اختیاری — رلهٔ Cloudflare؛ برای گرفتنش حساب کلودفلر لازم است، پس **پیش‌فرض نیست** |
 
 ---
 
@@ -130,7 +132,7 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 - **پیام‌ها و اعلان‌ها:** `messages/user`، `messages/conversations`، `messages/unread`،
   `messages/read-all`، `announcements`
 - **مدیریت:** `admin/members`، `admin/signup-mode`، `admin/signup-requests` (+ `…/message`)،
-  `admin/block`، `admin/site-icon`، `admin/site-icon/reset`
+  `admin/block`، `admin/site-icon`، `admin/site-icon/reset`، `turn-status` (وضعیت زندهٔ رله‌ها)
 - **آرشیو کاربران (مدیر):** `admin/users-archive`، `…/download`، `…/restore`، `…/export`
 - **فایل تماس:** `POST call/file`، `GET call/file/:id`
 - **سایر:** `themes`، `GET members/:userId` (برای دو کاربرِ هم‌اتاق یا خود فرد)، `internal`
@@ -203,11 +205,19 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
   `window.INIT.iceServers` می‌دهد) به این ترتیب:
   1. رلهٔ خودِ مالک: `BM_TURN_SERVERS` یا `turnServers` در `config.json`
      (فرمت فشرده `turn:host:3478|user|pass;…` یا JSON مثل `iceServers`).
-  2. **Cloudflare TURN** (رایگان): با ست‌کردن `CF_TURN_KEY_ID` + `CF_TURN_TOKEN`
-     اعتبارنامه‌های کوتاه‌عمر خودکار ساخته و در بوت + هر ۶ ساعت تازه می‌شوند.
+  2. سرویس TURN دلخواه که اعتبارنامهٔ کوتاه‌عمر می‌دهد: `BM_TURN_CREDS_URL`
+     (خروجی `{iceServers:[…]}` یا `{urls,username,credential}` یا آرایه؛ TTL از `ttl`).
+     هیچ سرویس خاصی در کد ثابت نشده — هر چیزی که رایگان باشد وصل می‌شود.
   3. رلهٔ محلی `turn_host.txt` (فقط اگر `turn.user`/`turn.pass` در config باشد).
-  4. فالبک عمومی `turn.jami.net` (UDP/TCP) — از ایران تست شده: Allocate و عبور واقعی
-     صدا+تصویر. با `BM_TURN_PUBLIC=0` خاموش و با `=1` اجباری می‌شود.
+  4. **رلهٔ عمومی و کاملاً رایگان `turn.jami.net`** (UDP + TCP روی ۳۴۷۸) — بدون حساب،
+     بدون کارت بانکی، و همان چیزی که «تماس بین دو شبکه» را پیش‌فرض کار می‌اندازد.
+     از ایران تست شده: Allocate و عبور واقعی صدا+تصویر. با `BM_TURN_PUBLIC=0` خاموش و
+     با `=1` اجباری می‌شود.
+- **بررسی سلامت رله:** در بوت و هر ۳۰ دقیقه یک TURN Allocate واقعی (RFC 5766، بدون
+  کتابخانهٔ اضافه) برای همهٔ رله‌ها زده می‌شود؛ نتیجه در `logs` و در
+  `GET /black-meet/api/turn-status` (فقط مدیر) دیده می‌شود — هاست‌ها و زمان پاسخ،
+  هرگز اعتبارنامه. با `?probe=1` همان لحظه دوباره بررسی می‌شود. رله‌ای که جواب نداد از
+  فهرست حذف نمی‌شود، فقط به انتهای فهرست می‌رود (شبکهٔ کاربر ممکن است ببیند).
 - اعتبارنامه‌ها هیچ‌وقت لاگ نمی‌شوند (فقط `summary()` که `auth: true/false` می‌دهد).
 - **بنر «اتصال برقرار نشد»** (`#net-banner` در `call.ejs`): اگر بعد از ۱۲ ثانیه هیچ peer
   به `connected` نرسد (یا `failed` شود)، نام طرف مقابل و علت شبکه نمایش داده می‌شود با
@@ -295,15 +305,17 @@ Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل�
 - **استقرار خودکار ندارد** (ریپوی عمومی) — بعد از `git push` باید دستی اجرا شود:
   `POST https://api.render.com/v1/services/<id>/deploys` با توکن، یا از داشبورد Render.
 - پیکربندی با env: `PORT`، `BM_DB_PATH`، `BM_SECRET`، `BM_BASE_URL`، `BM_DEV_MODE`،
-  `BM_ADMIN_*`، `NEON_DATABASE_URL`، و برای تماس بین شبکه‌ای `CF_TURN_KEY_ID` +
-  `CF_TURN_TOKEN` (Cloudflare TURN) یا `BM_TURN_SERVERS` (رلهٔ خودتان).
-  تغییر env **ری‌استارت نمی‌کند**؛ بعد از تغییر، deploy بزنید.
+  `BM_ADMIN_*`، `NEON_DATABASE_URL`. **برای تماس بین شبکه‌ای هیچ env لازم نیست** — رلهٔ
+  عمومی رایگان (`turn.jami.net`) پیش‌فرض همراه است. اگر رلهٔ اختصاصی دارید:
+  `BM_TURN_SERVERS` یا `BM_TURN_CREDS_URL`. تغییر env **ری‌استارت نمی‌کند**؛ بعد از
+  تغییر، deploy بزنید.
 - **نکات پلن رایگان:** دیسک موقت است → با هر deploy دیتابیس SQLite پاک می‌شود
   (کاربران از Neon/آرشیو برمی‌گردند)، سایت هنگام بی‌کاری می‌خوابد (سرد ~۳۰-۶۰ ثانیه،
   `/login` موقع بوت `503` می‌دهد) و **نمی‌تواند خودش TURN میزبانی کند** (فقط HTTP/HTTPS
   باز است؛ TURN به UDP/TCP روی 3478 نیاز دارد). رله از `server/lib/turn.js` می‌آید:
-  Cloudflare TURN رایگان (با `CF_TURN_*`)، رلهٔ مالک (`BM_TURN_SERVERS`) یا فالبک عمومی
-  `turn.jami.net` — و برای بار مصرف بالا رلهٔ اختصاصی توصیه می‌شود.
+  رلهٔ مالک (`BM_TURN_SERVERS`/`BM_TURN_CREDS_URL`) و در غیر این صورت رلهٔ عمومی رایگان
+  `turn.jami.net`. برای بار مصرف بالا (چند تماس هم‌زمان زیاد) یک رلهٔ اختصاصی — مثل
+  coturn روی یک VPS — توصیه می‌شود، ولی برای استفادهٔ عادی همان رایگان کافی است.
 - سلامت‌سنجی بعد از deploy: `GET /black-meet/login` باید `200` بدهد و
   `GET /black-meet/site-icon` باید بایت تصویر برگرداند.
 
@@ -395,10 +407,12 @@ black-meet/
 - **تماس برقرار نمی‌شود / صدا و تصویر دوطرفه نمی‌آید (میان NAT):** اول ببینید بنر
   «اتصال صدا و تصویر با … برقرار نشد» بالا آمده یا نه؛ اگر آمده یعنی ICE راه ندارد.
   فهرست رله را چک کنید: `node -e "console.log(require('./server/lib/turn').summary())"`
-  باید حداقل یک ورودی `turn:` با `auth:true` داشته باشد. برای رلهٔ پایدار
-  `CF_TURN_KEY_ID`/`CF_TURN_TOKEN` (Cloudflare، رایگان) یا `BM_TURN_SERVERS` را ست کنید؛
-  فالبک عمومی `turn.jami.net` هست اما برای بار زیاد ساخته نشده و با `BM_TURN_PUBLIC=0`
-  خاموش می‌شود. `turn.js`/`turn-proxy.js` محلی را اپ آگهی نمی‌کند.
+  باید حداقل یک ورودی `turn:` با `auth:true` داشته باشد. سپس همان لحظه سلامت رله را
+  ببینید — در سرور: `node -e "require('./server/lib/turn').probeAll().then(h=>console.log(h.results))"`
+  یا در سایت با حساب مدیر: `GET /black-meet/api/turn-status?probe=1` (هاست + زمان پاسخ،
+  بدون اعتبارنامه). پیش‌فرض همین کافی است و **هیچ حساب/کارت بانکی لازم ندارد**؛ اگر رلهٔ
+  عمومی از شبکه‌ای فیلتر بود، `BM_TURN_SERVERS` یا `BM_TURN_CREDS_URL` را ست کنید.
+  `turn.js`/`turn-proxy.js` محلی از طرف اپ آگهی نمی‌شود.
 - **صدای وسط صحبت قطع می‌شود / تا رفرش بی‌صدا است:** این باگ‌ها حل شده‌اند
   (ترک بی‌صدا برای زنده نگه‌داشتن RTP/ICE، بازیابی خودکار ICE، باز کردن قفل autoplay با اولین لمس
   و دوباره گرفتن ترک مرده). اگر باز هم دیدید: `window.__bmPcMap` را در کنسول باز کنید و با
