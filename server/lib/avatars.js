@@ -158,9 +158,15 @@ function serve(req, res, next) {
 // ---- boot time: pull from Neon, adopt old files, drop paths that point at nothing -----
 
 async function pullFromNeon() {
-  if (!neon.enabled()) return 0;
-  const rows = await neon.pullAvatars();
-  if (!Array.isArray(rows) || !rows.length) return 0;
+  if (!neon.enabled()) return { n: 0, ok: true };
+  let rows = null;
+  try { rows = await neon.pullAvatars(); } catch (e) { console.warn('[avatars] neon pull failed: ' + e.message); }
+  // null = the mirror could not be read (unreachable/timeout). That is NOT "no pictures":
+  // the caller must not adopt stale disk files over a newer remote picture.
+  if (!Array.isArray(rows)) {
+    console.warn('[avatars] neon pull unavailable — skipping the legacy-file import this boot');
+    return { n: 0, ok: false };
+  }
   let n = 0;
   for (const r of rows) {
     const id = Number(r.user_id);
@@ -174,11 +180,23 @@ async function pullFromNeon() {
       n++;
     } catch (e) { /* one bad row must not stop the rest */ }
   }
-  return n;
+  return { n: n, ok: true };
+}
+
+// A file on disk is by definition at least as old as its mtime. Stamping the import with
+// Date.now() made an old file beat a freshly uploaded picture in `bm_avatars` (and then get
+// pushed over the newer Neon row) — the "my new photo reverted after a deploy" case.
+function fileStamp(abs) {
+  try {
+    const st = fs.statSync(abs);
+    const ms = Math.floor(Number(st.mtimeMs) || 0);
+    return ms > 0 ? ms : Date.now();
+  } catch (e) { return Date.now(); }
 }
 
 // Old installs kept the picture on disk only. Read it into the DB once, so it survives a
 // deploy like every new one (and the served URL keeps a version, which it never had).
+// Only when there is no row at all for that user, and never with a "now" timestamp.
 function importLegacyFiles() {
   let rows = [];
   try {
@@ -200,10 +218,34 @@ function importLegacyFiles() {
     const ext = path.extname(abs).slice(1).toLowerCase();
     const mime = MIME_BY_EXT[ext];
     if (!mime) continue;
-    const now = Date.now();
+    const at = fileStamp(abs);
     try {
-      store(id, mime, ext === 'jpeg' ? 'jpg' : ext, buf, now);
-      dbm.run('UPDATE users SET avatar=? WHERE id=?', [versionedRel(id, ext === 'jpeg' ? 'jpg' : ext, now), id]);
+      store(id, mime, ext === 'jpeg' ? 'jpg' : ext, buf, at);
+      dbm.run('UPDATE users SET avatar=? WHERE id=?', [versionedRel(id, ext === 'jpeg' ? 'jpg' : ext, at), id]);
+      n++;
+    } catch (e) { /* keep going */ }
+  }
+  return n;
+}
+
+// `users.avatar` can disagree with the stored row: a database restored from the archive/Neon
+// carries the path of a picture uploaded on another instance (a different extension, usually
+// the file that no longer exists). The row is the truth — point the user at it.
+function reconcileUsersAvatar() {
+  let rows = [];
+  try {
+    rows = dbm.all('SELECT id, avatar FROM users');
+  } catch (e) { return 0; }
+  let n = 0;
+  for (const u of rows) {
+    const id = Number(u.id);
+    if (!id) continue;
+    const row = get(id);
+    if (!row) continue;
+    const want = versionedRel(id, row.ext, row.updatedAt);
+    if (String(u.avatar || '') === want) continue;
+    try {
+      dbm.run('UPDATE users SET avatar=? WHERE id=?', [want, id]);
       n++;
     } catch (e) { /* keep going */ }
   }
@@ -239,11 +281,14 @@ function purgeDangling() {
 }
 
 // Called once on boot (after usersdb.boot/ensureAdmin): Neon -> local, old files -> rows,
-// dead paths -> NULL. Also pushes every local picture up so Neon is an exact mirror.
+// users.avatar -> the row it actually has, dead paths -> NULL. Also pushes every local
+// picture up so Neon is an exact mirror.
 async function init() {
   _ver.clear();
-  const pulled = await pullFromNeon();
-  const imported = importLegacyFiles();
+  const pull = await pullFromNeon();
+  // adopt disk files ONLY when we know the mirror has nothing newer to say
+  const imported = pull.ok ? importLegacyFiles() : 0;
+  const repaired = reconcileUsersAvatar();
   const purged = purgeDangling();
   let pushed = 0;
   if (neon.enabled()) {
@@ -259,11 +304,11 @@ async function init() {
       } catch (e) { /* Neon is optional */ }
     }
   }
-  if (pulled || imported || purged || pushed) {
-    console.log('[avatars] pulled=' + pulled + ' imported=' + imported + ' purged=' + purged +
-      ' pushed=' + pushed);
+  if (pull.n || imported || repaired || purged || pushed || !pull.ok) {
+    console.log('[avatars] pulled=' + pull.n + ' imported=' + imported + ' repaired=' + repaired +
+      ' purged=' + purged + ' pushed=' + pushed + (pull.ok ? '' : ' (neon pull unavailable)'));
   }
-  return { pulled: pulled, imported: imported, purged: purged, pushed: pushed };
+  return { pulled: pull.n, imported: imported, repaired: repaired, purged: purged, pushed: pushed, pullOk: pull.ok };
 }
 
 function stats() {

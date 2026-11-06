@@ -211,12 +211,12 @@ async function pushAvatars(rows) {
 async function pullAvatars() {
   if (!enabled()) return [];
   const ok = await ensureSchema();
-  if (!ok) return [];
+  if (!ok) return null;             // unknown state — the caller must NOT fall back to disk files
   const res = await withClient(async (c) => {
     const q = await c.query('SELECT user_id, mime, ext, data, updated_at FROM bm_avatars');
     return q.rows;
   });
-  return Array.isArray(res) ? res : [];
+  return Array.isArray(res) ? res : null;
 }
 
 async function removeAvatar(id) {
