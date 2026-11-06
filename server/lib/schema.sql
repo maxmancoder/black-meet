@@ -164,5 +164,17 @@ CREATE TABLE IF NOT EXISTS bm_assets (
   updated_at TEXT NOT NULL
 );
 
+-- profile pictures also live in the DB (and are mirrored to Neon): the disk is wiped on
+-- every deploy, so a file-based avatar disappeared while users.avatar stayed behind and
+-- the page rendered a broken image. `users.avatar` keeps the URL (uploads/avatars/<id>.<ext>?v=<ms>)
+-- so every renderer works unchanged; the bytes come from here.
+CREATE TABLE IF NOT EXISTS bm_avatars (
+  user_id    INTEGER PRIMARY KEY,
+  mime       TEXT    NOT NULL,
+  ext        TEXT    NOT NULL,
+  data       BLOB    NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('001_phase0_schema', '2026-01-01 00:00:00');
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('002_phase1_realtime', '2026-01-01 00:00:00');

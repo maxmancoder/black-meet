@@ -98,6 +98,11 @@ async function main() {
     console.log('[neon] mirror active on ' + ustats.neon.host + '/' + (ustats.neon.database || '?'));
   }
 
+  // profile pictures live in the DB and are mirrored to Neon: pull them back on a fresh
+  // instance, adopt old file-only rows, and clear a users.avatar that points at nothing
+  // (that dead path is why a profile picture showed up broken after a deploy)
+  await require('./lib/avatars').init();
+
   // ICE relays for the call page. The free public fallback (Jami, no account and no
   // card) ships by default; the optional credential providers mint short-lived creds,
   // so warm them at boot too. Then probe every relay with a real TURN Allocate so a

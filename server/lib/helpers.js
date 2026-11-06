@@ -135,11 +135,27 @@ function avatarUrl(avatar, req) {
   if (!avatar) return '';
   if (/^https?:\/\//i.test(avatar)) return avatar;
   const rel = String(avatar).replace(/^\/+/, '');
-  // cache-bust on the file's mtime: a changed photo gets a NEW url, so a 30-day immutable
-  // cache is safe and profile pictures stop re-downloading on every page view
+  // the picture is stored in the DB (bm_avatars) and users.avatar already carries the
+  // version the store wrote (?v=<epoch-ms>): keep it, so a new upload is a NEW url and a
+  // 30-day immutable cache is safe
+  if (/[?&]v=/.test(rel)) return baseUrl(req) + '/' + rel;
+  // legacy row without a version: a DB copy still gets one, else fall back to the file's
+  // mtime (a picture from the old file-only install)
   let v = 0;
-  try { v = Math.floor(fs.statSync(path.join(dbm.rootDir, rel)).mtimeMs); } catch (e) { v = 0; }
+  try {
+    const id = _avatars().userIdFromRel(rel);
+    if (id) v = _avatars().version(id);
+  } catch (e) { v = 0; }
+  if (!v) {
+    try { v = Math.floor(fs.statSync(path.join(dbm.rootDir, rel.replace(/[?#].*$/, ''))).mtimeMs); } catch (e) { v = 0; }
+  }
   return baseUrl(req) + '/' + rel + (v ? '?v=' + v : '');
+}
+
+let _avatarsMod = null;
+function _avatars() {
+  if (!_avatarsMod) _avatarsMod = require('./avatars');
+  return _avatarsMod;
 }
 
 // STUN + TURN for the call page. All the relay logic (owner config, Cloudflare,

@@ -9,6 +9,7 @@ const api = require('./routes/api');
 const { handleSiteProxy } = require('./lib/siteproxy');
 const callfiles = require('./lib/callfiles');
 const siteicon = require('./lib/siteicon');
+const avatars = require('./lib/avatars');
 
 const rootDir = path.resolve(__dirname, '..');
 // small helpers for the call-file route (app.js must not require internal.js at the top:
@@ -40,9 +41,10 @@ function createApp() {
   // ONLY avatars are public. `uploads/call/` holds the files shared inside a call and must
   // never be served statically — it is only reachable through the login-gated route below
   // (mounting all of uploads/ used to expose every shared file to anyone with the URL).
-  // avatars are content-addressed by mtime in the URL (see avatarUrl), so they can be cached
-  // hard; without it the browser re-validated every avatar on every page load, which is what
-  // made profile pictures feel slow (and occasionally not show up at all)
+  // Avatars are stored in the DB (bm_avatars, mirrored to Neon) because the disk is wiped on
+  // every deploy: this route serves the bytes, and express.static below is only the fallback
+  // for a picture that exists on disk (an install from before the DB store).
+  app.get('/black-meet/uploads/avatars/:file', (req, res, next) => avatars.serve(req, res, next));
   app.use('/black-meet/uploads/avatars', express.static(path.join(rootDir, 'uploads/avatars'), {
     maxAge: '30d', immutable: true, fallthrough: true,
   }));

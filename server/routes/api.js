@@ -22,6 +22,7 @@ const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
 const callfiles = require('./../lib/callfiles');
 const siteicon = require('./../lib/siteicon');
+const avatars = require('./../lib/avatars');
 const turnLib = require('./../lib/turn');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
@@ -564,25 +565,12 @@ router.post('/profile/avatar', upload.single('avatar'), (req, res) => {
   if (!allowed[mime]) return bad(res, { ok: false, msg: 'فرمت تصویر پشتیبانی نمی‌شود' });
   if (req.file.size > 2 * 1024 * 1024) return bad(res, { ok: false, msg: 'حجم تصویر بیش از ۲ مگابایت است' });
 
-  const ext = allowed[mime];
-  const rel = 'uploads/avatars/' + me.id + '.' + ext;
-  const abs = path.join(dbm.rootDir, rel);
-  const dir = path.dirname(abs);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  if (fs.existsSync(abs)) {
-    try { fs.unlinkSync(abs); } catch (e) { /* ignore */ }
-  }
-  for (const other of Object.values(allowed)) {
-    const p = path.join(dbm.rootDir, 'uploads/avatars', me.id + '.' + other);
-    if (p !== abs && fs.existsSync(p)) {
-      try { fs.unlinkSync(p); } catch (e) { /* ignore */ }
-    }
-  }
-  fs.writeFileSync(abs, req.file.buffer);
-
-  dbm.run('UPDATE users SET avatar=? WHERE id=?', [rel, me.id]);
-  usersdb.syncUser(me.id);
-  return ok(res, { ok: true, avatar: avatarUrl(rel, req) });
+  // the bytes are stored in the DATABASE (bm_avatars) and mirrored to Neon — the disk is
+  // wiped on every deploy, which is why a file-based avatar disappeared while the path in
+  // users.avatar survived. put() also updates users.avatar (with a cache-busting ?v=).
+  const saved = avatars.put(me.id, mime, req.file.buffer);
+  if (!saved.ok) return bad(res, { ok: false, msg: saved.msg });
+  return ok(res, { ok: true, avatar: avatarUrl(saved.rel, req) });
 });
 
 // ------------------------------------------------------------------

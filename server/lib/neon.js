@@ -96,6 +96,16 @@ async function ensureSchema() {
       at     TIMESTAMPTZ DEFAULT now(),
       action TEXT, detail TEXT
     )`);
+    // profile pictures: the disk is ephemeral, so this is the only durable copy.
+    // `updated_at` is epoch-ms and is what keeps the newest upload when two instances push.
+    await c.query(`CREATE TABLE IF NOT EXISTS bm_avatars (
+      user_id        BIGINT PRIMARY KEY,
+      mime           TEXT,
+      ext            TEXT,
+      data           BYTEA,
+      updated_at     BIGINT DEFAULT 0,
+      neon_synced_at TIMESTAMPTZ DEFAULT now()
+    )`);
     return true;
   });
   return _schemaReady;
@@ -155,9 +165,69 @@ async function removeUser(id) {
   if (!ok) return false;
   return !!(await withClient(async (c) => {
     await c.query('DELETE FROM bm_users WHERE id=$1', [Number(id)]);
+    await c.query('DELETE FROM bm_avatars WHERE user_id=$1', [Number(id)]);
     await c.query('INSERT INTO bm_users_sync (action, detail) VALUES ($1,$2)', ['delete', String(id)]);
     return true;
   }));
+}
+
+// ---- profile pictures --------------------------------------------------------------
+// One row per user. The upsert only replaces the row when the incoming version is newer,
+// so a stale instance can never overwrite a fresh upload.
+async function pushAvatar(row) {
+  return pushAvatars([row]);
+}
+
+async function pushAvatars(rows) {
+  if (!enabled()) return 0;
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  const ok = await ensureSchema();
+  if (!ok) return 0;
+  const res = await withClient(async (c) => {
+    await c.query('BEGIN');
+    try {
+      for (const r of rows) {
+        if (!r || !r.user_id || !r.data) continue;
+        await c.query(
+          'INSERT INTO bm_avatars (user_id, mime, ext, data, updated_at) VALUES ($1,$2,$3,$4,$5) ' +
+          'ON CONFLICT(user_id) DO UPDATE SET mime=EXCLUDED.mime, ext=EXCLUDED.ext, ' +
+          'data=EXCLUDED.data, updated_at=EXCLUDED.updated_at, neon_synced_at=now() ' +
+          'WHERE bm_avatars.updated_at < EXCLUDED.updated_at',
+          [Number(r.user_id), r.mime || 'image/png', r.ext || 'png',
+            Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data),
+            Number(r.updated_at) || Date.now()]
+        );
+      }
+      await c.query('COMMIT');
+      return rows.length;
+    } catch (e) {
+      try { await c.query('ROLLBACK'); } catch (e2) {}
+      throw e;
+    }
+  });
+  return res || 0;
+}
+
+async function pullAvatars() {
+  if (!enabled()) return [];
+  const ok = await ensureSchema();
+  if (!ok) return [];
+  const res = await withClient(async (c) => {
+    const q = await c.query('SELECT user_id, mime, ext, data, updated_at FROM bm_avatars');
+    return q.rows;
+  });
+  return Array.isArray(res) ? res : [];
+}
+
+async function removeAvatar(id) {
+  if (!enabled()) return false;
+  const ok = await ensureSchema();
+  if (!ok) return false;
+  const res = await withClient(async (c) => {
+    await c.query('DELETE FROM bm_avatars WHERE user_id=$1', [Number(id)]);
+    return true;
+  });
+  return !!res;
 }
 
 function colsJoin() { return COLUMNS.join(','); }
@@ -174,4 +244,8 @@ function info() {
   };
 }
 
-module.exports = { enabled, ensureSchema, pushAll, pullAll, removeUser, info, COLUMNS, DSN };
+module.exports = {
+  enabled, ensureSchema, pushAll, pullAll, removeUser,
+  pushAvatar, pushAvatars, pullAvatars, removeAvatar,
+  info, COLUMNS, DSN,
+};
