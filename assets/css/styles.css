@@ -263,6 +263,53 @@ body {
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgb(var(--bm-surface-container-highest)); border-radius: 10px; }
 
+/* Chat scrollbar — the flat grey thumb replaced with a soft theme gradient
+   (lavender → indigo → mint), an inset transparent rail and a wider hit area.
+   Targets the surfaces that actually scroll: the call chat (#chat-messages),
+   the messages page (#chat-area + #conv-list) and the pending-signup chat
+   (#pv-messages); `.bm-chat-scroll` is the reusable hook for new ones.
+   NOTE: Chromium must NOT receive `scrollbar-color`/`scrollbar-width` — the
+   standard properties make it ignore EVERY ::-webkit-scrollbar rule below
+   (the thumb then renders as one flat colour). Firefox cannot style the
+   webkit pseudo-elements at all, hence the @supports gate. */
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages) {
+  scrollbar-gutter: stable;
+}
+@supports not selector(::-webkit-scrollbar) {
+  :is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages) {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--bm-primary-container) / .85) transparent;
+  }
+}
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar { width: 10px; height: 10px; }
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(var(--bm-primary) / .07), rgb(var(--bm-secondary) / .05));
+}
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;                                /* inset pill, 6px visible */
+  border-radius: 999px;
+  background-clip: content-box;
+  background-image: linear-gradient(180deg,
+    rgb(var(--bm-primary) / .90) 0%,
+    rgb(var(--bm-primary-container) / .90) 48%,
+    rgb(var(--bm-secondary-container) / .85) 100%);
+}
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar-thumb:hover {
+  background-image: linear-gradient(180deg,
+    rgb(var(--bm-primary)) 0%,
+    rgb(var(--bm-primary-container)) 48%,
+    rgb(var(--bm-secondary-container)) 100%);
+  box-shadow: 0 0 8px rgb(var(--bm-primary) / .35);
+}
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar-thumb:active {
+  background-image: linear-gradient(180deg,
+    rgb(var(--bm-primary-fixed)) 0%,
+    rgb(var(--bm-primary-container)) 48%,
+    rgb(var(--bm-secondary)) 100%);
+}
+:is(.bm-chat-scroll, #chat-messages, #chat-area, #conv-list, #content-chat, #pv-messages)::-webkit-scrollbar-corner { background: transparent; }
+
 /* View transitions */
 .view { animation: fadeUp .35s ease both; }
 @keyframes fadeUp { from { opacity:0; transform: translateY(10px);} to { opacity:1; transform:none;} }
