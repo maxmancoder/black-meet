@@ -100,11 +100,32 @@ router.get('/home', (req, res) => {
 
   const quota = ranks.dailyQuota(me);
 
+  // dashboard stats: only numbers this database can actually answer (no invented analytics)
+  const now = new Date();
+  const monthPrefix = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const stats = dbm.get(
+    `SELECT
+       (SELECT COUNT(*) FROM meetings WHERE creator_id=?)                             AS total_meetings,
+       (SELECT COUNT(*) FROM meetings WHERE creator_id=? AND active=1)                 AS active_meetings,
+       (SELECT COUNT(*) FROM meetings WHERE creator_id=? AND substr(created_at,1,7)=?) AS month_meetings,
+       (SELECT COUNT(DISTINCT p.user_id) FROM meeting_participants p
+          JOIN meetings m ON m.id = p.meeting_id
+         WHERE m.creator_id=? AND p.user_id<>? AND p.status<>'removed')               AS guests`,
+    [me.id, me.id, me.id, monthPrefix, me.id, me.id]
+  ) || {};
+
   res.render('home', pageLocals(req, res, {
     title: 'خانه - Black Meet',
     me,
     limited,
     recent,
+    stats: {
+      totalMeetings: Number(stats.total_meetings) || 0,
+      activeMeetings: Number(stats.active_meetings) || 0,
+      monthMeetings: Number(stats.month_meetings) || 0,
+      guests: Number(stats.guests) || 0,
+    },
+    memberSince: String(me.created_at || '').slice(0, 4),
     isManager: !!me.is_manager,
     rankLabel: ranks.rankLabel(me),
     canMembers: ranks.canViewMembers(me),

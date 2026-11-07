@@ -1,0 +1,62 @@
+<%
+  // Shared dashboard navigation (desktop sidebar + mobile drawer).
+  // Included twice from home.ejs with { drawer: true|false }; only the drawer gets a
+  // close key, and only the desktop copy owns the #msg-unread-badge id so the badge
+  // updater in home.js can find BOTH copies (id + [data-msg-badge]).
+  var _messagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
+  var _messagesLabel = isManager ? 'پیام‌ها' : 'ارتباط با ادمین';
+  var _badgeAttr = drawer ? 'data-msg-badge' : 'id="msg-unread-badge"';
+%>
+<div class="dash-side-top">
+    <a class="dash-brand" href="<%- url('home') %>" aria-label="Black Meet — خانه">
+        <%- brandMark('dash-brand-img') %>
+        <span class="dash-brand-text">Black Meet</span>
+    </a>
+    <% if (drawer) { %>
+    <button type="button" class="dash-iconbtn dash-drawer-close" data-no-loader aria-label="بستن منو" onclick="bmCloseDrawer()">
+        <%- icon('close') %>
+    </button>
+    <% } %>
+</div>
+
+<nav class="dash-nav" aria-label="<%- drawer ? 'منوی موبایل' : 'منوی کناری' %>">
+    <p class="dash-nav-label">فضای کاری</p>
+    <a class="dash-nav-item is-active" href="<%- url('home') %>" aria-current="page">
+        <%- icon('home', '', true) %><span>خانه</span>
+    </a>
+    <a class="dash-nav-item" href="<%- url('create') %>">
+        <%- icon('video_call') %><span>تماس جدید</span>
+    </a>
+    <% if (isManager || canMessages) { %>
+    <a class="dash-nav-item" href="<%- _messagesHref %>">
+        <%- icon('forum') %><span><%- _messagesLabel %></span>
+        <span class="dash-nav-badge hidden" <%- _badgeAttr %>>0</span>
+    </a>
+    <% } %>
+    <% if (canMembers || canRequests) { %>
+    <a class="dash-nav-item" href="<%- url('members') %>">
+        <%- icon('groups') %><span>مدیریت اعضا</span>
+    </a>
+    <% } %>
+
+    <p class="dash-nav-label">حساب کاربری</p>
+    <a class="dash-nav-item" href="<%- url('profile') %>">
+        <%- icon('person') %><span>پروفایل</span>
+    </a>
+    <a class="dash-nav-item is-danger" href="#" onclick="logout(event);return false;" data-no-loader>
+        <%- icon('logout') %><span>خروج از حساب</span>
+    </a>
+</nav>
+
+<div class="dash-side-user">
+    <button type="button" class="dash-user-btn" data-user-menu-trigger data-no-loader
+            aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu"
+            aria-label="منوی حساب کاربری">
+        <span class="dash-avatar" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+        <span class="dash-user-meta">
+            <span class="dash-user-name"><%- esc(me.display_name) %></span>
+            <span class="dash-user-sub"><span class="dash-dot-on" aria-hidden="true"></span><%- rankLabel %></span>
+        </span>
+        <span class="dash-user-more" aria-hidden="true"><%- icon('more_vert') %></span>
+    </button>
+</div>
