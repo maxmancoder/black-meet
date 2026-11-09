@@ -19,6 +19,9 @@ const callRequests = new Map();
 
 const { rooms, userSockets } = state;
 
+// shared whiteboard: how many stroke segments a room keeps for late joiners
+const WB_MAX_STROKES = 2000;
+
 function addGlobalSocket(uid, sid) {
   if (!userSockets.has(uid)) userSockets.set(uid, new Set());
   userSockets.get(uid).add(sid);
@@ -188,7 +191,12 @@ function attach(httpServer) {
         const approvedBefore = !!(st.you && st.you.status === 'approved') || st.isAdmin;
 
         if (!rooms.has(room)) {
-          rooms.set(room, { meetingId, sockets: new Map(), userSockets: new Map(), pending: new Set(), blocked: new Set() });
+          rooms.set(room, {
+            meetingId, sockets: new Map(), userSockets: new Map(), pending: new Set(), blocked: new Set(),
+            // shared whiteboard: the stroke history is what a late joiner replays, so it
+            // lives with the room (in memory, like `r.web`, and dies with the call)
+            wb: { open: false, granted: new Set(), strokes: [] },
+          });
           if (pendingClose.has(room)) { clearTimeout(pendingClose.get(room)); pendingClose.delete(room); }
         }
         const r = rooms.get(room);
@@ -245,6 +253,11 @@ function attach(httpServer) {
         socket.emit(EV.CALL_WELCOME, {
           meeting: st.meeting, you, members, blocked: Array.from(r.blocked),
           web: publicWeb(r), openJoin: internalRaw.isOpenJoin(meetingId),
+          // whiteboard: a late joiner gets the whole canvas back (open flag, who may draw,
+          // and every stroke drawn so far)
+          wb: r.wb.open
+            ? { open: true, granted: [...r.wb.granted], strokes: r.wb.strokes }
+            : { open: false },
         });
         ensurePingTimer(room);
 
@@ -567,6 +580,64 @@ if (kind === 'audio') {
         payload.ratio = ratio;
       } else return;
       socket.to(socket.data.room).emit(EV.WEB_SYNC, payload);
+    });
+
+    // ---------- shared whiteboard (canvas inside the call) ----------
+    // Admin opens/closes the board and hands out draw permission per member; a granted
+    // member streams stroke segments that everyone replays. `r.wb` holds the canvas state
+    // for the room and is what CALL_WELCOME ships to a late joiner.
+    socket.on(EV.WB_OPEN, () => {
+      const r = requireRoomAdmin();
+      if (!r || !r.wb) return;
+      r.wb.open = true;
+      io.to(socket.data.room).emit(EV.WB_STATE, { open: true, granted: [...r.wb.granted] });
+    });
+
+    socket.on(EV.WB_CLOSE, () => {
+      const r = requireRoomAdmin();
+      if (!r || !r.wb) return;
+      r.wb.open = false;
+      r.wb.strokes = [];
+      r.wb.granted = new Set();
+      io.to(socket.data.room).emit(EV.WB_STATE, { open: false, granted: [] });
+    });
+
+    socket.on(EV.WB_CLEAR, () => {
+      const r = requireRoomAdmin();
+      if (!r || !r.wb) return;
+      r.wb.strokes = [];
+      io.to(socket.data.room).emit(EV.WB_CLEAR, {});
+    });
+
+    // only the admin and the members it granted may draw
+    socket.on(EV.WB_DRAW, (msg = {}) => {
+      const room = socket.data.room;
+      const r = rooms.get(room);
+      const me = r && r.sockets.get(socket.id);
+      if (!r || !r.wb || !me) return;
+      if (!r.wb.granted.has(uid) && !me.is_admin) return;
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
+      const stroke = Object.assign({}, msg, { userId: uid });
+      r.wb.strokes.push(stroke);
+      if (r.wb.strokes.length > WB_MAX_STROKES) r.wb.strokes.shift();
+      // the sender already drew it locally — only the rest of the room needs it
+      socket.to(room).emit(EV.WB_DRAW, stroke);
+    });
+
+    socket.on(EV.WB_GRANT, (msg = {}) => {
+      const r = requireRoomAdmin();
+      const targetId = parseInt(msg && msg.userId, 10);
+      if (!r || !r.wb || !Number.isInteger(targetId)) return;
+      r.wb.granted.add(targetId);
+      io.to(socket.data.room).emit(EV.WB_STATE, { open: true, granted: [...r.wb.granted] });
+    });
+
+    socket.on(EV.WB_REVOKE, (msg = {}) => {
+      const r = requireRoomAdmin();
+      const targetId = parseInt(msg && msg.userId, 10);
+      if (!r || !r.wb || !Number.isInteger(targetId)) return;
+      r.wb.granted.delete(targetId);
+      io.to(socket.data.room).emit(EV.WB_STATE, { open: true, granted: [...r.wb.granted] });
     });
 
     socket.on(EV.CALL_APPROVE, (msg = {}, cb) => {
