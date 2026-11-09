@@ -35,10 +35,16 @@
   function render(messages) {
     const box = document.getElementById('pv-messages');
     box.innerHTML = '';
+    if (!(messages || []).length) {
+      const empty = document.createElement('p');
+      empty.className = 'auth-thread-empty';
+      empty.textContent = 'هنوز پیامی رد و بدل نشده است؛ اولین پیام را بنویسید.';
+      box.appendChild(empty);
+    }
     messages.forEach(m => {
       const el = document.createElement('div');
-      el.className = 'flex flex-col ' + (m.from_manager ? 'items-start' : 'items-end');
-      el.innerHTML = '<div class="' + (m.from_manager ? 'bg-surface-container-high text-on-surface' : 'bg-primary-container text-on-primary-container') + ' p-3 rounded-2xl ' + (m.from_manager ? 'rounded-tr-sm' : 'rounded-tl-sm') + ' text-body-sm max-w-[85%] border border-white/5">' + esc(m.body) + '</div>';
+      el.className = 'auth-bubble-row ' + (m.from_manager ? 'is-them' : 'is-me');
+      el.innerHTML = '<div class="auth-bubble">' + esc(m.body) + '</div>';
       box.appendChild(el);
     });
     box.scrollTop = box.scrollHeight;

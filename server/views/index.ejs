@@ -1,132 +1,252 @@
 <%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
 </head>
-<body class="bg-background text-on-surface min-h-screen flex items-center justify-center overflow-hidden relative font-body-md">
+<body class="bm-auth font-body-md">
 
-<!-- Immersive background -->
-<div class="absolute inset-0 bg-cover bg-center z-0 opacity-50" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;"></div>
-<div class="absolute inset-0 bg-gradient-to-b from-background/40 to-background z-0"></div>
+<!-- ambient background (pure CSS) -->
+<div class="dash-ambient" aria-hidden="true">
+    <span class="dash-ambient-glow"></span>
+    <span class="dash-ambient-grid"></span>
+</div>
 
-<!-- main container -->
-<div class="relative z-10 w-full max-w-[480px] p-grid-margin">
-    <div class="text-center mb-xl flex flex-col items-center gap-3">
-        <%- brandMark('w-16 h-16 rounded-2xl shadow-lg shadow-black/40') %>
-        <h1 class="font-display-lg text-display-lg text-primary tracking-tight mb-2">Black Meet</h1>
-        <p class="font-body-lg text-body-lg text-on-surface-variant">پناهگاه دیجیتال شما</p>
-    </div>
+<a class="dash-skip" href="#auth-container">پرش به فرم ورود</a>
 
-    <div class="glass-panel rounded-2xl shadow-2xl p-lg relative overflow-hidden" id="auth-container">
+<div class="auth-shell">
 
-        <!-- LOGIN OPTIONS -->
-        <div class="view space-y-md" id="view-login-options">
-            <h2 class="font-headline-lg text-headline-lg text-center mb-md">ورود به سیستم</h2>
-            <button class="btn-primary flex items-center justify-center gap-2" onclick="switchView('view-login-phone')">
-                <%- icon('phone_iphone') %> ورود با شماره موبایل
-            </button>
-            <button class="btn-secondary flex items-center justify-center gap-2" onclick="switchView('view-login-email')">
-                <%- icon('mail') %> ورود با ایمیل
-            </button>
-            <div class="text-center mt-md">
-                <button class="text-primary hover:text-primary-fixed transition-colors font-body-sm text-body-sm" onclick="switchView('view-signup')">
-                    حساب کاربری ندارید؟ ثبت نام کنید
+    <!-- ================= brand aside (desktop) ================= -->
+    <aside class="auth-aside" aria-label="درباره Black Meet">
+        <a class="auth-aside-brand" href="<%- url('login') %>" aria-label="Black Meet">
+            <%- brandMark('bm-brand-mark') %>
+            <span class="auth-aside-name">Black Meet</span>
+        </a>
+
+        <div class="auth-aside-body">
+            <p class="auth-eyebrow"><%- icon('lock') %><span>اتاق‌های خصوصی، فقط با لینک</span></p>
+
+            <h1 class="auth-headline">
+                جلسه‌های گروهی،<br/>
+                بدون شلوغی و بدون حساب اضافه
+            </h1>
+
+            <p class="auth-lede">
+                یک اتاق بسازید، لینکش را بفرستید و صدای خود را با تصویر به اشتراک بگذارید.
+                هر مهمان پیش از ورود، از میزبان اجازه می‌گیرد.
+            </p>
+
+            <ul class="auth-points">
+                <li>
+                    <span class="auth-point-ico"><%- icon('link') %></span>
+                    <span>ورود فقط با یک لینک؛ نه فهرست عمومی، نه جستجوی اتاق.</span>
+                </li>
+                <li>
+                    <span class="auth-point-ico"><%- icon('shield_person') %></span>
+                    <span>میزبان هر ورود را تایید می‌کند و می‌تواند میکروفون و دوربین را کنترل کند.</span>
+                </li>
+                <li>
+                    <span class="auth-point-ico"><%- icon('groups') %></span>
+                    <span>چت، ارسال ایموجی و اشتراک صفحه در همان اتاق.</span>
+                </li>
+            </ul>
+        </div>
+
+        <p class="auth-aside-foot">Black Meet — اتاق گفتگوی گروهی، ساخته‌شده برای شبکه‌های کم‌سرعت.</p>
+    </aside>
+
+    <!-- ================= auth panel ================= -->
+    <div class="auth-panel">
+
+        <div class="auth-panel-brand">
+            <%- brandMark('bm-brand-mark') %>
+            <span class="auth-panel-brand-text">
+                <span class="auth-panel-brand-name">Black Meet</span>
+                <span class="auth-panel-brand-sub">گفتگوی گروهی</span>
+            </span>
+        </div>
+
+        <div class="auth-card glass-panel" id="auth-container">
+
+            <!-- ================= LOGIN OPTIONS ================= -->
+            <div class="view" id="view-login-options">
+                <div class="auth-head">
+                    <h2 class="auth-title auth-title-start">ورود به حساب</h2>
+                </div>
+                <p class="auth-sub auth-sub-start">با شماره موبایل یا ایمیل خود وارد شوید.</p>
+
+                <button type="button" class="dash-btn dash-btn-primary dash-btn-lg" data-no-loader
+                        onclick="switchView('view-login-phone')">
+                    <%- icon('phone_iphone') %><span>ورود با شماره موبایل</span>
+                </button>
+
+                <button type="button" class="dash-btn dash-btn-soft dash-btn-lg" data-no-loader
+                        onclick="switchView('view-login-email')">
+                    <%- icon('mail') %><span>ورود با ایمیل</span>
+                </button>
+
+                <p class="auth-alt">
+                    حساب کاربری ندارید؟
+                    <a href="#" data-no-loader onclick="event.preventDefault();switchView('view-signup')">ثبت‌نام کنید</a>
+                </p>
+            </div>
+
+            <!-- ================= LOGIN EMAIL ================= -->
+            <div class="view hidden" id="view-login-email">
+                <div class="auth-head">
+                    <button type="button" class="auth-back" data-no-loader aria-label="بازگشت"
+                            onclick="switchView('view-login-options')"><%- icon('arrow_forward') %></button>
+                    <h2 class="auth-title">ورود با ایمیل</h2>
+                    <span class="auth-head-spacer" aria-hidden="true"></span>
+                </div>
+
+                <label class="auth-label" for="le-email">ایمیل</label>
+                <div class="dash-field">
+                    <span class="dash-field-ico" aria-hidden="true"><%- icon('mail') %></span>
+                    <input class="dash-input" dir="ltr" id="le-email" placeholder="you@example.com"
+                           type="email" autocomplete="email" spellcheck="false"/>
+                </div>
+
+                <label class="auth-label" for="le-pass">رمز عبور</label>
+                <div class="dash-field">
+                    <span class="dash-field-ico" aria-hidden="true"><%- icon('key') %></span>
+                    <input class="dash-input" dir="ltr" id="le-pass" placeholder="••••••••"
+                           type="password" autocomplete="current-password"/>
+                </div>
+
+                <button type="button" class="dash-btn dash-btn-solid dash-btn-lg" data-no-loader onclick="loginEmail()">
+                    <%- icon('login') %><span>ورود</span>
+                </button>
+
+                <p class="auth-alt">
+                    <a href="<%- url('forgot-password') %>" data-no-loader>فراموشی رمز عبور؟</a>
+                </p>
+            </div>
+
+            <!-- ================= LOGIN PHONE ================= -->
+            <div class="view hidden" id="view-login-phone">
+                <div class="auth-head">
+                    <button type="button" class="auth-back" data-no-loader aria-label="بازگشت"
+                            onclick="switchView('view-login-options')"><%- icon('arrow_forward') %></button>
+                    <h2 class="auth-title">ورود با موبایل</h2>
+                    <span class="auth-head-spacer" aria-hidden="true"></span>
+                </div>
+
+                <label class="auth-label" for="lp-phone">شماره موبایل</label>
+                <div class="dash-field">
+                    <span class="dash-field-ico" aria-hidden="true"><%- icon('phone_iphone') %></span>
+                    <input class="dash-input" dir="ltr" id="lp-phone" placeholder="09xxxxxxxxx"
+                           type="tel" inputmode="numeric" autocomplete="tel"/>
+                </div>
+
+                <button type="button" class="dash-btn dash-btn-solid dash-btn-lg" data-no-loader onclick="loginPhone()">
+                    <%- icon('send') %><span>ارسال کد تایید</span>
+                </button>
+
+                <p class="auth-note">
+                    <%- icon('info') %>
+                    <span>یک کد ۶ رقمی برای همین شماره فرستاده می‌شود؛ ورود فقط با تایید همان کد انجام می‌شود.</span>
+                </p>
+            </div>
+
+            <!-- ================= SIGNUP ================= -->
+            <div class="view hidden" id="view-signup">
+                <div class="auth-head">
+                    <button type="button" class="auth-back" data-no-loader aria-label="بازگشت"
+                            onclick="switchView('view-login-options')"><%- icon('arrow_forward') %></button>
+                    <h2 class="auth-title">ساخت حساب</h2>
+                    <span class="auth-head-spacer" aria-hidden="true"></span>
+                </div>
+                <p class="auth-sub">همه فیلدها لازم است؛ نام کاربری، ایمیل و شماره باید یکتا باشند.</p>
+
+                <label class="auth-label" for="su-name">نام و نام خانوادگی</label>
+                <input class="dash-input dash-input-plain" id="su-name" placeholder="مثال: علی رضایی"
+                       type="text" autocomplete="name"/>
+
+                <label class="auth-label" for="su-user">نام کاربری (یکتا)</label>
+                <input class="dash-input dash-input-plain" dir="ltr" id="su-user" placeholder="ali_rezaei"
+                       type="text" autocomplete="username" spellcheck="false"/>
+
+                <label class="auth-label" for="su-email">ایمیل (یکتا)</label>
+                <input class="dash-input dash-input-plain" dir="ltr" id="su-email" placeholder="you@example.com"
+                       type="email" autocomplete="email" spellcheck="false"/>
+
+                <label class="auth-label" for="su-phone">شماره موبایل (یکتا)</label>
+                <input class="dash-input dash-input-plain" dir="ltr" id="su-phone" placeholder="09xxxxxxxxx"
+                       type="tel" inputmode="numeric" autocomplete="tel"/>
+
+                <label class="auth-label" for="su-pass">رمز عبور</label>
+                <input class="dash-input dash-input-plain" dir="ltr" id="su-pass" placeholder="••••••••"
+                       type="password" autocomplete="new-password"/>
+
+                <button type="button" class="dash-btn dash-btn-solid dash-btn-lg" data-no-loader onclick="signup()">
+                    <%- icon('check') %><span>ادامه</span>
+                </button>
+
+                <p class="auth-alt">
+                    حساب دارید؟
+                    <a href="#" data-no-loader onclick="event.preventDefault();switchView('view-login-options')">وارد شوید</a>
+                </p>
+            </div>
+
+            <!-- ================= SIGNUP PENDING (admin approval mode) ================= -->
+            <div class="view hidden" id="view-signup-pending">
+                <span class="auth-state-ico"><%- icon('info', '', true) %></span>
+                <h2 class="auth-title">ثبت‌نام در انتظار تایید</h2>
+                <p id="su-pending-msg" class="auth-sub">
+                    اطلاعات شما ذخیره شد ولی با توجه به مشکلات، تا اطلاع ثانوی، ایجاد حساب فقط با تایید مدیر است
+                </p>
+
+                <button type="button" class="dash-btn dash-btn-solid dash-btn-lg" data-no-loader onclick="openPendingChat()">
+                    <%- icon('forum') %><span>شروع چت با مدیر</span>
+                </button>
+
+                <button type="button" class="dash-btn dash-btn-soft" data-no-loader
+                        onclick="switchView('view-login-options')">
+                    <span>بازگشت به ورود</span>
                 </button>
             </div>
+
+            <!-- ================= OTP ================= -->
+            <div class="view hidden" id="view-otp">
+                <div class="auth-head">
+                    <button type="button" class="auth-back" data-no-loader aria-label="بازگشت"
+                            onclick="switchView('view-login-options')"><%- icon('arrow_forward') %></button>
+                    <h2 class="auth-title">تایید شماره</h2>
+                    <span class="auth-head-spacer" aria-hidden="true"></span>
+                </div>
+                <p class="auth-sub">کد ارسال شده به شماره خود را وارد کنید</p>
+
+                <!-- DEV/DEMO code display -->
+                <div id="otp-display" class="hidden auth-devcode">
+                    <span class="auth-devcode-label">کد تأیید شما (نمایش آزمایشی):</span>
+                    <div id="otp-code" dir="ltr">------</div>
+                </div>
+
+                <!-- CuteOtp-style segmented code input -->
+                <div id="otp-boxes" class="otp-boxes" dir="ltr">
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="رقم ۱"/>
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۲"/>
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۳"/>
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۴"/>
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۵"/>
+                    <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۶"/>
+                </div>
+                <input id="otp-input" class="hidden" type="text" inputmode="numeric" maxlength="6" dir="ltr"/>
+                <!-- no confirm button: the six boxes submit themselves on the 6th digit -->
+                <p class="auth-sub auth-sub-tight">با وارد کردن کد، ورود به‌صورت خودکار انجام می‌شود</p>
+
+                <p class="auth-timer" id="timer-text">ارسال مجدد کد تا <span id="countdown">۳۰</span> ثانیه دیگر</p>
+            </div>
         </div>
 
-        <!-- LOGIN EMAIL -->
-        <div class="view hidden space-y-md" id="view-login-email">
-            <div class="flex items-center mb-md">
-                <button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
-                    <%- icon('arrow_forward') %>
-                </button>
-                <h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ورود با ایمیل</h2>
-            </div>
-            <input class="form-input" dir="ltr" id="le-email" placeholder="ایمیل" type="email" autocomplete="email"/>
-            <input class="form-input" dir="ltr" id="le-pass" placeholder="رمز عبور" type="password" autocomplete="current-password"/>
-            <button class="btn-primary" onclick="loginEmail()">ورود</button>
-            <div class="text-center mt-3">
-                <a href="<%- url('forgot-password') %>" class="text-primary hover:text-primary-fixed font-body-sm text-body-sm">فراموشی رمز عبور؟</a>
-            </div>
-        </div>
-
-        <!-- LOGIN PHONE -->
-        <div class="view hidden space-y-md" id="view-login-phone">
-            <div class="flex items-center mb-md">
-                <button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
-                    <%- icon('arrow_forward') %>
-                </button>
-                <h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ورود با موبایل</h2>
-            </div>
-            <input class="form-input" dir="ltr" id="lp-phone" placeholder="شماره موبایل" type="tel" inputmode="numeric"/>
-            <button class="btn-primary" onclick="loginPhone()">ارسال کد تایید</button>
-        </div>
-
-        <!-- SIGNUP -->
-        <div class="view hidden space-y-md" id="view-signup">
-            <div class="flex items-center mb-md">
-                <button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
-                    <%- icon('arrow_forward') %>
-                </button>
-                <h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">ثبت نام</h2>
-            </div>
-            <input class="form-input" id="su-name" placeholder="نام و نام خانوادگی" type="text"/>
-            <input class="form-input" dir="ltr" id="su-user" placeholder="نام کاربری (یکتا)" type="text"/>
-            <input class="form-input" dir="ltr" id="su-email" placeholder="ایمیل (یکتا)" type="email"/>
-            <input class="form-input" dir="ltr" id="su-phone" placeholder="شماره موبایل (یکتا)" type="tel" inputmode="numeric"/>
-            <input class="form-input" dir="ltr" id="su-pass" placeholder="رمز عبور" type="password"/>
-            <button class="btn-primary" onclick="signup()">ادامه</button>
-        </div>
-
-        <!-- SIGNUP PENDING (admin approval mode) -->
-        <div class="view hidden space-y-md text-center" id="view-signup-pending">
-            <div class="flex justify-center">
-                <span class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center"><%- icon('info', 'text-[32px]', true) %></span>
-            </div>
-            <h2 class="font-headline-lg text-headline-lg text-center">ثبت‌نام در انتظار تایید</h2>
-            <p id="su-pending-msg" class="font-body-sm text-body-sm text-on-surface-variant leading-7">اطلاعات شما ذخیره شد ولی با توجه به مشکلات، تا اطلاع ثانوی ، ایجاد حساب فقط با تایید مدیر است</p>
-            <button class="btn-primary flex items-center justify-center gap-2" onclick="openPendingChat()">
-                <%- icon('forum') %> شروع چت با مدیر
-            </button>
-            <button class="btn-secondary" onclick="switchView('view-login-options')">بازگشت به ورود</button>
-        </div>
-
-        <!-- OTP -->
-        <div class="view hidden space-y-md" id="view-otp">
-            <div class="flex items-center mb-md">
-                <button class="text-on-surface-variant hover:text-on-surface transition-colors" onclick="switchView('view-login-options')">
-                    <%- icon('arrow_forward') %>
-                </button>
-                <h2 class="font-headline-lg text-headline-lg flex-1 text-center pr-6">تایید شماره</h2>
-            </div>
-            <p class="font-body-sm text-body-sm text-on-surface-variant text-center mb-2">کد ارسال شده به شماره خود را وارد کنید</p>
-
-            <!-- DEV/DEMO code display -->
-            <div id="otp-display" class="hidden mb-2 rounded-lg bg-surface-container-low border border-outline-variant/40 px-4 py-3 text-center">
-                <span class="font-label-sm text-on-surface-variant text-[12px]">کد تأیید شما (نمایش آزمایشی):</span>
-                <div id="otp-code" class="font-label-md text-primary text-2xl tracking-[0.4em] mt-1 select-all">------</div>
-            </div>
-
-            <!-- CuteOtp-style segmented code input -->
-            <div id="otp-boxes" class="otp-boxes" dir="ltr">
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="رقم ۱"/>
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۲"/>
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۳"/>
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۴"/>
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۵"/>
-                <input class="otp-cell" type="text" inputmode="numeric" maxlength="1" aria-label="رقم ۶"/>
-            </div>
-            <input id="otp-input" class="hidden" type="text" inputmode="numeric" maxlength="6" dir="ltr"/>
-            <!-- no confirm button: the six boxes submit themselves on the 6th digit -->
-            <p class="font-body-sm text-[12px] text-on-surface-variant text-center">با وارد کردن کد، ورود به‌صورت خودکار انجام می‌شود</p>
-            <div class="text-center mt-4">
-                <p class="font-body-sm text-body-sm text-on-surface-variant" id="timer-text">ارسال مجدد کد تا <span id="countdown">۳۰</span> ثانیه دیگر</p>
-            </div>
-        </div>
+        <p class="auth-foot">
+            <%- icon('lock') %>
+            <span>ورود شما به معنی پذیرش قوانین استفاده از سرویس است.</span>
+        </p>
     </div>
 </div>
 
-<!-- Toast (bottom-right) -->
-<div class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 z-50" id="toast">
-    <div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
+<!-- Toast (bottom) — auth.js toggles translate-y-20 / opacity-0 / show -->
+<div class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 z-50" id="toast" role="alert" aria-live="assertive">
+    <div class="px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
         <%- icon('error') %>
         <span class="font-body-md text-body-md" id="toast-message">پیام خطا</span>
     </div>

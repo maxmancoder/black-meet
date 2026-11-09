@@ -143,12 +143,21 @@ router.get('/create', (req, res) => {
   const me = sessions.currentUser(req);
   const quota = ranks.dailyQuota(me);
   const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
+  const limited = !!me.is_limited;
   res.render('create', pageLocals(req, res, {
     title: 'ایجاد تماس - Black Meet',
-    limited: !!me.is_limited,
+    limited,
     quota,
     quotaFull,
     quotaText: quota.limit === 0 ? null : (toFaDigits(quota.used) + ' از ' + toFaDigits(quota.limit)),
+    isManager: !!me.is_manager,
+    rankLabel: ranks.rankLabel(me),
+    canMessages: ranks.canUseMessages(me),
+    canMembers: ranks.canViewMembers(me),
+    canRequests: ranks.canViewRequests(me),
+    canCreate: !limited && !quotaFull,
+    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
+    initials: initials(me.display_name),
   }));
 });
 
@@ -273,6 +282,10 @@ router.get('/members', (req, res) => {
     requests,
     pendingCount,
     signupMode: settings.signupMode(),
+    isManager: !!me.is_manager,
+    canMessages: ranks.canUseMessages(me),
+    canCreate: true,
+    createBlockMsg: '',
     canMembers,
     canRequests,
     canDecide,

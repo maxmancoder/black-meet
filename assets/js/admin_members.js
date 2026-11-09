@@ -20,7 +20,14 @@
   }
 
   function showToast(msg, dur) {
-    const t = $('toast'); $('toast-message').textContent = msg;
+    if (typeof window.bmToast === 'function') {
+      const errorish = /خطا|نامعتبر|دسترسی|مجاز|نشد|قفل|محدود کنید/i.test(String(msg || ''));
+      window.bmToast(msg, errorish ? 'error' : 'success', dur || 4000);
+      return;
+    }
+    const t = $('toast');
+    if (!t) return;
+    $('toast-message').textContent = msg;
     t.classList.remove('hidden');
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => t.classList.add('hidden'), dur || 4000);
@@ -90,24 +97,16 @@
   };
 
   // ------------------------------------------------------------------
-  // section switcher (left sidebar)
+  // section switcher (chips above the list)
   // ------------------------------------------------------------------
   window.toggleSidePanel = function () {
-    const sp = $('side-panel');
-    if (!sp) return;
-    const show = sp.classList.contains('hidden');
-    sp.classList.toggle('hidden', !show);
-    sp.classList.toggle('flex', show); // mobile needs an explicit flex (base is hidden md:flex)
+    // legacy entry point: the page now uses the shared dash drawer
+    if (typeof window.bmOpenDrawer === 'function') window.bmOpenDrawer();
   };
 
   window.switchSection = function (name) {
     currentSection = name;
     closeMenus();
-    // mobile: close the panel after picking a section
-    if (window.innerWidth < 768) {
-      const sp = $('side-panel');
-      if (sp) { sp.classList.add('hidden'); sp.classList.remove('flex'); }
-    }
     ['members', 'requests'].forEach(s => {
       const sec = $('section-' + s);
       if (sec) sec.classList.toggle('hidden', s !== name);
@@ -116,10 +115,8 @@
       const nav = $('nav-' + s);
       if (!nav) return;
       const active = s === name;
-      nav.classList.toggle('bg-primary-container', active);
-      nav.classList.toggle('text-on-primary-container', active);
-      nav.classList.toggle('text-on-surface-variant', !active);
-      nav.classList.toggle('hover:bg-surface-container-high', !active);
+      nav.classList.toggle('is-on', active);
+      nav.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     if (name === 'requests') { renderRequests(); refreshBadge(); }
   };
@@ -173,63 +170,57 @@
   // ------------------------------------------------------------------
   function rankBadge(u) {
     if (u.is_manager) {
-      return '<span class="inline-flex items-center gap-1 text-white bg-gradient-to-br from-amber-500 to-orange-600 px-2 py-1 rounded-full font-label-sm shadow-lg">' +
-        bmIcon('shield_person', 'text-[16px]') + ' مدیر اصلی</span>';
+      return '<span class="mem-badge mem-badge-manager">' + bmIcon('shield_person') + ' مدیر اصلی</span>';
     }
     const r = u.rank === 'premium' ? 'premium' : (u.rank === 'admin' ? 'admin' : 'user');
     if (r === 'premium') {
-      return '<span class="inline-flex items-center gap-1 text-on-primary-container bg-primary-container px-2 py-1 rounded-full font-label-sm">' +
-        bmIcon('shield_person', 'text-[16px]') + ' ادمین پریمیوم</span>';
+      return '<span class="mem-badge mem-badge-premium">' + bmIcon('shield_person') + ' ادمین پریمیوم</span>';
     }
     if (r === 'admin') {
-      return '<span class="inline-flex items-center gap-1 text-on-secondary-container bg-secondary-container/70 px-2 py-1 rounded-full font-label-sm">' +
-        bmIcon('shield_person', 'text-[16px]') + ' ادمین</span>';
+      return '<span class="mem-badge mem-badge-admin">' + bmIcon('shield_person') + ' ادمین</span>';
     }
-    return '<span class="inline-flex items-center gap-1 text-secondary-container bg-secondary-container/20 px-2 py-1 rounded-full font-label-sm">' +
-      bmIcon('check_circle', 'text-[16px]') + ' کاربر عادی</span>';
+    return '<span class="mem-badge">' + bmIcon('check_circle') + ' کاربر عادی</span>';
   }
 
   function limitedBadge(u) {
     if (!u.is_limited) return '';
-    return '<span class="inline-flex items-center gap-1 text-error-container bg-error-container/20 px-2 py-1 rounded-full font-label-sm">' +
-      bmIcon('block', 'text-[16px]') + ' محدود</span>';
+    return '<span class="mem-badge mem-badge-danger">' + bmIcon('block') + ' محدود</span>';
   }
 
   function avatarHtml(u, size) {
-    const sz = size || 'w-9 h-9';
     const initial = esc((u.display_name || '?').slice(0, 2));
     if (u.avatar) {
       const src = (u.avatar.indexOf('http') === 0) ? u.avatar : (window.BASE + '/' + u.avatar.replace(/^\/+/, ''));
-      return '<div class="' + sz + ' rounded-full overflow-hidden border border-outline-variant flex items-center justify-center text-white text-[12px]" style="background:' + esc(u.avatar_color) + '"><img src="' + esc(src) + '" class="w-full h-full object-cover" alt=""/></div>';
+      return '<div class="mem-av" style="background:' + esc(u.avatar_color) + '"><img src="' + esc(src) + '" alt=""/></div>';
     }
-    return '<div class="' + sz + ' rounded-full flex items-center justify-center text-white text-[12px]" style="background:' + esc(u.avatar_color) + '">' + initial + '</div>';
+    return '<div class="mem-av" style="background:' + esc(u.avatar_color) + '">' + initial + '</div>';
   }
 
   function rankMenuHtml(u) {
-    return '<div class="relative">' +
-      '<button class="rank-trigger flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-md bg-surface-container-high text-on-surface hover:opacity-80 transition-opacity" data-no-loader onclick="event.stopPropagation();toggleRankMenu(' + u.id + ')">' +
-      bmIcon('shield_person', 'text-[15px]') + ' تغییر درجه' +
-      '<span class="bm-caret"></span></button>' +
-      '<div id="rank-menu-' + u.id + '" class="rank-menu hidden glass-panel rounded-xl shadow-2xl border border-outline-variant/30 p-2">' +
+    return '<div class="rank-anchor">' +
+      '<button type="button" class="rank-trigger mem-act mem-act-caret" data-no-loader onclick="event.stopPropagation();toggleRankMenu(' + u.id + ')" aria-haspopup="menu" aria-expanded="false">' +
+      bmIcon('shield_person') + '<span>تغییر درجه</span>' +
+      '<span class="bm-caret" aria-hidden="true"></span></button>' +
+      '<div id="rank-menu-' + u.id + '" class="rank-menu hidden" role="menu">' +
       ['user', 'admin', 'premium'].map(r =>
-        '<button class="mode-opt" onclick="setRank(' + u.id + ',\'' + r + '\')">' +
-        '<span class="mode-opt-icon text-primary">' + bmIcon(r === 'user' ? 'person' : 'shield_person', '', true) + '</span>' +
-        '<span class="font-body-sm text-body-sm text-on-surface">' + RANK_LABELS[r] + '</span>' +
-        (u.rank === r ? '<span class="mr-auto text-primary">' + bmIcon('check_circle', '', true) + '</span>' : '') +
+        '<button type="button" class="mode-opt" role="menuitem" onclick="setRank(' + u.id + ',\'' + r + '\')">' +
+        '<span class="mode-opt-icon">' + bmIcon(r === 'user' ? 'person' : 'shield_person', '', true) + '</span>' +
+        '<span class="mem-opt-title">' + RANK_LABELS[r] + '</span>' +
+        (u.rank === r ? '<span class="mode-opt-check" aria-hidden="true">' + bmIcon('check_circle', '', true) + '</span>' : '') +
         '</button>').join('') +
       '</div></div>';
   }
 
   function actionCell(u) {
-    if (u.info_hidden) return '<span class="font-label-sm text-on-surface-variant">اطلاعات مدیر اصلی فقط توسط خودش قابل مشاهده و ویرایش است</span>';
+    if (u.info_hidden) return '<span class="mem-note">اطلاعات مدیر اصلی فقط توسط خودش قابل مشاهده و ویرایش است</span>';
     let html = '';
     if (!u.is_manager) html += rankMenuHtml(u);
-    html += '<button onclick="openEditModal(' + u.id + ')" class="text-[12px] px-3 py-1.5 rounded-md bg-primary-container text-on-primary-container hover:opacity-80 transition-opacity">ویرایش</button>';
+    html += '<button type="button" onclick="openEditModal(' + u.id + ')" class="mem-act mem-act-primary">' + bmIcon('edit') + ' ویرایش</button>';
     if (!u.is_manager) {
       const limited = !!u.is_limited;
-      const cls = limited ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container/80 text-on-error-container';
+      const cls = limited ? 'mem-act mem-act-ok' : 'mem-act mem-act-danger';
       const label = limited ? 'رفع محدودیت' : 'محدود کردن';
-      html += '<button id="btn-lim-' + u.id + '" onclick="toggleLimit(' + u.id + ')" class="text-[12px] px-3 py-1.5 rounded-md ' + cls + ' hover:opacity-80 transition-opacity">' + label + '</button>';
+      html += '<button type="button" id="btn-lim-' + u.id + '" onclick="toggleLimit(' + u.id + ')" class="' + cls + '">' + label + '</button>';
     }
     return html;
   }
@@ -238,33 +229,34 @@
     const card = document.createElement('div');
     card.id = 'user-row-' + u.id;
     // no `bm-soft`: member cards must not shrink/grow on hover (nor their keys)
-    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3';
+    card.className = 'mem-card';
 
     let info;
     if (u.info_hidden) {
-      info = '<div class="flex items-center gap-2 min-w-0 text-[13px] leading-6">' + bmIcon('lock', 'text-[16px] text-on-surface-variant flex-shrink-0') +
-        '<span class="font-body-sm text-on-surface-variant">اطلاعات مدیر اصلی مخفی است</span></div>';
+      info = '<div class="mem-row">' + bmIcon('lock') +
+        '<span>اطلاعات مدیر اصلی مخفی است</span></div>';
     } else {
       const pw = u.is_manager ? '••••••' : esc(u.password_hash);
       info =
-        '<div class="flex items-center gap-2 min-w-0">' + bmIcon('badge', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface truncate">' + esc(u.full_name) + '</span></div>' +
-        '<div class="flex items-center gap-2 min-w-0">' + bmIcon('email', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant truncate" dir="ltr">' + esc(u.email) + '</span></div>' +
-        '<div class="flex items-center gap-2 min-w-0">' + bmIcon('key', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant truncate font-mono" dir="ltr">' + pw + '</span></div>' +
-        '<div class="flex items-center gap-2 min-w-0">' + bmIcon('phone', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant" dir="ltr">' + esc(u.phone) + '</span></div>' +
-        '<div class="flex items-center gap-2">' + bmIcon('shield_person', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface">' + esc(RANK_LABELS[u.rank === 'premium' ? 'premium' : (u.rank === 'admin' ? 'admin' : (u.is_manager ? 'manager' : 'user'))]) + '</span></div>';
+        '<div class="mem-row">' + bmIcon('badge') + '<span>' + esc(u.full_name) + '</span></div>' +
+        '<div class="mem-row mem-row-ltr">' + bmIcon('email') + '<span dir="ltr">' + esc(u.email) + '</span></div>' +
+        '<div class="mem-row mem-row-ltr">' + bmIcon('key') + '<span class="mem-pass" dir="ltr">' + pw + '</span></div>' +
+        '<div class="mem-row mem-row-ltr">' + bmIcon('phone') + '<span dir="ltr">' + esc(u.phone) + '</span></div>' +
+        '<div class="mem-row">' + bmIcon('shield_person') +
+        '<span>' + esc(RANK_LABELS[u.rank === 'premium' ? 'premium' : (u.rank === 'admin' ? 'admin' : (u.is_manager ? 'manager' : 'user'))]) + '</span></div>';
     }
 
     card.innerHTML =
-      '<div class="flex items-center gap-3 min-w-0">' +
-      avatarHtml(u, 'w-12 h-12 flex-shrink-0') +
-      '<div class="min-w-0 flex-1">' +
-      '<h3 class="font-body-sm font-semibold text-on-surface truncate">' + esc(u.display_name) + '</h3>' +
-      '<p class="font-label-sm text-on-surface-variant truncate" dir="ltr">' + (u.info_hidden ? '' : '@' + esc(u.username)) + '</p>' +
+      '<div class="mem-card-top">' +
+      avatarHtml(u) +
+      '<div class="mem-id">' +
+      '<h3 class="mem-name">' + esc(u.display_name) + '</h3>' +
+      '<p class="mem-handle" dir="ltr">' + (u.info_hidden ? '' : '@' + esc(u.username)) + '</p>' +
       '</div>' +
-      '<div id="lim-' + u.id + '" class="flex-shrink-0 flex flex-col items-end gap-1">' + rankBadge(u) + limitedBadge(u) + '</div>' +
+      '<div id="lim-' + u.id + '" class="mem-flags">' + rankBadge(u) + limitedBadge(u) + '</div>' +
       '</div>' +
-      '<div class="flex flex-col gap-1.5 text-[13px] leading-6 min-w-0">' + info + '</div>' +
-      '<div id="act-' + u.id + '" class="flex gap-2 flex-wrap pt-1 border-t border-outline-variant/10 items-center">' + actionCell(u) + '</div>';
+      '<div class="mem-rows">' + info + '</div>' +
+      '<div id="act-' + u.id + '" class="mem-actions">' + actionCell(u) + '</div>';
     return card;
   }
 
@@ -285,7 +277,7 @@
     const shown = list.slice(0, size);
     box.innerHTML = '';
     if (!shown.length) {
-      box.innerHTML = '<div class="col-span-full border border-dashed border-outline-variant rounded-xl p-6 text-center text-on-surface-variant font-body-sm">موردی یافت نشد</div>';
+      box.innerHTML = '<div class="mem-empty">' + bmIcon('search') + '<span>موردی یافت نشد</span></div>';
     } else {
       const frag = document.createDocumentFragment();
       shown.forEach(u => frag.appendChild(cardEl(u)));
@@ -490,62 +482,61 @@
   // ------------------------------------------------------------------
   function statusBadge(r) {
     if (r.status === 'approved') {
-      return '<span class="inline-flex items-center gap-1 text-on-secondary-container bg-secondary-container px-2 py-1 rounded-full font-label-sm">' + bmIcon('check_circle', 'text-[15px]') + ' تایید شد</span>';
+      return '<span class="mem-badge mem-badge-admin">' + bmIcon('check_circle') + ' تایید شد</span>';
     }
     if (r.status === 'rejected') {
-      return '<span class="inline-flex items-center gap-1 text-error-container bg-error-container/20 px-2 py-1 rounded-full font-label-sm">' + bmIcon('close', 'text-[15px]') + ' رد شد</span>';
+      return '<span class="mem-badge mem-badge-danger">' + bmIcon('close') + ' رد شد</span>';
     }
-    return '<span class="inline-flex items-center gap-1 text-on-primary-container bg-primary-container px-2 py-1 rounded-full font-label-sm">' + bmIcon('person', 'text-[15px]') + ' در انتظار</span>';
+    return '<span class="mem-badge mem-badge-premium">' + bmIcon('person') + ' در انتظار</span>';
   }
 
   function reqCard(r) {
     const card = document.createElement('div');
     card.id = 'req-row-' + r.id;
-    card.className = 'bg-surface-container-low rounded-xl border border-outline-variant/20 p-4 flex flex-col gap-3';
+    card.className = 'mem-card';
 
     const pending = r.status === 'pending';
     const msgs = (r.messages || []).map(m =>
-      '<div class="flex ' + (m.from_manager ? 'justify-start' : 'justify-end') + '">' +
-      '<div class="' + (m.from_manager ? 'bg-surface-container-high text-on-surface rounded-tr-sm' : 'bg-primary-container text-on-primary-container rounded-tl-sm') +
-      ' p-2.5 rounded-2xl text-body-sm max-w-[85%] border border-white/5">' + esc(m.body) + '</div></div>').join('');
+      '<div class="mem-brow ' + (m.from_manager ? 'is-me' : 'is-them') + '">' +
+      '<div class="mem-bubble">' + esc(m.body) + '</div></div>').join('');
 
     let chat = '';
     if (PERM.decide) {
       chat =
-        '<div class="req-thread bg-surface-container rounded-lg border border-outline-variant/20 p-2.5 flex flex-col gap-2">' +
-        (msgs || '<span class="font-label-sm text-on-surface-variant text-[11px] text-center py-2">پیامی وجود ندارد</span>') +
+        '<div class="mem-thread req-thread">' +
+        (msgs || '<span class="mem-thread-empty">پیامی وجود ندارد</span>') +
         '</div>' +
-        '<div class="flex items-center gap-2">' +
-        '<input id="req-reply-' + r.id + '" class="flex-1 bg-surface-container rounded-lg border border-outline-variant/30 py-2 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="پاسخ به متقاضی..." onkeydown="if(event.key===\'Enter\')sendReqReply(' + r.id + ')"/>' +
-        '<button onclick="sendReqReply(' + r.id + ')" class="bg-secondary-container text-on-secondary-container px-3 py-2 rounded-lg">' + bmIcon('send', 'text-[18px]') + '</button>' +
+        '<div class="mem-replyrow">' +
+        '<input id="req-reply-' + r.id + '" class="dash-input dash-input-plain" placeholder="پاسخ به متقاضی…" aria-label="پاسخ به متقاضی" onkeydown="if(event.key===\'Enter\')sendReqReply(' + r.id + ')"/>' +
+        '<button type="button" onclick="sendReqReply(' + r.id + ')" class="dash-btn dash-btn-solid mem-send" aria-label="ارسال پاسخ">' + bmIcon('send') + '</button>' +
         '</div>';
     } else if ((r.messages || []).length) {
-      chat = '<div class="req-thread bg-surface-container rounded-lg border border-outline-variant/20 p-2.5 flex flex-col gap-2">' + msgs + '</div>';
+      chat = '<div class="mem-thread req-thread">' + msgs + '</div>';
     }
 
     let footer = '';
     if (PERM.decide && pending) {
       footer =
-        '<div class="flex gap-2 pt-2 border-t border-outline-variant/10">' +
-        '<button onclick="decideRequest(' + r.id + ',\'approve\')" class="flex-1 bg-secondary-container text-on-secondary-container rounded-lg py-2 font-label-md hover:opacity-85 transition-opacity">تایید و فعال‌سازی</button>' +
-        '<button onclick="decideRequest(' + r.id + ',\'reject\')" class="flex-1 bg-error-container/80 text-on-error-container rounded-lg py-2 font-label-md hover:opacity-85 transition-opacity">رد</button>' +
+        '<div class="mem-decide">' +
+        '<button type="button" onclick="decideRequest(' + r.id + ',\'approve\')" class="dash-btn dash-btn-solid">تایید و فعال‌سازی</button>' +
+        '<button type="button" onclick="decideRequest(' + r.id + ',\'reject\')" class="dash-btn dash-btn-danger">رد</button>' +
         '</div>';
     }
 
     card.innerHTML =
-      '<div class="flex items-center gap-3 min-w-0">' +
-      '<div class="w-11 h-11 rounded-full flex items-center justify-center text-white text-[13px] flex-shrink-0" style="background:#4f46e5">' + esc((r.full_name || '?').slice(0, 2)) + '</div>' +
-      '<div class="min-w-0 flex-1">' +
-      '<h3 class="font-body-sm font-semibold text-on-surface truncate">' + esc(r.full_name) + '</h3>' +
-      '<p class="font-label-sm text-on-surface-variant truncate" dir="ltr">@' + esc(r.username) + '</p>' +
+      '<div class="mem-card-top">' +
+      '<div class="mem-av" style="background:#4f46e5">' + esc((r.full_name || '?').slice(0, 2)) + '</div>' +
+      '<div class="mem-id">' +
+      '<h3 class="mem-name">' + esc(r.full_name) + '</h3>' +
+      '<p class="mem-handle" dir="ltr">@' + esc(r.username) + '</p>' +
       '</div>' +
-      statusBadge(r) +
+      '<div class="mem-flags">' + statusBadge(r) + '</div>' +
       '</div>' +
-      '<div class="flex flex-col gap-1.5 text-[13px] leading-6 min-w-0">' +
-      '<div class="flex items-center gap-2 min-w-0">' + bmIcon('email', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant truncate" dir="ltr">' + esc(r.email) + '</span></div>' +
-      '<div class="flex items-center gap-2 min-w-0">' + bmIcon('phone', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant" dir="ltr">' + esc(r.phone) + '</span></div>' +
-      '<div class="flex items-center gap-2 min-w-0">' + bmIcon('key', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-body-sm text-on-surface-variant truncate font-mono" dir="ltr">' + esc(r.password) + '</span></div>' +
-      '<div class="flex items-center gap-2 min-w-0">' + bmIcon('calendar_add_on', 'text-[16px] text-on-surface-variant flex-shrink-0') + '<span class="font-label-sm text-on-surface-variant" dir="ltr">' + esc(r.created_at || '') + '</span></div>' +
+      '<div class="mem-rows">' +
+      '<div class="mem-row mem-row-ltr">' + bmIcon('email') + '<span dir="ltr">' + esc(r.email) + '</span></div>' +
+      '<div class="mem-row mem-row-ltr">' + bmIcon('phone') + '<span dir="ltr">' + esc(r.phone) + '</span></div>' +
+      '<div class="mem-row mem-row-ltr">' + bmIcon('key') + '<span class="mem-pass" dir="ltr">' + esc(r.password) + '</span></div>' +
+      '<div class="mem-row mem-row-ltr">' + bmIcon('calendar_add_on') + '<span dir="ltr">' + esc(r.created_at || '') + '</span></div>' +
       '</div>' +
       chat + footer;
     return card;
@@ -556,7 +547,7 @@
     if (!box) return;
     box.innerHTML = '';
     if (!allRequests.length) {
-      box.innerHTML = '<div class="col-span-full border border-dashed border-outline-variant rounded-xl p-6 text-center text-on-surface-variant font-body-sm">درخواست ایجاد حسابی وجود ندارد</div>';
+      box.innerHTML = '<div class="mem-empty">' + bmIcon('person') + '<span>درخواست ایجاد حسابی وجود ندارد</span></div>';
       return;
     }
     const frag = document.createDocumentFragment();
@@ -571,7 +562,7 @@
     let badge = nav.querySelector('.req-badge');
     if (!badge) {
       badge = document.createElement('span');
-      badge.className = 'req-badge mr-auto bg-error-container text-on-error-container text-[11px] px-2 py-0.5 rounded-full';
+      badge.className = 'req-badge';
       nav.appendChild(badge);
     }
     badge.textContent = fa(pending);
@@ -616,11 +607,11 @@
         const card = $('req-row-' + rid);
         const thread = card && card.querySelector('.req-thread');
         if (thread) {
-          const ph = thread.querySelector('span.text-center');
+          const ph = thread.querySelector('.mem-thread-empty');
           if (ph) ph.remove();
           const wrap = document.createElement('div');
-          wrap.className = 'flex justify-start';
-          wrap.innerHTML = '<div class="bg-surface-container-high text-on-surface rounded-tr-sm p-2.5 rounded-2xl text-body-sm max-w-[85%] border border-white/5">' + esc(body) + '</div>';
+          wrap.className = 'mem-brow is-me';
+          wrap.innerHTML = '<div class="mem-bubble">' + esc(body) + '</div>';
           thread.appendChild(wrap);
           thread.scrollTop = thread.scrollHeight;
           inp.value = '';

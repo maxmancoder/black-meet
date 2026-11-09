@@ -53,8 +53,25 @@
       .catch(function () { location.href = BASE + '/login'; });
   }
 
+  // The dash pages ship #bm-confirm (window.bmConfirm from dashboard.js), so the
+  // logout question is asked in the same dialog as every other confirmation.
+  function askDash() {
+    return window.bmConfirm({
+      title: 'از خروج خود اطمینان دارید؟',
+      body: 'برای ورود دوباره باید نام کاربری و رمز عبور را وارد کنید.',
+      confirmText: 'خروج',
+      cancelText: 'انصراف',
+      danger: true
+    });
+  }
+
   window.logout = function (e) {
     if (e) e.preventDefault();
+    if (typeof window.bmConfirm === 'function' && document.getElementById('bm-confirm')) {
+      askDash().then(function (ok) { if (ok) doLogout(); });
+      return;
+    }
+    // fallback for pages without the dash shell (call page, members legacy, ...)
     var el = ensureModal();
     el.classList.remove('hidden');
   };

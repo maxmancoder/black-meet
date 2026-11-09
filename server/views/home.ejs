@@ -380,27 +380,10 @@
 </div>
 
 <!-- ================= Confirm dialog ================= -->
-<div id="bm-confirm" class="dash-modal hidden" role="dialog" aria-modal="true" aria-labelledby="bm-confirm-title" aria-describedby="bm-confirm-body">
-    <div class="dash-modal-backdrop" data-confirm-cancel></div>
-    <div class="dash-modal-box" role="document">
-        <span class="dash-modal-ico" id="bm-confirm-ico"><%- icon('close') %></span>
-        <h2 class="dash-modal-title" id="bm-confirm-title">حذف جلسه</h2>
-        <p class="dash-modal-body" id="bm-confirm-body">این کار برگشت‌پذیر نیست.</p>
-        <div class="dash-modal-actions">
-            <button type="button" class="dash-btn dash-btn-ghost" id="bm-confirm-no" data-no-loader>انصراف</button>
-            <button type="button" class="dash-btn dash-btn-danger" id="bm-confirm-yes" data-no-loader>حذف کن</button>
-        </div>
-    </div>
-</div>
+<%- include('dash_confirm') %>
 
 <!-- ================= Toast ================= -->
-<div id="bm-toast" class="dash-toast" role="status" aria-live="polite" hidden>
-    <span class="dash-toast-ico" id="bm-toast-ico"><%- icon('check_circle') %></span>
-    <span class="dash-toast-msg" id="bm-toast-msg"></span>
-    <button type="button" class="dash-toast-x" data-no-loader aria-label="بستن" onclick="bmToastHide()">
-        <%- icon('close') %>
-    </button>
-</div>
+<%- include('dash_toast') %>
 
 <!-- ================= Mobile bottom nav ================= -->
 <nav class="dash-bottomnav" aria-label="ناوبری پایین">

@@ -1,97 +1,140 @@
 <%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
 </head>
-<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col relative overflow-x-hidden">
+<body class="bm-dash font-body-md">
 
-<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+<!-- ambient background (pure CSS, no image) -->
+<div class="dash-ambient" aria-hidden="true">
+    <span class="dash-ambient-glow"></span>
+    <span class="dash-ambient-grid"></span>
+</div>
 
-<header class="sticky top-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
-    <a href="<%- url('home') %>" class="flex items-center gap-3">
-        <%- icon('arrow_forward', 'text-on-surface-variant') %>
-        <div class="flex items-center gap-2"><%- brandMark('w-7 h-7 rounded-lg') %><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></div>
-    </a>
-    <span class="font-headline-md text-headline-md text-on-surface">مدیریت اعضا</span>
-    <button id="side-toggle" data-no-loader onclick="toggleSidePanel()" title="منو" class="md:hidden text-on-surface-variant hover:bg-surface-variant/20 p-2 rounded-full">
-        <%- icon('menu') %>
-    </button>
-</header>
+<a class="dash-skip" href="#dash-main">پرش به محتوای اصلی</a>
 
-<div class="relative z-10 flex-1 flex flex-col md:flex-row">
+<!-- ================= Desktop sidebar ================= -->
+<aside class="dash-sidebar" aria-label="منوی کناری">
+    <%- include('dash_sidebar', { drawer: false, activePage: 'members' }) %>
+</aside>
 
-    <!-- ===== Left sidebar: same look as home's, only the two section switchers ===== -->
-    <aside id="side-panel" class="hidden md:flex flex-col static md:fixed md:inset-y-0 md:left-0 md:w-80 md:z-[60] bg-surface-container-low md:border-r md:border-white/5 md:shadow-2xl p-3 md:py-lg">
-        <%# the signed-in identity is intentionally NOT shown on this page (owner asked) %>
-        <div class="hidden md:flex flex-col gap-sm px-lg mb-8 min-h-[64px]"></div>
+<!-- ================= Mobile drawer ================= -->
+<div id="dash-drawer" class="dash-drawer" aria-hidden="true">
+    <div class="dash-drawer-backdrop" data-drawer-close></div>
+    <div class="dash-drawer-panel" role="dialog" aria-modal="true" aria-label="منوی موبایل">
+        <%- include('dash_sidebar', { drawer: true, activePage: 'members' }) %>
+    </div>
+</div>
 
-        <ul class="flex-1 space-y-2 font-body-md text-body-md">
-        <% if (canMembers) { %>
-            <li><button id="nav-members" data-no-loader onclick="switchSection('members')" class="w-full flex items-center gap-4 py-3 px-4 rounded-lg mx-2 transition-all bg-primary-container text-on-primary-container">
-                <%- icon('group', '', true) %> نمایش اعضا
-            </button></li>
-        <% } %>
-        <% if (canRequests) { %>
-            <li><button id="nav-requests" data-no-loader onclick="switchSection('requests')" class="w-full flex items-center gap-4 py-3 px-4 rounded-lg mx-2 transition-all text-on-surface-variant hover:bg-surface-container-high <%- canMembers ? '' : 'bg-primary-container text-on-primary-container' %>">
-                <%- icon('person', '', true) %> درخواست ایجاد حساب
+<!-- ================= Shell ================= -->
+<div class="dash-shell">
+
+    <header class="dash-header" id="dash-header">
+        <button type="button" class="dash-iconbtn dash-burger" data-no-loader data-drawer-open
+                aria-label="باز کردن منو" aria-controls="dash-drawer" aria-expanded="false">
+            <%- icon('menu') %>
+        </button>
+
+        <a class="dash-header-brand" href="<%- url('home') %>" aria-label="Black Meet — خانه">
+            <%- brandMark('dash-header-brand-img') %>
+            <span>Black Meet</span>
+        </a>
+
+        <span class="dash-crumb" aria-hidden="true">
+            <span class="dash-crumb-home">خانه</span>
+            <span class="dash-crumb-sep">/</span>
+            <span class="dash-crumb-cur">مدیریت اعضا</span>
+        </span>
+
+        <div class="dash-header-spacer"></div>
+
+        <a class="dash-link" href="<%- url('home') %>" data-no-loader>
+            <%- icon('arrow_forward') %><span>بازگشت</span>
+        </a>
+
+        <button type="button" class="dash-header-user" data-no-loader data-user-menu-trigger
+                aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" aria-label="منوی حساب کاربری">
+            <span class="dash-avatar dash-avatar-sm" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+            <span class="dash-header-user-name"><%- esc(me.display_name) %></span>
+            <%- icon('more_vert', 'dash-header-user-more') %>
+        </button>
+    </header>
+
+    <main class="dash-main dash-members" id="dash-main">
+
+        <section class="dash-page-head">
+            <p class="dash-page-eyebrow"><%- icon('groups') %><span>مدیریت سامانه</span></p>
+            <h1 class="dash-page-title">مدیریت اعضا</h1>
+            <p class="dash-page-sub">
+                کاربران را ببینید، درجه و دسترسی‌شان را تغییر دهید و درخواست‌های ایجاد حساب را بررسی کنید.
+            </p>
+        </section>
+
+        <!-- section switcher (was the left rail; now chips above the content) -->
+        <nav class="dash-chips mem-tabs" id="mem-tabs" role="group" aria-label="بخش‌های مدیریت اعضا">
+            <% if (canMembers) { %>
+            <button type="button" id="nav-members" class="dash-chip is-on" data-no-loader data-section="members"
+                    onclick="switchSection('members')" aria-pressed="true">
+                <%- icon('group', '', true) %><span>نمایش اعضا</span>
+            </button>
+            <% } %>
+            <% if (canRequests) { %>
+            <button type="button" id="nav-requests" class="dash-chip<%- canMembers ? '' : ' is-on' %>" data-no-loader data-section="requests"
+                    onclick="switchSection('requests')" aria-pressed="<%- canMembers ? 'false' : 'true' %>">
+                <%- icon('person', '', true) %><span>درخواست ایجاد حساب</span>
                 <% if (pendingCount > 0) { %>
-                <span class="req-badge mr-auto bg-error-container text-on-error-container text-[11px] px-2 py-0.5 rounded-full"><%- toFaDigits(pendingCount) %></span>
+                <span class="req-badge"><%- toFaDigits(pendingCount) %></span>
                 <% } %>
-            </button></li>
-        <% } %>
-        </ul>
-    </aside>
-
-    <!-- ===== Main content ===== -->
-    <main class="flex-1 md:pl-80 p-grid-margin">
+            </button>
+            <% } %>
+        </nav>
 
         <!-- ================= SECTION: member list ================= -->
         <% if (canMembers) { %>
-        <section id="section-members" class="glass-panel rounded-2xl shadow-2xl p-lg sm:p-xl w-full">
-            <div class="flex items-center gap-3 mb-md">
-                <%- icon('group', 'text-[36px] text-primary', true) %>
+        <section id="section-members" class="dash-card" aria-labelledby="members-title">
+            <div class="dash-card-head">
+                <span class="dash-card-ico dash-card-ico-accent"><%- icon('group') %></span>
                 <div>
-                    <h1 class="font-headline-lg text-headline-lg text-on-surface">نمایش اعضا</h1>
-                    <p class="font-body-sm text-body-sm text-on-surface-variant">اطلاعات کاربران را ببینید و ویرایش کنید؛ کاربر محدود‌شده نمی‌تواند تماس جدید ایجاد کند.</p>
+                    <h2 class="dash-card-title" id="members-title">نمایش اعضا</h2>
+                    <p class="dash-card-sub">اطلاعات کاربران را ببینید و ویرایش کنید؛ کاربر محدود‌شده نمی‌تواند تماس جدید ایجاد کند.</p>
                 </div>
             </div>
 
             <!-- signup mode dropdown (above the user list) -->
             <% if (canChangeMode) { %>
-            <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-md p-4 rounded-xl bg-surface-container-low border border-outline-variant/30">
-                <div class="flex items-center gap-2 min-w-0">
-                    <%- icon('person', 'text-primary flex-shrink-0') %>
-                    <span class="font-body-sm text-body-sm text-on-surface whitespace-nowrap">حالت ایجاد حساب:</span>
-                </div>
-                <div class="relative flex-1 min-w-[220px]">
-                    <button id="mode-btn" data-no-loader data-no-soft onclick="toggleModeMenu(event)" class="w-full flex items-center justify-between gap-2 bg-surface-container border border-outline-variant/40 rounded-lg px-4 py-2.5 font-body-sm text-body-sm text-on-surface transition-colors hover:bg-primary-container/25 hover:border-primary-container hover:text-on-surface focus:outline-none" aria-haspopup="true" aria-expanded="false">
-                        <span class="flex items-center gap-2 min-w-0">
+            <div class="mem-mode">
+                <span class="mem-mode-label"><%- icon('person') %><span>حالت ایجاد حساب</span></span>
+                <div class="mem-menu-anchor">
+                    <button id="mode-btn" type="button" data-no-loader data-no-soft onclick="toggleModeMenu(event)"
+                            class="mem-mode-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mode-menu">
+                        <span class="mem-mode-left">
                             <span id="mode-dot" class="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-secondary"></span>
-                            <span id="mode-label" class="truncate">—</span>
+                            <span id="mode-label" class="mem-mode-text">—</span>
                         </span>
-                        <span class="bm-caret text-on-surface-variant"></span>
+                        <span class="bm-caret" aria-hidden="true"></span>
                     </button>
-                    <div id="mode-menu" class="hidden absolute top-full right-0 left-0 mt-2 glass-panel rounded-xl shadow-2xl border border-outline-variant/30 p-2 z-40">
-                        <button class="mode-opt" data-mode="open" onclick="setSignupMode('open')">
-                            <span class="mode-opt-icon text-secondary"><%- icon('login', '', true) %></span>
-                            <span class="min-w-0 text-right">
-                                <span class="block font-body-sm text-body-sm text-on-surface">ایجاد حساب آزاد</span>
-                                <span class="block font-label-sm text-on-surface-variant text-[11px]">هر کاربری می‌تواند بدون محدودیت حساب بسازد</span>
+                    <div id="mode-menu" class="hidden mem-mode-menu glass-panel" role="menu" aria-label="حالت ایجاد حساب">
+                        <button type="button" class="mode-opt" data-mode="open" role="menuitem" onclick="setSignupMode('open')">
+                            <span class="mode-opt-icon"><%- icon('login', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">ایجاد حساب آزاد</span>
+                                <span class="mem-opt-sub">هر کاربری می‌تواند بدون محدودیت حساب بسازد</span>
                             </span>
-                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
                         </button>
-                        <button class="mode-opt" data-mode="approval" onclick="setSignupMode('approval')">
-                            <span class="mode-opt-icon text-primary"><%- icon('shield_person', '', true) %></span>
-                            <span class="min-w-0 text-right">
-                                <span class="block font-body-sm text-body-sm text-on-surface">فقط با تایید مدیر</span>
-                                <span class="block font-label-sm text-on-surface-variant text-[11px]">درخواست‌ها ثبت و پس از تایید شما فعال می‌شوند</span>
+                        <button type="button" class="mode-opt" data-mode="approval" role="menuitem" onclick="setSignupMode('approval')">
+                            <span class="mode-opt-icon"><%- icon('shield_person', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">فقط با تایید مدیر</span>
+                                <span class="mem-opt-sub">درخواست‌ها ثبت و پس از تایید شما فعال می‌شوند</span>
                             </span>
-                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
                         </button>
-                        <button class="mode-opt" data-mode="closed" onclick="setSignupMode('closed')">
-                            <span class="mode-opt-icon text-error"><%- icon('block', '', true) %></span>
-                            <span class="min-w-0 text-right">
-                                <span class="block font-body-sm text-body-sm text-on-surface">غیرفعال</span>
-                                <span class="block font-label-sm text-on-surface-variant text-[11px]">ایجاد حساب جدید برای همه متوقف است</span>
+                        <button type="button" class="mode-opt" data-mode="closed" role="menuitem" onclick="setSignupMode('closed')">
+                            <span class="mode-opt-icon"><%- icon('block', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">غیرفعال</span>
+                                <span class="mem-opt-sub">ایجاد حساب جدید برای همه متوقف است</span>
                             </span>
-                            <span class="mode-opt-check mr-auto text-primary hidden"><%- icon('check_circle', '', true) %></span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
                         </button>
                     </div>
                 </div>
@@ -99,102 +142,117 @@
             <% } %>
 
             <!-- Toolbar: live search + page size -->
-            <div class="flex flex-col md:flex-row md:items-center gap-md mb-md">
-                <div class="relative flex-1">
-                    <%- icon('search', 'absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]') %>
-                    <input id="member-search" class="bm-search w-full bg-surface-container rounded-lg border border-outline-variant/30 py-3 pr-11 pl-4 text-body-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="جستجوی نام نمایشی، نام کاربری، ایمیل یا شماره تلفن..." type="text" autocomplete="off"/>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="font-body-sm text-on-surface-variant whitespace-nowrap">نمایش</span>
-                    <!-- the native <select> stays as the value store (render() reads it);
-                         this is the themed face the user actually clicks -->
-                    <div class="relative">
-                        <button type="button" id="page-size-btn" data-no-loader data-no-soft
-                                onclick="togglePageSizeMenu(event)" aria-haspopup="listbox" aria-expanded="false"
-                                class="flex items-center gap-2 bg-surface-container hover:bg-surface-container-highest border border-outline-variant/30 hover:border-primary-container/60 rounded-lg py-2.5 px-3 text-body-sm text-on-surface transition-colors min-w-[112px] justify-between">
-                            <span id="page-size-label">۲۵ کاربر</span>
-                            <span class="bm-caret"></span>
-                        </button>
-                        <div id="page-size-menu" class="hidden absolute top-full right-0 mt-2 glass-panel rounded-xl border border-outline-variant/30 shadow-2xl p-1.5 min-w-[132px] z-40">
-                            <button type="button" class="mode-opt" data-size="25" onclick="setPageSize(25)">۲۵ کاربر</button>
-                            <button type="button" class="mode-opt" data-size="50" onclick="setPageSize(50)">۵۰ کاربر</button>
-                            <button type="button" class="mode-opt" data-size="100" onclick="setPageSize(100)">۱۰۰ کاربر</button>
-                        </div>
+            <div class="mem-toolbar">
+                <div class="mem-search-row">
+                    <div class="dash-field">
+                        <span class="dash-field-ico" aria-hidden="true"><%- icon('search') %></span>
+                        <input id="member-search" class="dash-input bm-search" type="text" autocomplete="off"
+                               placeholder="جستجوی نام نمایشی، نام کاربری، ایمیل یا شماره تلفن…"
+                               aria-label="جستجوی اعضا"/>
                     </div>
-                    <select id="page-size" class="hidden" aria-hidden="true" tabindex="-1">
-                        <option value="25">۲۵ کاربر</option>
-                        <option value="50">۵۰ کاربر</option>
-                        <option value="100">۱۰۰ کاربر</option>
-                    </select>
+                    <div class="mem-size-row">
+                        <span class="mem-size-label">نمایش</span>
+                        <!-- the native <select> stays the value store (render() reads it);
+                             this is the themed face the user actually clicks -->
+                        <div class="mem-menu-anchor" style="position:relative">
+                            <button type="button" id="page-size-btn" data-no-loader data-no-soft
+                                    onclick="togglePageSizeMenu(event)" aria-haspopup="listbox" aria-expanded="false"
+                                    class="mem-size-btn">
+                                <span id="page-size-label">۲۵ کاربر</span>
+                                <span class="bm-caret" aria-hidden="true"></span>
+                            </button>
+                            <div id="page-size-menu" class="hidden mem-mode-menu glass-panel" role="listbox" aria-label="تعداد نمایش">
+                                <button type="button" class="mode-opt" data-size="25" role="option" onclick="setPageSize(25)"><span class="mem-opt-title">۲۵ کاربر</span></button>
+                                <button type="button" class="mode-opt" data-size="50" role="option" onclick="setPageSize(50)"><span class="mem-opt-title">۵۰ کاربر</span></button>
+                                <button type="button" class="mode-opt" data-size="100" role="option" onclick="setPageSize(100)"><span class="mem-opt-title">۱۰۰ کاربر</span></button>
+                            </div>
+                        </div>
+                        <select id="page-size" class="hidden" aria-hidden="true" tabindex="-1">
+                            <option value="25">۲۵ کاربر</option>
+                            <option value="50">۵۰ کاربر</option>
+                            <option value="100">۱۰۰ کاربر</option>
+                        </select>
+                    </div>
                 </div>
+                <p id="result-count" class="mem-count"></p>
             </div>
-            <p id="result-count" class="font-body-sm text-on-surface-variant mb-md"></p>
 
-            <div id="user-cards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start" data-no-soft></div>
+            <div id="user-cards" class="mem-grid" data-no-soft></div>
         </section>
         <% } %>
 
         <!-- ================= SECTION: account creation requests ================= -->
         <% if (canRequests) { %>
-        <section id="section-requests" class="glass-panel rounded-2xl shadow-2xl p-lg sm:p-xl w-full <%- canMembers ? 'hidden' : '' %>">
-            <div class="flex items-center gap-3 mb-md">
-                <%- icon('person', 'text-[36px] text-primary', true) %>
+        <section id="section-requests" class="dash-card mem-requests<%- canMembers ? ' hidden' : '' %>" aria-labelledby="requests-title">
+            <div class="dash-card-head">
+                <span class="dash-card-ico dash-card-ico-mint"><%- icon('person') %></span>
                 <div>
-                    <h1 class="font-headline-lg text-headline-lg text-on-surface">درخواست ایجاد حساب</h1>
-                    <p class="font-body-sm text-body-sm text-on-surface-variant">درخواست‌های ثبت‌نام کاربران جدید را بررسی کنید؛ پس از تایید، حساب فعال و قابل ورود می‌شود.</p>
+                    <h2 class="dash-card-title" id="requests-title">درخواست ایجاد حساب</h2>
+                    <p class="dash-card-sub">درخواست‌های ثبت‌نام کاربران جدید را بررسی کنید؛ پس از تایید، حساب فعال و قابل ورود می‌شود.</p>
                 </div>
             </div>
-            <div id="request-list" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start" data-no-soft></div>
+            <div id="request-list" class="mem-grid" data-no-soft></div>
         </section>
         <% } %>
+
+        <p class="dash-foot-note">
+            <%- icon('lock') %>
+            <span>فقط مدیر اصلی می‌تواند درجه‌ها را تغییر دهد و حساب‌ها را تایید کند.</span>
+        </p>
     </main>
 </div>
 
 <!-- ===== Edit user modal ===== -->
-<div id="edit-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
-    <div class="glass-panel rounded-2xl p-5 w-full max-w-[340px] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <div class="flex items-center gap-3 mb-4">
-            <%- icon('badge', 'text-[24px] text-primary', true) %>
+<div id="edit-modal" class="hidden bm-mem-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+    <div class="bm-mem-backdrop" onclick="closeEditModal()"></div>
+    <div class="bm-mem-sheet" role="document">
+        <button type="button" class="dash-iconbtn dash-iconbtn-sm dash-modal-x" data-no-loader
+                aria-label="بستن" onclick="closeEditModal()">
+            <%- icon('close') %>
+        </button>
+
+        <div class="mem-modal-head">
+            <span class="mem-modal-ico"><%- icon('badge') %></span>
             <div class="min-w-0">
-                <h2 class="font-body-lg text-body-lg font-semibold text-on-surface">ویرایش اطلاعات کاربر</h2>
-                <p id="edit-target" class="font-label-sm text-on-surface-variant truncate"></p>
+                <h2 class="mem-modal-title" id="edit-modal-title">ویرایش اطلاعات کاربر</h2>
+                <p id="edit-target" class="mem-modal-target"></p>
             </div>
         </div>
 
-        <label class="font-label-sm text-on-surface-variant block mb-1.5">نام کاربری</label>
-        <input id="ed-username" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="text" dir="ltr" autocomplete="off"/>
+        <label class="mem-field-label" for="ed-username">نام کاربری</label>
+        <input id="ed-username" class="dash-input dash-input-plain" type="text" dir="ltr" autocomplete="off"/>
 
-        <label class="font-label-sm text-on-surface-variant block mb-1.5">ایمیل</label>
-        <input id="ed-email" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="email" dir="ltr" autocomplete="off"/>
+        <label class="mem-field-label" for="ed-email">ایمیل</label>
+        <input id="ed-email" class="dash-input dash-input-plain" type="email" dir="ltr" autocomplete="off"/>
 
-        <label class="font-label-sm text-on-surface-variant block mb-1.5">شماره تلفن</label>
-        <input id="ed-phone" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface outline-none focus:border-primary-container mb-2.5" type="tel" dir="ltr" autocomplete="off"/>
+        <label class="mem-field-label" for="ed-phone">شماره تلفن</label>
+        <input id="ed-phone" class="dash-input dash-input-plain" type="tel" dir="ltr" autocomplete="off"/>
 
-        <label class="font-label-sm text-on-surface-variant block mb-1.5">رمز عبور</label>
-        <input id="ed-password" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface outline-none focus:border-primary-container" type="text" placeholder="خالی بگذارید تا تغییر نکند" maxlength="128" autocomplete="new-password"/>
-        <p class="font-label-sm text-on-surface-variant text-[11px] mt-1 mb-2.5">برای تغییر رمز، مقدار جدید (حداقل ۶ کاراکتر) را وارد کنید.</p>
+        <label class="mem-field-label" for="ed-password">رمز عبور</label>
+        <input id="ed-password" class="dash-input dash-input-plain" type="text" placeholder="خالی بگذارید تا تغییر نکند"
+               maxlength="128" autocomplete="new-password"/>
+        <p class="mem-modal-hint">برای تغییر رمز، مقدار جدید (حداقل ۶ کاراکتر) را وارد کنید.</p>
 
-        <label class="font-label-sm text-on-surface-variant block mb-1.5">درجه</label>
-<!-- the native <select> stays the value store (openEditModal/submitEdit read & write
+        <label class="mem-field-label">درجه</label>
+        <!-- the native <select> stays the value store (openEditModal/submitEdit read & write
              .value); this is the themed face the user clicks -->
-            <div class="relative mb-1">
-                <button type="button" id="ed-rank-btn" data-no-soft onclick="toggleEditRankMenu(event)"
-                        aria-haspopup="listbox" aria-expanded="false"
-                        class="w-full flex items-center justify-between gap-2 bg-surface-container-low border border-outline-variant hover:border-primary-container/60 rounded-lg px-3 py-2 text-body-sm text-on-surface transition-colors">
-                    <span id="ed-rank-label">کاربر عادی</span>
-                    <span class="bm-caret"></span>
-                </button>
-            </div>
-            <select id="ed-rank" class="hidden" aria-hidden="true" tabindex="-1">
-                <option value="user">کاربر عادی</option>
-                <option value="admin">ادمین</option>
-                <option value="premium">ادمین پریمیوم</option>
-            </select>
-        <p id="ed-rank-lock" class="font-label-sm text-on-surface-variant text-[11px] mt-1 hidden">درجه مدیر اصلی قابل تغییر نیست.</p>
+        <div style="position:relative">
+            <button type="button" id="ed-rank-btn" data-no-soft onclick="toggleEditRankMenu(event)"
+                    aria-haspopup="listbox" aria-expanded="false" class="mem-mode-btn">
+                <span id="ed-rank-label">کاربر عادی</span>
+                <span class="bm-caret" aria-hidden="true"></span>
+            </button>
+        </div>
+        <select id="ed-rank" class="hidden" aria-hidden="true" tabindex="-1">
+            <option value="user">کاربر عادی</option>
+            <option value="admin">ادمین</option>
+            <option value="premium">ادمین پریمیوم</option>
+        </select>
+        <p id="ed-rank-lock" class="mem-modal-hint hidden">درجه مدیر اصلی قابل تغییر نیست.</p>
 
-        <div class="flex gap-2 mt-4">
-            <button onclick="submitEdit()" class="flex-1 bg-primary text-white rounded-lg py-2.5 font-label-md hover:bg-primary-fixed transition-colors">ذخیره</button>
-            <button onclick="closeEditModal()" class="flex-1 bg-surface-container-high text-on-surface rounded-lg py-2.5 font-label-md hover:opacity-80 transition-opacity">انصراف</button>
+        <div class="mem-modal-actions">
+            <button type="button" onclick="submitEdit()" class="dash-btn dash-btn-solid">ذخیره</button>
+            <button type="button" onclick="closeEditModal()" class="dash-btn dash-btn-soft">انصراف</button>
         </div>
     </div>
 </div>
@@ -202,29 +260,16 @@
 <!-- the rank menu lives OUTSIDE the edit modal: the modal panel is a scroll container
      with a backdrop-filter, which makes it the containing block for fixed children and
      clipped the menu away. Here it can never be cut off. -->
-<div id="ed-rank-menu" class="hidden fixed glass-panel rounded-xl border border-outline-variant/30 shadow-2xl p-1.5 min-w-[200px]" style="z-index:110">
-    <button type="button" class="mode-opt" data-rank="user" onclick="setEditRank('user')">کاربر عادی</button>
-    <button type="button" class="mode-opt" data-rank="admin" onclick="setEditRank('admin')">ادمین</button>
-    <button type="button" class="mode-opt" data-rank="premium" onclick="setEditRank('premium')">ادمین پریمیوم</button>
+<div id="ed-rank-menu" class="hidden glass-panel" role="listbox" aria-label="درجه کاربر" style="z-index:110">
+    <button type="button" class="mode-opt" data-rank="user" role="option" onclick="setEditRank('user')"><span class="mem-opt-title">کاربر عادی</span></button>
+    <button type="button" class="mode-opt" data-rank="admin" role="option" onclick="setEditRank('admin')"><span class="mem-opt-title">ادمین</span></button>
+    <button type="button" class="mode-opt" data-rank="premium" role="option" onclick="setEditRank('premium')"><span class="mem-opt-title">ادمین پریمیوم</span></button>
 </div>
 
-<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
-    <%- icon('error') %><span id="toast-message"></span></div></div>
-
-<style>
-.bm-caret { width: 8px; height: 8px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .2s; flex-shrink: 0; }
-#mode-btn[aria-expanded="true"] .bm-caret,
-#page-size-btn[aria-expanded="true"] .bm-caret,
-#ed-rank-btn[aria-expanded="true"] .bm-caret { transform: rotate(135deg); }
-.mode-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 8px; transition: background .15s, color .15s; text-align: right; font-size: 13px; color: rgb(var(--bm-on-surface)); }
-.mode-opt:hover { background: rgba(45, 52, 73, .7); }
-.mode-opt.active, .mode-opt.bm-opt-active { background: rgba(79, 70, 229, .18); color: rgb(var(--bm-primary)); }
-.mode-opt-icon { display: flex; align-items: center; }
-.req-thread { max-height: 180px; overflow-y: auto; }
-.rank-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 180px; z-index: 40; }
-/* the two new dropdowns live in the sticky toolbar / the modal — give them a bit more room */
-#page-size-menu .mode-opt, #ed-rank-menu .mode-opt { justify-content: flex-start; }
-</style>
+<%- include('dash_usermenu') %>
+<%- include('dash_confirm') %>
+<%- include('dash_toast') %>
+<%- include('dash_bottomnav', { activePage: 'members' }) %>
 
 <script>
 window.CSRF = <%- json(csrf) %>;
@@ -236,6 +281,7 @@ window.INIT_REQUESTS = <%- json(requests) %>;
 window.SIGNUP_MODE = <%- json(signupMode) %>;
 window.PERM = { members: <%- json(canMembers) %>, requests: <%- json(canRequests) %>, decide: <%- json(canDecide) %>, changeMode: <%- json(canChangeMode) %> };
 </script>
+<script src="<%- asset('assets/js/dashboard.js') %>"></script>
 <script src="<%- asset('assets/js/admin_members.js') %>"></script>
 </body>
 </html>

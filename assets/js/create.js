@@ -4,7 +4,9 @@
   const csrf = window.CSRF;
 
   function showToast(msg) {
+    if (typeof window.bmToast === 'function') { window.bmToast(msg, 'error'); return; }
     const t = document.getElementById('toast');
+    if (!t) return;
     document.getElementById('toast-message').textContent = msg;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 4000);
