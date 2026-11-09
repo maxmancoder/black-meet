@@ -1,439 +1,795 @@
-﻿# Black Meet — سایت تماس صوتی/تصویری گروهی
+﻿# Black Meet - Technical Reference (for AI-assisted development)
 
-یک سیستم تماس گروهی (مشابه Google Meet) با یک پروسه **Node.js** واحد:
-Express (سرو صفحات EJS)، Socket.IO (سیگنالینگ WebRTC + ریل‌تایم) و SQLite (`node:sqlite`).
-هیچ وابستگی به PHP/Apache/MySQL ندارد.
+## 1. Project Overview
 
-**وضعیت فعلی قابلیت‌ها:**
+**Black Meet** is a Persian-language group audio/video calling web application (similar to Google Meet). It runs as a single Node.js process serving EJS templates, REST APIs, and Socket.IO real-time communication, backed by SQLite.
 
-- **ورود و ثبت‌نام:** ایمیل+رمز (bcrypt) یا شماره موبایل+کد OTP، با سه حالت ثبت‌نام
-  (آزاد / فقط با تایید مدیر / بسته) و چت متقاضی با مدیر تا زمان تایید.
-- **اتاق تماس:** میکروفون، دوربین، اشتراک صفحه با انتخاب کیفیت و صدای صفحه، سرکوب نویز،
-  انتخاب دوربین، ایموجی زنده با صدا، چت، نمایش پینگ، بزرگ‌نمایی تمام‌صفحه،
-  و **سطح‌های مشترک:** باکس سایت، ویدیوی مشترک (YouTube/Aparat)، پخش صوتی مشترک و فایل مشترک.
-- **پیام‌رسانی:** صفحهٔ «پیام‌ها» با چت مدیر/ادمین، گفتگوهای خصوصی و پیام عمومی (اعلان)؛
-  در خانه زنگ اعلان‌ها با فهرست و نشان «جدید».
-- **مدیریت اعضا:** درجه‌ها، سقف ساخت جلسه در روز، محدودیت حساب، درخواست‌های ثبت‌نام با چت و تایید/رد.
-- **آیکون سایت در دیتابیس:** ذخیره در `bm_assets`، سرو از `GET /black-meet/site-icon`
-  و تعویض توسط مدیر از پروفایل — در همهٔ صفحات، تب مرورگر و آیکون گوشی دیده می‌شود.
-- **آرشیو کاربران:** آینهٔ فایلی (`users_archive.db`) + آینهٔ Neon/Postgres، تا حساب‌ها بعد از
-  هر استقرار (دیتابیس SQLite روی Render پاک می‌شود) از بین نروند.
-
----
-
-## پیش‌نیازها
-- **Node.js نسخه ۲۴** (الزام `package.json`: `>=24 <25` — به‌خاطر `node:sqlite`).
-- مرورگر مدرن با پشتیبانی WebRTC و دسترسی میکروفون/دوربین.
-- فقط برای تونل عمومی: `bin\cloudflared.exe` (محلی است) و اتصال اینترنت.
-- بعد از کلون یا آپدیت: `npm install`.
-  برای ابزارهای جانبی هم `npm i --no-save fontkit wawoff2 puppeteer-core` بزنید —
-  **هر `npm install` معمولی پکیج‌های `--no-save` را حذف می‌کند**
-  (دوتای اول برای بازتولید sprite آیکون، سومی برای تست اسکرین‌شات).
-
----
-
-## اجرا (دوبار کلیک روی `start.bat`)
-
-`start.bat` همه‌چیز را بالا می‌آورد:
-
-| سرویس | فایل | پورت |
+### Tech Stack
+| Layer | Technology | Notes |
 |---|---|---|
-| اپلیکیشن (صفحات + API + Socket.IO + SQLite) | `server\index.js` | TCP 3000 |
-| TURN محلی برای تست در شبکهٔ خودی (**از طرف اپ آگهی نمی‌شود**) | `turn.js` | UDP 3478 |
-| پراکسی TCP همان TURN محلی | `turn-proxy.js` | TCP 3478 |
-| تانل عمومی سایت | `bin\tunnel.ps1` | — |
+| Runtime | Node.js >= 24 < 25 | Required for `node:sqlite` |
+| Web Framework | Express.js | Serves pages under `/black-meet/*` prefix (except `/socket.io/`) |
+| Real-time | Socket.IO | WebRTC signaling, presence, chat, call state |
+| Templating | EJS | Server-rendered views in `server/views/` |
+| Database | SQLite via `node:sqlite` (`DatabaseSync`) | WAL mode, schema in `server/lib/schema.sql` |
+| Auth | Session-based (SQLite-backed `bm_sessions`) + HMAC socket tokens (24h TTL) + CSRF tokens | `bm` cookie, HttpOnly, SameSite=Lax |
+| Styling | Tailwind CSS (self-hosted) + custom CSS (`assets/css/styles.css`, `dashboard.css`) | CSS variables with `--bm-*` theme tokens |
+| WebRTC | Native RTCPeerConnection | Perfect negotiation, ICE restart recovery, TURN relay support |
+| Fonts | Vazirmatn, Digi Ghaf Bold, Entezar (local) | No CDN fonts |
 
-- **تانل وب** با ترتیب فالبک: **Cloudflare quick tunnel ← SSH (localhost.run) ← SSH (serveo.net)**.
-  URL عمومی فقط بعد از سلامت‌سنجی واقعی (`GET /black-meet/login`) منتشر می‌شود،
-  در کلیپ‌بورد کپی می‌شود و سایت یک‌بار به‌صورت خودکار در کروم باز می‌شود.
-- همیشه در `tunnel_url.txt` (در ریشه پروژه) نوشته می‌شود؛ اگر تانلی نبود، آدرس
-  `http://localhost:3000/black-meet/` باز می‌شود.
-- **توقف:** کلیدی در پنجره `start.bat` بزنید (همه پروسه‌های BM بسته می‌شوند).
-- لاگ‌ها در پوشه `logs/`: `node.log`، `turn.log`، `turn-proxy.log`، `dev_otp.log` و `%TEMP%\bm-tunnel\bmt-chain.log`.
-
-اجرا بدون تانل (مثلاً توسعه داخلی): `node server\index.js`.
-همهٔ مسیرهای اپ زیر `/black-meet/` هستند (به‌جز `/socket.io/`).
-
-اسکریپت‌های npm:
-| دستور | کار |
-|---|---|
-| `npm start` | اجرای اپ |
-| `npm run start:turn` / `start:turn-proxy` | TURN (UDP) و پراکسی TCP |
-| `npm run tailwind:build` | بازسازی `assets/css/tailwind.css` بعد از افزودن کلاس جدید |
+### Architecture Summary
+- **Single process**: `server/index.js` creates HTTP server, attaches Socket.IO via `server/sockets.js`, mounts Express app from `server/app.js`.
+- **Route split**: Page routes in `server/routes/pages.js` render EJS views. API routes in `server/routes/api.js` handle REST endpoints under `/black-meet/api`.
+- **Shared events**: All Socket.IO event names defined once in `shared/socket-events.js` as `BMEv` (UMD module, available as `window.BMEv` in browser and `require()` in Node).
+- **In-memory state**: Call rooms tracked in `server/lib/state.js` (`rooms`, `userSockets` Maps). Sockets wrapped to make `internal` calls async-safe.
+- **TURN/ICE**: Configured dynamically by `server/lib/turn.js` with fallback chain (owner servers → credentials endpoint → local → free public `turn.jami.net`).
 
 ---
 
-## حساب مدیر (فقط بار اول روی دیتابیس خالی)
-- ساخت حساب مدیر از روی `config.json` (بخش `admin`) یا متغیرهای محیطی `BM_ADMIN_USER` / `BM_ADMIN_PASS` / `BM_ADMIN_EMAIL` / `BM_ADMIN_PHONE` انجام می‌شود؛ **هیچ رمز یا اطلاعات تماسی در کد یا مخزن نیست.**
-- اگر هیچ‌کدام تنظیم نشده باشد، ساخت مدیر انجام نمی‌شود و در لاگ پیام `Admin seed skipped` می‌آید.
-- مقادیر واقعی خود را فقط در `config.json` محلی (که در `.gitignore` است) یا env پروداکشن نگه دارید.
+## 2. Project Structure
 
-ورود legacy (متون ساده قدیمی) هم پذیرفته و به‌صورت خودکار به bcrypt ارتقا می‌یابد.
-
----
-
-## تنظیمات (`config.json`)
-- `secret`: کلید HMAC برای توکن سوکت و نشست‌ها.
-- `DEV_MODE: true` → کد OTP در پاسخ API و `logs\dev_otp.log` برمی‌گردد (فقط توسعه؛ در پروداکشن `false`).
-- `socket_port`، `base_url`، `turn` (کاربر/رمز relay)، بخش `admin`.
-- `config.json` در `.gitignore` است؛ مقدار فعلی‌اش را هرگز push نکنید.
-
----
-
-## متغیرهای محیطی
-
-| متغیر | پیش‌فرض / نقش |
-|---|---|
-| `PORT` | 3000 — پورت اپ (Render از همین استفاده می‌کند) |
-| `BM_DB_PATH` | مسیر دیتابیس SQLite (پیش‌فرض `black_meet.db` در ریشه) |
-| `BM_SECRET` | جایگزین `secret` از config.json |
-| `BM_BASE_URL` | پایهٔ URL عمومی |
-| `BM_DEV_MODE` | `true`/`false` — جایگزین `DEV_MODE` |
-| `BM_ADMIN_USER` / `BM_ADMIN_PASS` / `BM_ADMIN_EMAIL` / `BM_ADMIN_PHONE` | ساخت مدیر روی دیتابیس خالی |
-| `BM_SOLO_LIMIT_MS` | سقف تماس تک‌نفره (پیش‌فرض ۱۵ دقیقه؛ بعد از آن اتاق بسته می‌شود) |
-| `BM_CALL_FILE_MAX` | حداکثر حجم فایل مشترک اتاق (پیش‌فرض ۵۰ مگابایت) |
-| `BM_DB_BACKUP_DIR` / `BM_DB_BACKUP_MIN` | پشتیبان‌گیری دوره‌ای از دیتابیس (نگه‌داشتن ۵ نسخهٔ آخر) |
-| `BM_USERS_DB_PATH` / `BM_USERS_DB_EXPORT_DIR` | مسیر آرشیو کاربران و پوشهٔ خروجی JSON |
-| `NEON_DATABASE_URL` (یا `BM_NEON_DATABASE_URL`) | آینهٔ Postgres کاربران؛ بدون آن Neon غیرفعال است |
-| `BM_STORE_PLAINTEXT_PASSWORDS` | پیش‌فرض روشن (جدول `user_passwords`)؛ با `false` خاموش می‌شود |
-| `BM_TURN_SERVERS` | رلهٔ خودتان: `turn:host:3478\|user\|pass;…` یا JSON مثل `iceServers` |
-| `BM_TURN_PUBLIC` | `0` = بدون رلهٔ عمومی، `1` = رلهٔ عمومی حتی وقتی رلهٔ مالک هست (پیش‌فرض: فقط بدون رلهٔ مالک) |
-| `BM_TURN_CREDS_URL` / `BM_TURN_CREDS_TOKEN` | هر سرویس TURN رایگانی که اعتبارنامهٔ کوتاه‌عمر JSON می‌دهد (اختیاری؛ پیش‌فرض لازم نیست) |
-| `BM_TURN_PROBE_MIN` / `BM_TURN_PROBE_TIMEOUT_MS` | دورهٔ بررسی سلامت رله (پیش‌فرض ۳۰ دقیقه؛ `0` = خاموش) و مهلت هر تلاش (پیش‌فرض ۴۰۰۰ms) |
-| `CF_TURN_KEY_ID` / `CF_TURN_TOKEN` | اختیاری — رلهٔ Cloudflare؛ برای گرفتنش حساب کلودفلر لازم است، پس **پیش‌فرض نیست** |
-
----
-
-## صفحات و API
-
-**صفحات** (همه زیر `/black-meet`):
-
-| مسیر | قالب | توضیح |
-|---|---|---|
-| `/` و `/login` | `index.ejs` | ورود/ثبت‌نام (ایمیل، موبایل+OTP، حالت انتظار تایید) |
-| `/home` | `home.ejs` | جلسه‌های اخیر، ساخت/پیوستن با لینک یا کد، زنگ اعلان‌ها |
-| `/create` | `create.ejs` | ساخت جلسه (کیفیت، خصوصی/عمومی، ورود بدون تایید) |
-| `/meeting?room=…` | `call.ejs` | اتاق تماس |
-| `/messages` | `messages.ejs` | چت مدیر/ادمین، گفتگوها، پیام عمومی |
-| `/members` | `admin_members.ejs` | مدیریت اعضا، درجات، درخواست‌ها (با دسترسی نقش) |
-| `/profile` | `profile.ejs` | نام نمایشی، آواتار، آیکون سایت (مدیر)، خروج |
-| `/forgot-password?id=…` | `forgot_password.ejs` | بازیابی رمز / چت با مدیر |
-| `/theme.css` | — | تم انتخاب‌شده از کوکی `bm_theme` |
-| `/site-icon` | — | آیکون سایت از دیتابیس (`Cache-Control: no-cache`) |
-| `/site-proxy?u=…` | — | پروکسی سایت مشترک (هم‌مبدأ، با محافظت SSRF) |
-| `/call-file/:id` | — | فایل مشترک اتاق (فقط برای اعضا؛ خروجی پیوست برای غیرقابل‌نمایش) |
-
-**API** (همه زیر `/black-meet/api`):
-
-- **احراز هویت:** `signup`، `login/phone`، `login/resend`، `login/verify`، `login/email`، `logout`، `socket-token`
-- **جلسه‌ها:** `meetings/create`، `meetings/info`، `meetings/message`، `meetings/emoji`،
-  `meetings/approve|reject|remove|mute|delete|leave`
-- **پروفایل:** `profile/update`، `profile/avatar`، `profile/display-name-status`
-- **پیام‌ها و اعلان‌ها:** `messages/user`، `messages/conversations`، `messages/unread`،
-  `messages/read-all`، `announcements`
-- **مدیریت:** `admin/members`، `admin/signup-mode`، `admin/signup-requests` (+ `…/message`)،
-  `admin/block`، `admin/site-icon`، `admin/site-icon/reset`، `turn-status` (وضعیت زندهٔ رله‌ها)
-- **آرشیو کاربران (مدیر):** `admin/users-archive`، `…/download`، `…/restore`، `…/export`
-- **فایل تماس:** `POST call/file`، `GET call/file/:id`
-- **سایر:** `themes`، `GET members/:userId` (برای دو کاربرِ هم‌اتاق یا خود فرد)، `internal`
-
-نام رویدادهای Socket.IO فقط در `shared/socket-events.js` تعریف می‌شوند (گلوبال `BMEv` در مرورگر و
-`require` در Node) — هرگز به‌صورت رشتهٔ inline استفاده نشود.
-
----
-
-## نحوه استفاده
-1. **ورود:** با ایمیل+رمز، یا شماره موبایل+کد OTP (در `DEV_MODE` کد در خود صفحه دیده می‌شود).
-   در حالت «فقط با تایید مدیر»، فرم ثبت‌نام به‌جای ساخت حساب، درخواست ثبت می‌کند و متقاضی
-   با مدیر چت می‌کند تا تایید شود.
-2. **ایجاد تماس:** از داشبورد «ایجاد جلسه جدید»؛ لینک عمومی می‌گیرید. سقف روزانهٔ هر درجه
-   در همان صفحه نمایش داده می‌شود.
-3. **پیوستن:** لینک/کد تماس را در باکس جستجوی داشبورد وارد کنید.
-   اگر «ورود بدون تایید ادمین» خاموش باشد، ورود عضو به‌صورت **درخواست ورود** به ادمین می‌رسد
-   (اعلان + صدا + کارت در پنل ادمین) و ادمین تایید/رد می‌کند.
-4. **اتاق تماس:** میکروفون/دوربین/اشتراک صفحه، چت، ایموجی، لیست اعضا؛ ادمین می‌تواند عضو را
-   حذف/مسدود کند، صدای همه را قطع کند و میکروفون/دوربین/اشتراک را **قفل** کند
-   (قفل فقط آزادسازی است، روشن‌کنندهٔ اجباری نیست).
-
----
-
-## اتاق تماس (جزئیات)
-
-**کنترل‌های رسانه**
-- میکروفون با **سرکوب نویز** (کلید `#btn-noise`، در localStorage ذخیره می‌شود).
-- دوربین با منوی ⋮ برای انتخاب دستگاه (جلو/عقب + همهٔ `videoinput`ها).
-- اشتراک صفحه با پنل از پیش‌تنظیم کیفیت (360/480/720/1080/اصلی) + چک‌باکس **صدای صفحه**؛
-  در موبایل که `getDisplayMedia` ندارد، دوربین به‌عنوان اشتراک فعال می‌شود.
-- **پینگ** روی هر کاشی (ms، با رنگ سبز/زرد/قرمز).
-- **ایموجی زنده با صدا** (صداها با Web Audio ساخته می‌شوند، فایل صوتی/CDN در کار نیست).
-- **چت با نوتیفیکیشن شناور** داخل اتاق (کلیک → باز شدن پنل چت).
-
-**چیدمان**
-- بزرگ‌نمایی تمام‌صفحهٔ هر کاشی (`#max-overlay`) با حفظ نوار کنترل (قابل مخفی‌کردن و برگرداندن).
-- چیدمان واکنش‌گرا: دسکتاپ چندستونه، موبایل ۲ ستونه و تک‌ستونه در حالت بزرگ‌نمایی.
-- نوار کنترل تلفن داخل خودش اسکرول افقی دارد (صفحه اصلی اسکرول نمی‌شود).
-
-**سطح‌های مشترک (منوی `#btn-web`)**
-- **لینک سایت:** iframe از طریق `/site-proxy` (هم‌مبدأ تا اسکرول/کلیک هم‌زمان ممکن باشد)؛
-  اسکرول، کلیک و جابه‌جایی صفحه بین همه منتقل می‌شود؛ سایت‌های خصوصی/داخلی بلاک‌اند (محافظت SSRF).
-- **لینک ویدیو:** YouTube/Aparat (تبدیل خودکار به embed) با پخش/توقف/seek مشترک.
-- **لینک صدا:** پخش‌کنندهٔ صوتی مشترک (دیسک، نوار پیشروی، صدا) — یکی پخش/توقف کند همه با هم.
-- **فایل مشترک:** آپلود (drag&drop یا کلیک) و نمایش برای همه؛ فقط تا پایان جلسه نگه داشته می‌شود
-  و با بستن اتاق پاک می‌شود.
-- کلید **«دسترسی همزمان»**: روشن = همه با هم می‌رانند؛ خاموش = هر کس نسخهٔ خودش را دارد.
-- هر سطح بزرگ‌نمایی کلی دارد و ادمین می‌تواند همه را حذف کند.
-
-**ابزارهای ادمین**
-- پنل اعضا/ادمین داخل اتاق: حذف، مسدودسازی، قفل صدا/تصویر/اشتراک، سوئیچ «ورود بدون تایید».
-- **تحویل ادمین:** وقتی آخرین ادمین اتاق برود، بعد از چند ثانیه یکی از اعضا ادمین می‌شود
-  (با اولویت بیشترین فعالیت در چت) و `ADMIN_CHANGED` به همه اطلاع می‌دهد.
-- **سقف تک‌نفره:** تماسی که فقط یک نفر در آن بماند بعد از `BM_SOLO_LIMIT_MS` (پیش‌فرض ۱۵ دقیقه)
-  بسته می‌شود؛ با آمدن نفر دوم لغو می‌شود.
-
-**پایداری صدا/تصویر** (مهم‌ترین بخش پایداری تماس)
-- وقتی میکروفون بی‌صداست، یک **ترک بی‌صدا (silent keepalive)** جای آن ارسال می‌شود تا RTP و
-  ICE زنده بمانند و وسط صحبت صدا قطع نشود.
-- بازیابی خودکار ICE (`disconnected`/`failed` → `restartIce` با مهلت ۴ ثانیه + offer مجدد).
-- باز کردن **قفل autoplay مرورگر** با اولین لمس (`tryPlay`)؛ ترک مردهٔ دوباره‌گرفته می‌شود
-  (`ensureMicTrack`/`ensureCameraTrack`) — دیگر «تا رفرش بی‌صدا» نداریم.
-
-**رله (TURN) و تماس بین دو شبکه**
-- دو نفر روی شبکه‌های مختلف (موبایل + وای‌فای، CGNAT، NAT متقارن) با STUN تنها به هم
-  نمی‌رسند؛ بدون رله، ICE در حالت `checking` می‌ماند و تماس **بی‌صدا و بی‌تصویر** است،
-  بدون هیچ خطایی. رله این را حل می‌کند.
-- فهرست ICE از `server/lib/turn.js` می‌آید (`turnConfig()` در helpers آن را به
-  `window.INIT.iceServers` می‌دهد) به این ترتیب:
-  1. رلهٔ خودِ مالک: `BM_TURN_SERVERS` یا `turnServers` در `config.json`
-     (فرمت فشرده `turn:host:3478|user|pass;…` یا JSON مثل `iceServers`).
-  2. سرویس TURN دلخواه که اعتبارنامهٔ کوتاه‌عمر می‌دهد: `BM_TURN_CREDS_URL`
-     (خروجی `{iceServers:[…]}` یا `{urls,username,credential}` یا آرایه؛ TTL از `ttl`).
-     هیچ سرویس خاصی در کد ثابت نشده — هر چیزی که رایگان باشد وصل می‌شود.
-  3. رلهٔ محلی `turn_host.txt` (فقط اگر `turn.user`/`turn.pass` در config باشد).
-  4. **رلهٔ عمومی و کاملاً رایگان `turn.jami.net`** (UDP + TCP روی ۳۴۷۸) — بدون حساب،
-     بدون کارت بانکی، و همان چیزی که «تماس بین دو شبکه» را پیش‌فرض کار می‌اندازد.
-     از ایران تست شده: Allocate و عبور واقعی صدا+تصویر. با `BM_TURN_PUBLIC=0` خاموش و
-     با `=1` اجباری می‌شود.
-- **بررسی سلامت رله:** در بوت و هر ۳۰ دقیقه یک TURN Allocate واقعی (RFC 5766، بدون
-  کتابخانهٔ اضافه) برای همهٔ رله‌ها زده می‌شود؛ نتیجه در `logs` و در
-  `GET /black-meet/api/turn-status` (فقط مدیر) دیده می‌شود — هاست‌ها و زمان پاسخ،
-  هرگز اعتبارنامه. با `?probe=1` همان لحظه دوباره بررسی می‌شود. رله‌ای که جواب نداد از
-  فهرست حذف نمی‌شود، فقط به انتهای فهرست می‌رود (شبکهٔ کاربر ممکن است ببیند).
-- اعتبارنامه‌ها هیچ‌وقت لاگ نمی‌شوند (فقط `summary()` که `auth: true/false` می‌دهد).
-- **بنر «اتصال برقرار نشد»** (`#net-banner` در `call.ejs`): اگر بعد از ۱۲ ثانیه هیچ peer
-  به `connected` نرسد (یا `failed` شود)، نام طرف مقابل و علت شبکه نمایش داده می‌شود با
-  دکمهٔ **تلاش دوباره** (`bmRetryIce()` = ICE تازه برای همه بدون رفرش) و بستن.
-  عمداً «بی‌صدا» نیست: قبلاً همین حالت شبیه خرابی کل اپ به‌نظر می‌رسید.
-- میکروفون و دوربین **جدا** گرفته می‌شوند؛ رد شدن اجازهٔ یکی، دیگری را از کار نمی‌اندازد و
-  علت دقیق (اجازه/مشغول/پیدا نشد) به‌صورت toast گفته می‌شود. اگر صفحه روی http (غیر
-  localhost) باز شود، `mediaDevices` وجود ندارد و همان لحظه پیام می‌دهد.
-
----
-
-## پیام‌رسانی، اعلان‌ها و پروفایل
-
-- **صفحهٔ پیام‌ها:** لیست گفتگوها در سایدبار + مکالمه با **مدیر/ادمین** (`messages?chat=admin`)
-  + گفتگوهای خصوصی بین کاربران + **پیام عمومی (اعلان)** برای مدیر/پریمیوم.
-  نام فرستندهٔ هر پیام روی حباب نمایش داده می‌شود (هم به‌صورت زنده، هم بعد از رفرش).
-- **نشان ناخوانده:** در خانه روی زنگ (`bell-btn`) و روی هر گفتگو؛ باز کردن صفحهٔ پیام‌ها
-  همه را خوانده می‌کند (طبق درخواست).
-- **زنگ اعلان‌ها:** باز شدن پنل با فهرست، مرتب‌سازی جدید/قدیمی، نشان «جدید» تا زمان دیده‌شدن
-  و ماندگاری بعد از رفرش.
-- **پروفایل:** نام نمایشی (حداکثر **یک بار در روز** — سمت سرور اعمال می‌شود)، آواتار،
-  کلیدهای دسترسی (پیام‌ها/اعضا در موبایل)، **کارت «آیکون سایت» فقط برای مدیر**،
-  و دیالوگ تایید خروج.
-
----
-
-## آیکون سایت در دیتابیس
-
-- جدول `bm_assets` (`server/lib/siteicon.js`) نام/نوع/بایت/زمان را نگه می‌دارد.
-- در اولین خواندن از `icons/SiteIcon.png` (آیکون پیش‌فرض) پر می‌شود؛ بعد از آن **دیتابیس تنها منبع است**
-  (فایل‌های `site-icon.png`/`site-icon.svg` فقط فالبک‌اند).
-- سرو: `GET /black-meet/site-icon` با `ETag` و `Cache-Control: no-cache` → تغییر فوری دیده می‌شود.
-- در `head.ejs` هم `<link rel="icon">` و هم `apple-touch-icon` به همین روت اشاره می‌کنند.
-- **نشان برند** (`<img class="bm-brand-mark">`) در ۷ صفحه کنار نام Black Meet:
-  ورود، خانه، پروفایل، پیام‌ها، مدیریت اعضا، فراموشی رمز و اتاق تماس.
-- تعویض: پروفایل مدیر → کارت «آیکون سایت» → انتخاب تصویر (png/jpeg/webp/gif/svg، سقف ۲ مگابایت)
-  یا بازگشت به پیش‌فرض؛ بدون رفرش همه جا عوض می‌شود.
-  API: `POST api/admin/site-icon` و `POST api/admin/site-icon/reset` (فقط مدیر).
-
----
-
-## سطوح دسترسی، سقف تماس روزانه و حالت ایجاد حساب
-
-- **درجه کاربران** (`server/lib/ranks.js`، ستون `users.rank`):
-  | درجه | سقف ساخت جلسه در روز | دسترسی |
-  |---|---|---|
-  | کاربر عادی (`user`) | ۲ | صفحات شخصی + تماس‌ها |
-  | ادمین (`admin`) | ۵ | دیدن اعضا و درخواست‌ها |
-  | ادمین پریمیوم (`premium`) | ۱۵ | دیدن/ویرایش اعضا + تایید/رد درخواست‌ها |
-  | مدیر اصلی | نامحدود | همه‌چیز؛ درجه و اطلاعاتش فقط توسط خودش قابل تغییر/مشاهده است |
-
-  سقف سمت سرور در `POST /api/meetings/create` اعمال می‌شود (بر اساس تاریخ محلی، نیمه‌شب ریست؛ خطا شامل `سقف تماس امروز`) و در خانه/ایجاد تماس نمایش داده می‌شود.
-- **حالت ایجاد حساب** (`server/lib/settings.js`، کلید `signup_mode` در `bm_settings`)، از منوی بالای «مدیریت اعضا»:
-  - **ایجاد حساب آزاد** (پیش‌فرض): ثبت‌نام کامل + OTP.
-  - **فقط با تایید مدیر:** اطلاعات در `signup_requests` ذخیره می‌شود، حساب تا تایید ساخته نمی‌شود و متقاضی می‌تواند از همان صفحه با دکمه «شروع چت با مدیر» پیام بفرستد.
-  - **غیرفعال:** هیچ حساب جدیدی ساخته نمی‌شود.
-- **صفحه «مدیریت اعضا»** (`/members`، سایدبار دو بخشی): لیست کاربران با ویرایش/درجه/محدودیت + لیست درخواست‌های ثبت‌نام با چت، «تایید و فعال‌سازی» و «رد».
-- اطلاعات تماس مدیر اصلی برای بقیه پنهان است (`info_hidden`) و در API هم قرمز می‌شود.
-
----
-
-## آرشیو کاربران، رمزهای خوانا و Neon
-
-- **`users_archive.db`** (`server/lib/usersdb.js`): آینهٔ کامل جدول `users` در فایلی جدا،
-  بعد از هر نوشتن به‌روز می‌شود و هر ۱۰ دقیقه هم‌گام‌سازی ایمن انجام می‌دهد.
-- **بازیابی هنگام بالا آمدن:** اگر دیتابیس اصلی خالی باشد، حساب‌ها از آرشیو (یا Neon)
-  قبل از ساخت مدیر برمی‌گردند.
-- **Neon (Postgres):** با تنظیم `NEON_DATABASE_URL` جدول `bm_users` روی Neon نگه داشته می‌شود؛
-  بدون آن همهٔ توابع بی‌اثرند و پکیج `pg` هم اصلاً لود نمی‌شود. رمز اتصال هرگز لاگ نمی‌شود.
-- **API مدیر:** `GET api/admin/users-archive` (آمار + فهرست بدون هش)،
-  `…/download` (خود فایل)، `POST …/restore {overwrite}`، `POST …/export`.
-- **رمز خوانا برای مالک** (`server/lib/plaintext.js`، پیش‌فرض روشن؛ با
-  `BM_STORE_PLAINTEXT_PASSWORDS=false` خاموش): متن رمز در جدول `user_passwords`
-  (و `user_passwords_pending` برای درخواست‌های در انتظار) کنار bcrypt نگه داشته می‌شود.
-  **هیچ API‌ای آن را برنمی‌گرداند** — فقط با دسترسی مستقیم به `black_meet.db` دیده می‌شود.
-- **پشتیبان دیتابیس:** با `BM_DB_BACKUP_DIR` هر `BM_DB_BACKUP_MIN` دقیقه (و موقع خروج)
-  اسکریپت ۵ نسخهٔ آخر را نگه می‌دارد و هنگام نبودِ فایل اصلی، جدیدترین را برمی‌گرداند.
-
----
-
-## استقرار (Render)
-
-- سرویس تکی `black-meet` با `npm start` روی پورت `PORT`؛ URL عمومی:
-  `https://black-meet.onrender.com` (همهٔ مسیرها زیر `/black-meet/`).
-- **استقرار خودکار ندارد** (ریپوی عمومی) — بعد از `git push` باید دستی اجرا شود:
-  `POST https://api.render.com/v1/services/<id>/deploys` با توکن، یا از داشبورد Render.
-- پیکربندی با env: `PORT`، `BM_DB_PATH`، `BM_SECRET`، `BM_BASE_URL`، `BM_DEV_MODE`،
-  `BM_ADMIN_*`، `NEON_DATABASE_URL`. **برای تماس بین شبکه‌ای هیچ env لازم نیست** — رلهٔ
-  عمومی رایگان (`turn.jami.net`) پیش‌فرض همراه است. اگر رلهٔ اختصاصی دارید:
-  `BM_TURN_SERVERS` یا `BM_TURN_CREDS_URL`. تغییر env **ری‌استارت نمی‌کند**؛ بعد از
-  تغییر، deploy بزنید.
-- **نکات پلن رایگان:** دیسک موقت است → با هر deploy دیتابیس SQLite پاک می‌شود
-  (کاربران از Neon/آرشیو برمی‌گردند)، سایت هنگام بی‌کاری می‌خوابد (سرد ~۳۰-۶۰ ثانیه،
-  `/login` موقع بوت `503` می‌دهد) و **نمی‌تواند خودش TURN میزبانی کند** (فقط HTTP/HTTPS
-  باز است؛ TURN به UDP/TCP روی 3478 نیاز دارد). رله از `server/lib/turn.js` می‌آید:
-  رلهٔ مالک (`BM_TURN_SERVERS`/`BM_TURN_CREDS_URL`) و در غیر این صورت رلهٔ عمومی رایگان
-  `turn.jami.net`. برای بار مصرف بالا (چند تماس هم‌زمان زیاد) یک رلهٔ اختصاصی — مثل
-  coturn روی یک VPS — توصیه می‌شود، ولی برای استفادهٔ عادی همان رایگان کافی است.
-- سلامت‌سنجی بعد از deploy: `GET /black-meet/login` باید `200` بدهد و
-  `GET /black-meet/site-icon` باید بایت تصویر برگرداند.
-
----
-
-## ساختار پروژه
 ```
 black-meet/
-├─ server/
-│  ├─ index.js          نقطه ورود Express + Socket.IO (پورت process.env.PORT یا 3000)
-│  ├─ app.js            مونت روت‌ها («/black-meet/*») + استاتیک‌های hardened
-│  │                    + /site-icon + /site-proxy + /call-file (فقط برای اعضای اتاق)
-│  ├─ sockets.js        سیگنالینگ WebRTC، قفل‌های ادمین، درخواست ورود، سقف تک‌نفره
-│  ├─ routes/pages.js   صفحات EJS + /theme.css + pageLocals (icon/asset/siteIconUrl/brandMark)
-│  ├─ routes/api.js     REST (احراز هویت، جلسه‌ها، پیام‌ها، مدیریت، آرشیو، آیکون)
-│  ├─ lib/              config, db (+پشتیبان), helpers, sessions, otp, pwd, ranks, settings,
-│  │                    themes, bus, internal, state, schema.sql, turn (فهرست ICE/TURN),
-│  │                    siteicon (آیکون دیتابیس), siteproxy (پروکسی سایت + SSRF guard),
-│  │                    callfiles (فایل مشترک), usersdb (آرشیو), neon (آینه Postgres),
-│  │                    plaintext (رمزهای خوانا)
-│  └─ views/            index (ورود), home, create, call, messages, profile,
-│                       admin_members, forgot_password + head.ejs (پارشال مشترک)
-├─ shared/socket-events.js   تک‌منبع نام رویدادهای Socket.IO (BMEv)
-├─ assets/
-│  ├─ css/styles.css    استایل سفارشی + @font-face + پیش‌فرض رنگ‌های --bm-*
-│  ├─ css/tailwind.css  خروجی build (کامیت می‌شود)
-│  └─ js/               call.js, call-web.js (سطح‌های مشترک), emoji-sfx.js, home.js,
-│                       messages.js, profile.js, admin_members.js, auth.js, live.js,
-│                       icons.js, interactions.js, logout-confirm.js, create.js,
-│                       forgot_password.js
-├─ icons/               sprite.svg + SiteIcon.png (آیکون پیش‌فرض سایت) + site-icon.png/svg + مبدأها
-├─ fonts/               Vazirmatn-Regular/Medium/Bold.woff2, Entezar, Digi Ghaf Bold,
-│                       AFSANEH, material-symbols.woff2 (همه محلی، بدون CDN)
-├─ دیزاین بلک میت/       DESIGN.md + ماکاپ‌ها + فایل تم obsidian_flux.css
-├─ bin/tunnel.ps1       زنجیره تانل وب (cloudflared محلی در bin/)
-├─ tools/gen-icons.js   بازتولید icons/sprite.svg از فونت Material (fontkit + wawoff2)
-├─ turn.js  turn-proxy.js   TURN محلی (UDP) و پراکسی TCP — فقط برای شبکهٔ خودی؛
-│                       اپ آن را آگهی نمی‌کند (رلهٔ واقعی: server/lib/turn.js)
-├─ start.bat            اجرای همه خدمات (دوبار کلیک)
-├─ logs/                خروجی لاگ‌ها (در .gitignore)
-├─ config.json          تنظیمات (در .gitignore)
-├─ users_archive.db     آرشیو کاربران (در .gitignore)
-└─ black_meet.db        دیتابیس SQLite (در .gitignore)
+├── server/
+│   ├── index.js              # Entry point - creates HTTP server, attaches Socket.IO, starts app
+│   ├── app.js                # Express app factory: middleware, static serving, route mounting
+│   ├── sockets.js            # Socket.IO server logic - all call/presence/PM events
+│   ├── routes/
+│   │   ├── pages.js          # Page routes rendering EJS views, pageLocals helpers
+│   │   └── api.js            # REST API endpoints under /black-meet/api
+│   ├── lib/                  # Core utilities and services
+│   │   ├── db.js             # SQLite connection, migrations, backup/restore
+│   │   ├── schema.sql        # Database schema (idempotent)
+│   │   ├── config.js         # App configuration loader
+│   │   ├── helpers.js        # URL helpers, tokens, formatting, turnConfig
+│   │   ├── sessions.js       # Session management (bm_sessions table)
+│   │   ├── ranks.js          # Role/rank system and permissions
+│   │   ├── settings.js       # Key-value settings (signup_mode, etc.)
+│   │   ├── pwd.js            # Password hashing (bcryptjs) with legacy plaintext upgrade
+│   │   ├── otp.js            # OTP generation and verification
+│   │   ├── state.js          # In-memory rooms/userSockets Maps
+│   │   ├── internal.js       # Internal business logic used by sockets (async)
+│   │   ├── bus.js            # Event bus for cross-component notifications
+│   │   ├── turn.js           # ICE/TURN configuration and health probing
+│   │   ├── themes.js         # Theme CSS loading from design folder
+│   │   ├── siteicon.js       # Site icon stored in DB (bm_assets)
+│   │   ├── avatars.js        # User avatars stored in DB (bm_avatars)
+│   │   ├── callfiles.js      # Shared files in calls (temp storage)
+│   │   ├── siteproxy.js      # Same-origin proxy for shared website with SSRF protection
+│   │   ├── usersdb.js        # Users archive (separate SQLite + Neon sync)
+│   │   ├── neon.js           # Postgres mirror for users/avatars
+│   │   └── plaintext.js      # Owner-readable password storage (optional)
+│   └── views/                # EJS templates
+│       ├── head.ejs          # Common head partial (meta, CSS, scripts, globals)
+│       ├── index.ejs         # Login/Signup/OTP views
+│       ├── home.ejs          # Dashboard home
+│       ├── create.ejs        # Create meeting
+│       ├── call.ejs          # Video call room
+│       ├── messages.ejs      # Messaging
+│       ├── profile.ejs       # User profile
+│       ├── admin_members.ejs # Member management
+│       ├── forgot_password.ejs # Password recovery/chat
+│       ├── meetings.ejs      # All meetings list
+│       ├── dash_*.ejs        # Dashboard partials (sidebar, bottomnav, etc.)
+│       └── login-form.ejs    # Login form partial
+├── shared/
+│   └── socket-events.js      # BMEv constants - single source of truth
+├── assets/
+│   ├── css/
+│   │   ├── styles.css       # Custom styles, CSS variables (--bm-*), fonts
+│   │   ├── dashboard.css    # Dashboard skin styles
+│   │   └── tailwind.css     # Compiled Tailwind (committed)
+│   └── js/                  # Frontend modules (see section 9)
+├── icons/                    # SVG sprite and site icons
+├── fonts/                    # Local font files
+├── bin/
+│   ├── tunnel.ps1           # Tunnel chain script
+│   └── cloudflared.exe      # Cloudflare tunnel binary
+├── tools/
+│   └── gen-icons.js         # Generate sprite from Material Symbols
+├── start.bat                # Launch all services
+└── package.json             # Dependencies and scripts
 ```
 
 ---
 
-## رابط کاربری: آیکون، فونت، تم
+## 3. Database Schema
 
-- **آیکون‌ها:** سیستم SVG sprite است — فونت/CDNی در کار نیست.
-  سرور: `<%- icon('mic', 'cls', fill) %>` (از `pageLocals` در `server/routes/pages.js`)؛
-  کلاینت: `bmIcon(name, cls, fill)` / `setBMIcon(el, name, fill)` در `assets/js/icons.js`.
-  خروجی همیشه `<svg class="bm-ico"><use href=".../icons/sprite.svg#ic-name"></use></svg>` است.
-  بازتولید sprite: `npm i --no-save fontkit wawoff2` سپس `node tools/gen-icons.js`
-  (هر `npm install` معمولی این دو پکیج را حذف می‌کند و باید دوباره نصب شوند).
-- **فونت‌ها:** متن فارسی **`Vazirmatn`** (سه وزن Regular/Medium/Bold، با `Entezar` به‌عنوان
-  فالبک)، هدلاگ/برند لاتین **`Digi Ghaf Bold`**، و `AFSANEH` (نستعلیق) فقط با کلاس `.font-brand`
-  (فعلاً جایی استفاده نمی‌شود). همه محلی در `fonts/` هستند؛ CDN گوگل حذف شده (فیلتر).
-- **آیکون سایت:** از دیتابیس می‌آید (بخش «آیکون سایت در دیتابیس»)؛ `icons/favicon.svg`
-  فقط برای کسی است که قبلاً ذخیره کرده.
-- **تم:** رنگ‌های Tailwind به متغیر `--bm-*` وصل‌اند. پیش‌فرض‌ها در `:root`
-  داخل `assets/css/styles.css` است و فایل‌های `دیزاین بلک میت/<id>.css` روشان می‌شوند.
-  روت‌ها: `GET /black-meet/theme.css` (کوکی `bm_theme`) و `GET /black-meet/api/themes`.
-  برای افزودن تم: فایل CSS جدید در `دیزاین بلک میت/` بگذارید و `bm_theme=<id>` ست کنید.
-- **Tailwind:** بعد از افزودن کلاس جدید: `npm run tailwind:build`
-  (JIT فقط `server/views/**/*.ejs`، `assets/js/**/*.js` و `shared/**/*.js` را اسکن می‌کند).
+All tables defined in `server/lib/schema.sql`. Timestamps are stored as local time strings written by the app (via `sqlNow()`).
+
+### Core Tables
+
+#### `users`
+Primary user accounts.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | User ID |
+| `full_name` | TEXT NOT NULL | - | Full name |
+| `username` | TEXT NOT NULL | - | Unique username |
+| `email` | TEXT NOT NULL | - | Unique email |
+| `phone` | TEXT NOT NULL | - | Unique phone |
+| `password_hash` | TEXT NOT NULL | - | bcrypt hash |
+| `display_name` | TEXT NOT NULL | - | Display name shown in UI |
+| `is_manager` | INTEGER NOT NULL | 0 | 1 if main manager (super admin) |
+| `is_limited` | INTEGER NOT NULL | 0 | 1 if account is restricted |
+| `rank` | TEXT NOT NULL | 'user' | `user` \| `admin` \| `premium` (ignored if `is_manager=1`) |
+| `avatar_color` | TEXT NOT NULL | '#4f46e5' | Avatar background color |
+| `avatar` | TEXT | NULL | Avatar URL/path with cache-buster |
+| `last_activity` | TEXT | NULL | Last activity timestamp |
+| `created_at` | TEXT NOT NULL | - | Account creation time |
+
+**Indexes:** `uq_users_username`, `uq_users_email`, `uq_users_phone`
+
+#### `bm_settings`
+Key-value configuration.
+| Column | Type | Purpose |
+|---|---|---|
+| `key` | TEXT PRIMARY KEY | Setting name |
+| `value` | TEXT NOT NULL | Setting value |
+
+Common keys: `signup_mode` (`open`/`approval`/`closed`), `display_name_change:<userId>` (timestamp of last change).
+
+#### `signup_requests`
+Pending signups in approval mode.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Request ID |
+| `full_name` | TEXT NOT NULL | - | Applicant name |
+| `username` | TEXT NOT NULL | - | Requested username |
+| `email` | TEXT NOT NULL | - | Email |
+| `phone` | TEXT NOT NULL | - | Phone |
+| `password` | TEXT NOT NULL | - | **Hashed** password |
+| `status` | TEXT NOT NULL | 'pending' | `pending` \| `approved` \| `rejected` |
+| `created_at` | TEXT NOT NULL | - | Request time |
+| `decided_at` | TEXT | NULL | Decision time |
+| `decided_by` | INTEGER | NULL | Admin user ID who decided |
+
+**Index:** `idx_signup_requests_status`
+
+#### `signup_request_messages`
+Chat thread between applicant and manager for pending requests.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Message ID |
+| `request_id` | INTEGER NOT NULL | - | FK to `signup_requests.id` |
+| `body` | TEXT NOT NULL | - | Message content |
+| `from_manager` | INTEGER NOT NULL | 0 | 1 if sent by manager |
+| `created_at` | TEXT NOT NULL | - | Timestamp |
+
+**Index:** `idx_signup_req_msg`
+
+#### `verification_codes`
+OTP codes for signup/login.
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | ID |
+| `identifier` | TEXT NOT NULL | Phone/email |
+| `code` | TEXT NOT NULL | OTP code |
+| `purpose` | TEXT NOT NULL | `signup` \| `login_phone` |
+| `expires_at` | TEXT NOT NULL | Expiration time |
+| `created_at` | TEXT NOT NULL | Creation time |
+
+**Indexes:** `idx_vc_identifier`, `idx_vc_ident_purpose`
+
+#### `meetings`
+Meeting rooms.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Meeting ID |
+| `room_id` | TEXT NOT NULL | - | Public room identifier (unique) |
+| `title` | TEXT NOT NULL | - | Meeting title |
+| `creator_id` | INTEGER NOT NULL | - | Creator user ID |
+| `active` | INTEGER NOT NULL | 1 | 1 if active |
+| `default_media` | INTEGER NOT NULL | 1 | Default media state |
+| `open_join` | INTEGER NOT NULL | 0 | 1 if join without approval enabled |
+| `created_at` | TEXT NOT NULL | - | Creation time |
+
+**Indexes:** `uq_meetings_room_id`, `idx_meetings_creator`
+
+#### `meeting_participants`
+Participants in meetings.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Participant record ID |
+| `meeting_id` | INTEGER NOT NULL | - | FK to `meetings.id` |
+| `user_id` | INTEGER NOT NULL | - | FK to `users.id` |
+| `display_name` | TEXT NOT NULL | - | Display name at join time |
+| `username` | TEXT NOT NULL | - | Username at join time |
+| `status` | TEXT NOT NULL | 'pending' | `pending` \| `approved` \| `removed` |
+| `role` | TEXT NOT NULL | 'member' | `admin` \| `member` |
+| `muted` | INTEGER NOT NULL | 0 | Mute state |
+| `cam_on` | INTEGER NOT NULL | 0 | Camera state |
+| `sharing` | INTEGER NOT NULL | 0 | Screen share state |
+| `joined_at` | TEXT NOT NULL | - | Join time |
+
+**Indexes:** `uq_participants_meeting_user`, `idx_participants_meeting`
+
+#### `messages`
+In-call chat messages.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Message ID |
+| `meeting_id` | INTEGER NOT NULL | - | FK to `meetings.id` |
+| `user_id` | INTEGER NOT NULL | - | Sender user ID |
+| `display_name` | TEXT NOT NULL | - | Sender name |
+| `body` | TEXT NOT NULL | - | Message content |
+| `client_msg_id` | TEXT | NULL | Client-generated message ID for deduplication |
+| `created_at` | TEXT NOT NULL | - | Timestamp |
+
+**Indexes:** `idx_messages_meeting`, `idx_messages_meeting_id`, `uq_messages_client`
+
+#### `emoji_events`
+Emoji reactions in calls.
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | ID |
+| `meeting_id` | INTEGER NOT NULL | Meeting ID |
+| `user_id` | INTEGER NOT NULL | User ID |
+| `display_name` | TEXT NOT NULL | Display name |
+| `emoji` | TEXT NOT NULL | Emoji character |
+| `created_at` | TEXT NOT NULL | Timestamp |
+
+**Indexes:** `idx_emoji_meeting`, `idx_emoji_meeting_id`
+
+#### `meeting_blocks`
+Blocked users per meeting.
+| Column | Type | Purpose |
+|---|---|---|
+| `meeting_id` | INTEGER NOT NULL | Meeting ID (composite PK) |
+| `user_id` | INTEGER NOT NULL | Blocked user ID |
+
+**Index:** `idx_blocks_user`
+
+#### `pv_messages`
+Private messages between users and manager.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | - | Message ID |
+| `user_id` | INTEGER NOT NULL | - | Thread owner (the user) |
+| `from_manager` | INTEGER NOT NULL | 0 | 1 if from manager |
+| `body` | TEXT NOT NULL | - | Message content |
+| `seen` | INTEGER NOT NULL | 0 | Read status |
+| `client_msg_id` | TEXT | NULL | Client message ID |
+| `created_at` | TEXT NOT NULL | - | Timestamp |
+
+**Indexes:** `idx_pv_user`, `uq_pv_client`
+
+#### `announcements`
+Public announcements.
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | ID |
+| `body` | TEXT NOT NULL | Announcement content |
+| `created_at` | TEXT NOT NULL | Timestamp |
+
+#### `bm_sessions`
+Server-side sessions.
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `sid` | TEXT PRIMARY KEY | - | Session ID |
+| `data` | TEXT NOT NULL | '{}' | JSON session data |
+| `created_at` | TEXT NOT NULL | - | Creation time |
+| `updated_at` | TEXT NOT NULL | - | Last update |
+
+#### `bm_assets`
+Site assets (e.g., site icon) stored in DB.
+| Column | Type | Purpose |
+|---|---|---|
+| `name` | TEXT PRIMARY KEY | Asset name |
+| `mime` | TEXT NOT NULL | MIME type |
+| `data` | BLOB NOT NULL | Asset bytes |
+| `updated_at` | TEXT NOT NULL | Update time |
+
+#### `bm_avatars`
+User profile pictures stored in DB (mirrored to Neon).
+| Column | Type | Purpose |
+|---|---|---|
+| `user_id` | INTEGER PRIMARY KEY | User ID |
+| `mime` | TEXT NOT NULL | MIME type |
+| `ext` | TEXT NOT NULL | File extension |
+| `data` | BLOB NOT NULL | Image bytes |
+| `updated_at` | INTEGER NOT NULL | Unix timestamp in ms |
+
+#### `migrations`
+Migration tracking.
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | ID |
+| `name` | TEXT NOT NULL | Migration name (unique) |
+| `applied_at` | TEXT NOT NULL | Application time |
+
+**Migrations applied:** `001_phase0_schema`, `002_phase1_realtime`
 
 ---
 
-## امنیت
-- رمزها با `bcryptjs`؛ نشست‌ها SQLite (`bm_sessions`) با کوکی httpOnly + SameSite=Lax
-  و CSRF (توکن ۳۲هگز در نشست) روی همه POSTها.
-- توکن سوکت با HMAC و TTL ۲۴ ساعت (`makeSocketToken`/`verifySocketToken`)؛
-  `socket.data.isManager` فقط از دیتابیس خوانده می‌شود (نه از payload کلاینت).
-- خروجی EJS escape می‌شود؛ آپلود آواتار MIME + سقف ۲ مگابایت (multer).
-- **فایل‌های اشتراکی اتاق** فقط برای اعضا سرو می‌شوند؛ نوع غیرقابل‌نمایش با
-  `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` دانلود می‌شود
-  و مونت `/uploads` فقط به `uploads/avatars` محدود است.
-- **پروکسی سایت** فقط http(s) می‌گیرد، میزبان‌های loopback/private/link-local/CGNAT را
-  بلاک می‌کند، سقف ۴ ریدایرکت، ۱۵ ثانیه timeout و ۴ مگابایت دارد.
-- رمزهای خوانا (جدول `user_passwords`) با `BM_STORE_PLAINTEXT_PASSWORDS=false` قابل خاموش‌کردن‌اند؛
-  هیچ endpoint آن را برنمی‌گرداند.
-- فایل‌های حساس (`config.json`, `.env`, `tunnel_url.txt`, `dev_otp.log`, `black_meet.db*`,
-  `users_archive.db*`) در `.gitignore` هستند؛ قبل از push اگر tracked شده‌اند `git rm --cached` بزنید.
+## 4. Socket Events (BMEv)
+
+Defined in `shared/socket-events.js`. All events are available as `window.BMEv` in browser and `require('../shared/socket-events')` in Node. `BMEv.ALL` contains all string values.
+
+### Connection / Presence
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `AUTH_HELLO` | `auth:hello` | client→server | `{name?, username?}` | Send user info after auth |
+| `PRESENCE_PING` | `presence:ping` | client→server | `{}` | Heartbeat ping |
+| `PRESENCE_ONLINE` | `presence:online` | server→client | `{userId}` | User came online |
+| `PRESENCE_OFFLINE` | `presence:offline` | server→client | `{userId}` | User went offline |
+| `CONN_STATE` | `conn:state` | server→client | `{state: 'connected'/'disconnected'/'reconnecting', userId?}` | Connection state update |
+
+### Meeting Room (Call Page)
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `CALL_JOIN` | `call:join` | client→server | `{room, user, token, sessionKey}` | Join a call room |
+| `CALL_WELCOME` | `call:welcome` | server→client | `{meeting, you, members, blocked, web, openJoin}` | Room state on join |
+| `CALL_SIGNAL` | `call:signal` | both | `{to, data: {type:'desc'|'ice', ...}}` or `{from, data}` | WebRTC signaling |
+| `CALL_CHAT_SEND` | `chat:send` | client→server | `{body, clientMsgId}` | Send in-call chat message |
+| `CHAT_NEW_MESSAGE` | `chat:new-message` | server→client | `{id, userId, name, body, clientMsgId, ts}` | New in-call message |
+| `CHAT_ACK` | `chat:ack` | server→client | `{ok, clientMsgId, id?, error?}` | Message send acknowledgment |
+| `CALL_EMOJI` | `call:emoji` | client→server | `{emoji}` | Send emoji reaction |
+| `EMOJI` | `emoji` | server→client | `{userId, name, emoji}` | Emoji received |
+| `CALL_STATUS` | `call:status` | client→server | `{muted?, cam?, sharing?, shareAudio?}` | Update media status |
+| `MEMBER_UPDATED` | `member:updated` | server→client | `{userId, muted?, cam?, sharing?, shareAudio?, is_admin?, locks?}` | Member status changed |
+| `CALL_PING` | `call:ping` | client→server | `{t}` | Latency ping |
+| `CALL_PONG` | `call:pong` | server→client | `{t}` | Latency pong response |
+| `PING_STATS` | `ping:stats` | server→client | `{pings: {userId: rtt}}` | Latency stats broadcast (every 3s) |
+
+### Shared Web Surface
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `CALL_WEB_OPEN` | `call:web-open` | client→server | `{kind:'site'|'video'|'audio'|'file', url, mode?, follow?}` | Open shared web/audio/video/file box |
+| `CALL_WEB_CLOSE` | `call:web-close` | client→server | `{}` | Close shared box (admin only) |
+| `CALL_WEB_FOLLOW` | `call:web-follow` | client→server | `{on: boolean}` | Toggle simultaneous access |
+| `CALL_WEB_RIGHTS` | `call:web-rights` | client→server | `{control?, view?}` | Set control/view permissions (admin only) |
+| `CALL_WEB_SYNC` | `call:web-sync` | client→server | `{kind:'scroll'|'click'|'navigate'|'video'|'audio'|'fscroll', ...}` | Sync actions from controller |
+| `WEB_STATE` | `web:state` | server→client | `{web: {...}|null, openJoin?}` | Shared box state update |
+| `WEB_SYNC` | `web:sync` | server→client | `{kind, userId, ...}` | Synced action for others |
+| `WEB_ERR` | `web:err` | server→client | `{msg}` | Web box error |
+
+### Member Lifecycle
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `CALL_APPROVE` | `call:approve` | client→server | `{userId}` | Approve pending member (admin) |
+| `CALL_REJECT` | `call:reject` | client→server | `{userId}` | Reject pending member (admin) |
+| `CALL_KICK` | `call:kick` | client→server | `{userId}` | Kick member (admin) |
+| `CALL_BLOCK` | `call:block` | client→server | `{userId}` | Block member (admin) |
+| `CALL_ALERT_ADMIN` | `call:alert-admin` | client→server | `{}` | Alert admins of join request |
+| `CALL_SET_OPEN_JOIN` | `call:set-open-join` | client→server | `{on: boolean}` | Toggle join without approval (admin) |
+| `OPEN_JOIN_CHANGED` | `call:open-join-changed` | server→client | `{openJoin: boolean}` | Open-join setting changed |
+| `ADMIN_CHANGED` | `admin-changed` | server→client | `{userId, name, reason, toast}` | Admin handed over |
+| `CALL_LEAVE` | `call:leave` | client→server | `{}` | Leave call room |
+| `CALL_DISABLE` | `call:disable` | client→server | `{userId, kind:'audio'|'video'|'screen', off: boolean}` | Force disable/lock or unlock (admin) |
+| `FORCE_DISABLE` | `force-disable` | server→client | `{kind, off}` | Force control state on user |
+| `MEMBER_JOINED` | `member:joined` | server→client | `{member}` | Member joined (approved) |
+| `MEMBER_LEFT` | `member:left` | server→client | `{userId}` | Member left |
+| `MEMBER_APPROVED` | `member:approved` | server→client | `{member}` | Member approved |
+| `MEMBER_PENDING` | `member:pending` | server→client | `{member}` | Member pending approval |
+| `MEMBER_BLOCKED` | `member:blocked` | server→client | `{userId}` | Member blocked |
+| `MEMBER_KICKED` | `member:kicked` | server→client | `{userId, reason}` | Member kicked |
+| `YOU_APPROVED` | `you-approved` | server→client | `{ok, via?}` | Current user approved |
+| `YOU_REJECTED` | `you-rejected` | server→client | `{ok, reason?}` | Current user rejected |
+| `YOU_REMOVED` | `you-removed` | server→client | `{ok, reason}` | Current user removed |
+| `CALL_SOLO_ENDED` | `call:alone-ended` | server→client | `{minutes}` | Solo call time limit ended |
+| `YOU_BLOCKED` | `you-blocked` | server→client | `{ok}` | Current user blocked |
+| `JOIN_ALERT` | `join-alert` | server→client | `{userId, name}` | Alert for pending join request |
+
+### 1:1 Call Requests
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `CALLREQ_SEND` | `callreq:send` | client→server | `{toUserId, roomId?}` | Send call request |
+| `CALLREQ_INCOMING` | `callreq:incoming` | server→client | `{requestId, fromUserId, fromName}` | Incoming call request |
+| `CALLREQ_ACCEPT` | `callreq:accept` | client→server | `{requestId}` | Accept request |
+| `CALLREQ_REJECT` | `callreq:reject` | client→server | `{requestId}` | Reject request |
+| `CALLREQ_CANCEL` | `callreq:cancel` | client→server | `{requestId}` | Cancel request |
+| `CALLREQ_ACCEPTED` | `callreq:accepted` | server→client | `{requestId, fromUserId, roomId}` | Request accepted |
+| `CALLREQ_REJECTED` | `callreq:rejected` | server→client | `{requestId, fromUserId}` | Request rejected |
+| `CALLREQ_CANCELLED` | `callreq:cancelled` | server→client | `{requestId, reason}` | Request cancelled |
+| `CALLREQ_BUSY` | `callreq:busy` | server→client | `{requestId, fromUserId}` | Recipient busy |
+| `CALLREQ_ENDED` | `callreq:ended` | server→client | `{requestId, byUserId}` | Call request ended |
+
+### Private Messages
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `PV_SEND` | `pv:send` | client→server | `{toUserId, body, clientMsgId}` | Send PM (manager only) |
+| `PV_NEW_MESSAGE` | `pv:new-message` | server→client | `{id, fromUserId, fromName, body, clientMsgId, fromManager, ts}` | New PM |
+| `PV_ACK` | `pv:ack` | server→client | `{ok, clientMsgId, id?, error?}` | PM send ack |
+| `PV_CONVERSATION_UPDATED` | `pv:conversation-updated` | server→client | `{userId, lastBody, fromManager, ts}` | Conversation list update |
+
+### Notifications & Misc
+| Constant | String Value | Direction | Payload | Description |
+|---|---|---|---|---|
+| `NOTIF_NEW` | `notif:new` | server→client | `{id, body, created_at, fromUserId?}` | New notification/announcement |
+| `SR_NEW_MESSAGE` | `sr:new-message` | server→client | `{requestId, message}` | New message in signup request thread |
+| `SR_NEW_REQUEST` | `sr:new-request` | server→client | `{requestId, name, ts}` | New signup request |
+| `BM_SUBSCRIBE` | `bm:subscribe` | client→server | `{room}` | Subscribe to broadcast room |
+| `BM_EVENT` | `bm:event` | server→client | `{event, data}` | Broadcast event envelope |
+| `ERR` | `err` | server→client | `{ok:false, error/msg}` | Error event |
 
 ---
 
-## عیب‌یابی
-- **تماس برقرار نمی‌شود / صدا و تصویر دوطرفه نمی‌آید (میان NAT):** اول ببینید بنر
-  «اتصال صدا و تصویر با … برقرار نشد» بالا آمده یا نه؛ اگر آمده یعنی ICE راه ندارد.
-  فهرست رله را چک کنید: `node -e "console.log(require('./server/lib/turn').summary())"`
-  باید حداقل یک ورودی `turn:` با `auth:true` داشته باشد. سپس همان لحظه سلامت رله را
-  ببینید — در سرور: `node -e "require('./server/lib/turn').probeAll().then(h=>console.log(h.results))"`
-  یا در سایت با حساب مدیر: `GET /black-meet/api/turn-status?probe=1` (هاست + زمان پاسخ،
-  بدون اعتبارنامه). پیش‌فرض همین کافی است و **هیچ حساب/کارت بانکی لازم ندارد**؛ اگر رلهٔ
-  عمومی از شبکه‌ای فیلتر بود، `BM_TURN_SERVERS` یا `BM_TURN_CREDS_URL` را ست کنید.
-  `turn.js`/`turn-proxy.js` محلی از طرف اپ آگهی نمی‌شود.
-- **صدای وسط صحبت قطع می‌شود / تا رفرش بی‌صدا است:** این باگ‌ها حل شده‌اند
-  (ترک بی‌صدا برای زنده نگه‌داشتن RTP/ICE، بازیابی خودکار ICE، باز کردن قفل autoplay با اولین لمس
-  و دوباره گرفتن ترک مرده). اگر باز هم دیدید: `window.__bmPcMap` را در کنسول باز کنید و با
-  `getStats()` ببینید `outbound-rtp` بایت ارسال می‌کند یا نه.
-- **تانل عمومی نمی‌آید:** لاگ `%TEMP%\bm-tunnel\bmt-chain.log` را ببینید؛
-  در برخی شبکه‌ها SSH (localhost.run/serveo) resolve نمی‌شود و فقط Cloudflare کار می‌کند —
-  زنجیره خودش تا سالم شدن CF تلاش می‌کند.
-- **صدا/تصویر نمی‌آید:** دسترسی میکروفون/دوربین را بدهید؛ روی URL عمومی **https**
-  مرورگر دسترسی می‌دهد (روی http فقط `localhost` استثناست). اگر اجازه رد شود یا دستگاه
-  مشغول باشد، حالا پیام دقیق (toast) می‌آید و گرفتن میکروفون و دوربین مستقل است —
-  رد شدن یکی، دیگری را از کار نمی‌اندازد. اگر همه‌چیز اجازه دارد ولی کاشی طرف مقابل
-  آواتار/سیاه ماند، مشکل شبکه/رله است (بنر بالا را ببینید).
-- **آیکون سایت عوض نمی‌شود:** از پروفایل مدیر (کارت «آیکون سایت») انجام شود؛
-  `GET /black-meet/site-icon` باید بایت‌های جدید بدهد (بدون کش، `no-cache`).
-- **تغییرات CSS دیده نمی‌شود:** همه URLها با `asset_url()`/`asset()` ساخته شوند
-  (‎`?v=mtime` می‌گیرند)؛ مسیرهای hardcode کلاسیک‌ترین باگ است.
-- **کلاس Tailwind جدید اعمال نمی‌شود:** `npm run tailwind:build` بزنید (فایل خروجی کامیت می‌شود).
-- **استقرار Render:** بعد از push، deploy دستی است؛ بعد از آن سایت ~۳۰-۶۰ ثانیه سرد است و
-  `/login` موقع بوت `503` می‌دهد. دیتابیس SQLite با هر deploy پاک می‌شود —
-  کاربران باید از Neon برگردند (وگرنه دوباره ساخت مدیر انجام می‌شود).
-- **تست بصری:** `npm i --no-save puppeteer-core` و اسکرین‌شات با کروم سیستم
-  (`C:\Program Files\Google\Chrome\Application\chrome.exe`) گرفته می‌شود؛
-  این پکیج هم با `npm install` بعدی حذف می‌شود. برای تست تماس، **همیشه جلسهٔ تازه بسازید**
-  (با آخرین نفر خارج‌شدن، `room` غیرفعال و آدرس به `nomeeting` ریدایرکت می‌شود).
+## 5. Socket Room Logic
+
+### Room Structure (`server/lib/state.js`)
+```javascript
+{ rooms: new Map(), userSockets: new Map() }
+```
+- `rooms`: `roomId` → `{ meetingId, sockets: Map<socketId, socketInfo>, userSockets: Map<userId, Set<socketId>>, pending: Set<userId>, blocked: Set<userId>, web: {...}|null, locks: {...}|null, openJoin: boolean }`
+- `userSockets`: `userId` → `Set<socketId>` (global presence across all sockets)
+
+### Socket Info Per Connection
+Stored in `rooms.get(roomId).sockets.get(socketId)`:
+```javascript
+{
+  userId, name, username, avatar_color, avatar,
+  is_admin, muted, cam, sharing, approved, status,
+  sessionKey  // per page load for reconnect detection
+}
+```
+
+Socket-level data: `socket.data.userId`, `socket.data.meetingId`, `socket.data.isManager` (DB-derived, **never from client**), `socket.data.room`, `socket.data.is_admin`, `socket.data.name`, `socket.data.username`.
+
+### Join Flow (`CALL_JOIN`)
+1. Validate token, check `room` exists, verify user matches token
+2. Call `internal.meetingState(room, uid)` to get meeting state, check blocks
+3. Determine role: `isAdmin` from `meetingState` or role from DB; `approvedBefore = (you.status === 'approved') || isAdmin`
+4. Create room if not exists, handle reconnection (same `sessionKey` = silent drop of old socket; different = send `YOU_REMOVED`)
+5. Build socket info, check `internalRaw.isOpenJoin(meetingId)` if not approved (approve directly, set `openJoin: true`)
+6. Join socket room, store in `rooms.sockets` and `rooms.userSockets`
+7. Send `CALL_WELCOME` with `you` (with locks), `members` (excluding self, with locks), `blocked`, `web`, `openJoin`
+8. Replay admin locks via `FORCE_DISABLE` if any
+9. If approved → emit `YOU_APPROVED`, `MEMBER_JOINED`; else add to `pending`, emit `MEMBER_PENDING`
+10. Call `updateSoloTimer(room)` - if solo, start 15min timer
+
+### Call Admin/Host Identification
+- **In call room**: Determined by `part.role === 'admin'` in `meeting_participants` table. Set at join from `meetingState()`. Tracked per-socket as `s.is_admin`. Admin status can be transferred via `scheduleAdminHandover()` if the last admin leaves (picks most chat-active member or random, after 2.5s delay with reload detection). Handed over member gets `ADMIN_CHANGED` and admin panel without reload.
+- **Meeting creator**: `meetings.creator_id` is the original creator. Used for API checks (`/meetings/remove`, `/meetings/delete` by creator). Room admin in socket is separate from meeting creator.
+- **Main manager**: `users.is_manager = 1` is the super admin across the entire app (above ranks). Set only via env/config seeding.
+
+### Leave/Disconnect
+- `leaveRoom(sock)`: Remove from `rooms.sockets`, remove from user's socket set in room; if user's last socket in room → remove from `userSockets`, delete from `pending`, emit `MEMBER_LEFT`, schedule admin handover if they were admin. If room empty → delete room, cancel solo timer, schedule meeting close (5s delay).
+- On `disconnect`: call `leaveRoom`, remove from global `userSockets`, emit `PRESENCE_OFFLINE` if last socket for user.
+
+### Permissions in Socket Handlers
+- `requireRoomAdmin()`: Returns room if current socket is admin in room, else `null`
+- `canControlWeb(r, s)`: If `web.controlAll !== false` return true, else check if in `controllers` set
+- `canViewWeb(r, s)`: If `web.viewersAll !== false` return true, else check if in `viewers` set
+- `socket.data.isManager`: DB-derived at connection, gates `PV_SEND`, `pvToManagers`, etc. Never trusted from client.
+
+---
+
+## 6. REST API Reference
+
+All endpoints under `/black-meet/api` (mounted in `app.js` line ~58). CSRF required on POST. Auth checked via `sessions.currentUser()` / `requireLoginApi()`.
+
+### Auth / OTP
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/signup` | No | Yes | `{full_name, username, email, phone, password}` | `open`: `{ok:true, phone, purpose:'signup', otp?}`. `approval`: `{ok:true, pending:true, phone, msg}`. `closed`: `{ok:false, msg}` |
+| POST | `/api/login/phone` | No | Yes | `{phone}` | `{ok:true, phone, purpose:'login_phone', otp?}` |
+| POST | `/api/login/resend` | No | Yes | `{phone, purpose?}` | `{ok:true, msg, otp?}` |
+| POST | `/api/login/verify` | No | Yes | `{phone, code, purpose, next?}` | `{ok:true, redirect}` |
+| POST | `/api/login/email` | No | Yes | `{email, password, next?}` | `{ok:true, redirect}` or `{ok:false, msg}` |
+| POST | `/api/logout` | Yes | No* | `{}` | `{ok:true, redirect}` |
+| GET | `/api/socket-token` | Yes | No | - | `{ok:true, token, user_id}` |
+
+### Meetings
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/meetings/create` | Yes | Yes | `{title?, default_media?, open_join?}` | `{ok:true, room_id, redirect, share_url, quota}`. Checks `is_limited`, daily quota by rank |
+| GET | `/api/meetings/info` | No | No | `?room=` | `{ok:true, room_id, title}` |
+| POST | `/api/meetings/message` | Yes | Yes | `{meeting_id, body}` | `{ok:true}` |
+| POST | `/api/meetings/emoji` | Yes | Yes | `{meeting_id, emoji}` | `{ok:true}` |
+| POST | `/api/meetings/approve` | Yes (creator) | Yes | `{participant_id}` | `{ok:true}` |
+| POST | `/api/meetings/reject` | Yes (creator) | Yes | `{participant_id}` | `{ok:true}` |
+| POST | `/api/meetings/remove` | Yes (creator) | Yes | `{participant_id}` | `{ok:true, user_id}` |
+| POST | `/api/meetings/mute` | Yes (creator) | Yes | `{participant_id, muted?}` | `{ok:true, user_id, muted}` |
+| POST | `/api/meetings/delete` | Yes (creator or manager) | Yes | `{meeting_id}` | `{ok:true, id}`. Closes room if active |
+| POST | `/api/meetings/leave` | Yes | Yes | `{meeting_id}` | `{ok:true}` |
+
+### Profile
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/profile/update` | Yes | Yes | `{display_name}` | `{ok:true, display_name}`. Once per day limit |
+| GET | `/api/profile/display-name-status` | Yes | No | - | `{ok:true, canChange, lastChange, displayName}` |
+| POST | `/api/profile/avatar` | Yes | Yes | multipart `avatar` (jpg/png/gif/webp, max 2MB) | `{ok:true, avatar}` (stored in DB) |
+
+### Site Icon (Admin)
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/admin/site-icon` | Yes (manager) | Yes | multipart `icon` (max 2MB) | `{ok:true, mime, size}` |
+| POST | `/api/admin/site-icon/reset` | Yes (manager) | Yes | `{}` | `{ok:true}` |
+
+### Call Files
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/call/file` | Yes (room member) | Yes | multipart `file`, form `room` | `{ok:true, file:{id,name,mime,size,viewable,room,url}}` |
+| GET | `/api/call/file/:id` | Yes (room member) | No | `?room=` | `{ok:true, file:{...}}` |
+
+### Admin - Members & Users
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| ALL | `/api/admin/members` GET/POST | Yes (canManageUsers) | Yes for POST | GET: -; POST: `action` (`update`/`set_rank`/`reset_password`/toggle limited) + params | GET: `{ok:true, users}`. POST varies by action |
+| GET | `/api/admin/users-archive` | Yes (canManageUsers) | No | - | `{ok:true, stats, users}` |
+| GET | `/api/admin/users-archive/download` | Yes (canManageUsers) | No | - | File download `users_archive.db` |
+| POST | `/api/admin/users-archive/restore` | Yes (canManageUsers) | Yes | `{overwrite?}` | `{ok:true, ...}` |
+| POST | `/api/admin/users-archive/export` | Yes (canManageUsers) | Yes | `{}` | `{ok:true, synced, exported, dir}` |
+| GET | `/api/turn-status` | Yes (canManageUsers) | No | `?probe=1` | `{ok:true, provider, publicFallback, turnCount, iceServers, probe}` |
+
+### Admin - Signup Requests & Mode
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| POST | `/api/admin/signup-mode` | Yes (canChangeSignupMode) | Yes | `{mode:'open'|'approval'|'closed'}` | `{ok:true, mode}` |
+| GET | `/api/admin/signup-requests` | Yes (canViewRequests) | No | - | `{ok:true, requests:[...with messages...], can_decide}` |
+| POST | `/api/admin/signup-requests` | Yes (canDecideRequests) | Yes | `{request_id, action:'approve'|'reject'}` | `{ok:true, status, user?}` |
+| POST | `/api/admin/signup-requests/message` | Yes (canDecideRequests) | Yes | `{request_id, body}` | `{ok:true, message}` |
+| POST | `/api/admin/block` | Yes (meeting admin or manager) | Yes | `{meeting_id, user_id}` | `{ok:true}` |
+
+### Announcements
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| ALL | `/api/announcements` GET/POST | Yes | Yes for POST | GET: -; POST: `{body}` (manager or premium only) | GET: `{ok:true, announcements}`; POST: `{ok:true}`. Broadcasts via `NOTIF_NEW` |
+
+### Messages
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| ALL | `/api/messages/user` GET/POST | No* | No | GET: `?identifier=`; POST: `{identifier, body}` | Public endpoint for manager chat (including pending applicants). GET returns user/pending + messages; POST sends message and broadcasts to managers |
+| ALL | `/api/messages/conversations` GET/POST | Yes | No | GET: `?user_id=` (manager sees all, premium sees only manager thread). POST not implemented | Manager: all conversations or thread. Premium: only admin chat thread. Stamps sender names, marks as seen |
+
+### Other
+| Method | Path | Auth | CSRF | Body/Params | Response |
+|---|---|---|---|---|---|
+| GET | `/api/themes` | No | No | - | `{ok:true, themes, current}` |
+| GET | `/api/members/:userId` | Yes | No | - | Member info for 2 users sharing active meeting or self. Redacts manager/admin info for non-managers |
+
+*Note: Some endpoints have no explicit auth check in the handler but may require session context.*
+
+---
+
+## 7. Page Routes
+
+All routes defined in `server/routes/pages.js`, mounted at `/black-meet` in `app.js`. Views rendered from `server/views/`.
+
+| Path | Method | Auth Required | EJS View | Description | Key Template Variables |
+|---|---|---|---|---|---|
+| `/`, `/login` | GET | No (redirects if logged in) | `index.ejs` | Login/Signup/OTP page | `title`, `base`, `csrf`, `asset()`, `url()`, `icon()`, `json()`, `siteIconUrl()`, `brandMark()` |
+| `/home` | GET | Yes | `home.ejs` | Dashboard with recent meetings, stats, notifications | `me`, `recent`, `stats`, `memberSince`, `isManager`, `rankLabel`, `canMembers`, `canRequests`, `canMessages`, `quota`, `quotaText`, `firstName`, `initials`, `limited` |
+| `/create` | GET | Yes | `create.ejs` | Create meeting page | `me`, `limited`, `quota`, `quotaFull`, `quotaText`, `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` |
+| `/profile` | GET | Yes | `profile.ejs` | User profile, avatar, display name, site icon (manager) | `me`, `av`, `rankLabel`, `isManager`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` |
+| `/meetings` | GET | Yes | `meetings.ejs` | All user's meetings list | `meetings`, `activeCount`, `endedCount`, `totalCount`, `limited`, `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` |
+| `/messages` | GET | Yes (canUseMessages) | `messages.ejs` | Messaging page | `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `initials` |
+| `/members` | GET | Yes (canViewMembers or canViewRequests) | `admin_members.ejs` | Member/request management | `me`, `users`, `requests`, `pendingCount`, `signupMode`, `isManager`, `canMessages`, `canCreate`, `createBlockMsg`, `canMembers`, `canRequests`, `canDecide`, `canChangeMode`, `rankLabel`, `initials` |
+| `/forgot-password` | GET | No | `forgot_password.ejs` | Password recovery / applicant chat with manager | `title`, page locals |
+| `/meeting?room=...` | GET | Yes (preserves `next` URL) | `call.ejs` | Video call room | `meeting`, `isAdmin`, `init` (with `meeting`, `me`, `token`, `iceServers`, `participants`, `messages`, `emojis`, `csrf`, `publicUrl`), `me`, `participants`, `initials`, `isManager` |
+| `/theme.css` | GET | No | (dynamic) | Theme CSS from `bm_theme` cookie | - |
+| `/site-icon` | GET | No | (dynamic) | Site icon from DB | - |
+| `/site-proxy?u=...` | GET | Yes | (proxy) | Same-origin proxy for shared website | - |
+| `/call-file/:id?room=...` | GET | Yes (room member) | (file serve) | Shared call file download/view | - |
+
+---
+
+## 8. EJS Views Reference
+
+All views in `server/views/`. All use `head.ejs` partial which injects globals: `window.BASE`, `window.__BM_LIVE_URL`, `BM_SPRITE`, favicon from `siteIconUrl()`, loads `icons.js`, and includes `theme.css`.
+
+| File | Page | Template Vars Received | Major UI Sections/IDs/Classes |
+|---|---|---|---|
+| `head.ejs` | Partial (included by all) | `base`, `title`, `asset()`, `siteIconUrl()` | Meta tags, Vazirmatn/Digi Ghaf Bold fonts, `styles.css`, `tailwind.css`, `theme.css`, `BM_SPRITE`, `icons.js`, sets `window.BASE`, `window.__BM_LIVE_URL` |
+| `index.ejs` | Login/Signup | pageLocals | Body class `bm-auth font-body-md`. `.auth-shell` with `.auth-aside` (brand panel, >=900px) and `.auth-card`. Views toggled: `view-login-options`, `view-login-email`, `view-login-phone`, `view-otp`, `view-signup`, `view-signup-pending`. OTP uses 6 `.otp-cell` inputs. Buttons use `dash-btn-*` classes. |
+| `forgot_password.ejs` | Password recovery / applicant chat | pageLocals | Body class `bm-auth font-body-md`. Auth shell with card. `#identify-box` for lookup, `#thread-box` with `#pv-messages` chat thread. Uses `.auth-bubble-row`, `.auth-bubble`. |
+| `home.ejs` | Dashboard home | `me`, `recent`, `stats`, `memberSince`, `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `quota`, `quotaText`, `firstName`, `initials` | Body class `bm-dash font-body-md`. Includes `dash_sidebar` (desktop + drawer), `dash_usermenu`, `dash_confirm`, `dash_toast`, `dash_bottomnav`. Hero section, stats grid, recent meetings `#recent-grid`, notifications bell `#bell-btn`/`#notif-popup`, join form `#join-form`/`#join-input`. |
+| `create.ejs` | Create meeting | `limited`, `quota`, `quotaFull`, `quotaText`, `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` | Body class `bm-dash font-body-md`. Dashboard shell. Form with `#meeting-title`, `#create-btn`. Themed switches for `#default-media` and `#open-join` (hidden native inputs). Hints `#media-hint`, `#openjoin-hint`. |
+| `profile.ejs` | User profile | `av`, `rankLabel`, `isManager`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` | Body class `bm-dash font-body-md`. Dashboard shell. Avatar `#ph-avatar`, name `#ph-name`, display name editor `#btn-edit-name`/`#dn-panel`, site icon card (manager only), access keys row. |
+| `messages.ejs` | Messaging | `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `initials` | Body class `bm-dash font-body-md msg-page`. **No bottom nav**. Layout: `.msg-main` with `.conv-panel` sidebar `#conv-list`/`#conv-search` and chat area `#chat-area` with `#chat-header`, `#chat-messages`, `#msg-input`/`.msg-send`. Mobile uses `#chat-back`. |
+| `meetings.ejs` | All meetings | `meetings`, `activeCount`, `endedCount`, `totalCount`, `limited`, `isManager`, `rankLabel`, `canMessages`, `canMembers`, `canRequests`, `canCreate`, `createBlockMsg`, `initials` | Body class `bm-dash font-body-md`. Dashboard shell. Filter chips, `#recent-search`, `#recent-grid` with cards, delete via `deleteRecent()`. |
+| `admin_members.ejs` | Member management | `me`, `users`, `requests`, `pendingCount`, `signupMode`, `isManager`, `canMessages`, `canCreate`, `createBlockMsg`, `canMembers`, `canRequests`, `canDecide`, `canChangeMode`, `rankLabel`, `initials` | Body class `bm-dash font-body-md`. Dashboard shell. Section switchers `#nav-members`/`#nav-requests` (dash-chip). User cards `#user-cards`, requests `#request-list`. Edit modal, rank menu, page size menu, signup mode dropdown `#mode-btn`. |
+| `call.ejs` | Video call room | `meeting`, `isAdmin`, `init` (JSON), `me`, `participants`, `initials`, `isManager` | Body class `bm-call font-body-md`. Full-screen layout. `#video-grid` (call stage), `#control-bar` with media/share/chat/web buttons, sidebar `#call-sidebar` with tabs (members/chat/admin), web box `#web-box`, maximize overlay `#max-overlay`, net banner `#net-banner`, chat toast `#chat-toast`, emoji picker. |
+| `dash_sidebar.ejs` | Sidebar partial | `activePage`, `drawer?` | Desktop sidebar + mobile drawer. Nav items for home/create/meetings/messages/members/profile. Logout button calls `logout()`. |
+| `dash_bottomnav.ejs` | Bottom nav partial | `activePage` | Mobile bottom navigation (not included on messages page). |
+| `dash_usermenu.ejs` | User menu partial | - | Dropdown menu with profile, notifications access, logout. |
+| `dash_confirm.ejs` | Confirm dialog partial | - | `#bm-confirm` modal with title/body/yes/no buttons. |
+| `dash_toast.ejs` | Toast partial | - | `#bm-toast` notification element. |
+| `login-form.ejs` | Login form partial | - | Email/password login form used in index.ejs. |
+
+---
+
+## 9. Frontend JS Modules
+
+### Core Modules
+| File | Purpose | Key Functions/Features | Socket Events |
+|---|---|---|---|
+| `assets/js/call.js` | Main call room logic (~1130+ lines) | WebRTC perfect negotiation, ICE restart, media capture (separate mic/cam), silent keepalive audio track, noise suppression, tiles/grid layout, maximize overlay, admin controls, locks, ping, shared web box integration, chat toast | Listens: `CALL_WELCOME`, `MEMBER_JOINED/LEFT/UPDATED/PENDING/APPROVED/KICKED/BLOCKED`, `YOU_APPROVED/REJECTED/REMOVED/BLOCKED`, `CALL_SIGNAL`, `CHAT_NEW_MESSAGE/ACK`, `EMOJI`, `FORCE_DISABLE`, `JOIN_ALERT`, `ADMIN_CHANGED`, `OPEN_JOIN_CHANGED`, `CALL_SOLO_ENDED`, `CALL_PONG`, `PING_STATS`, `WEB_STATE/SYNC/ERR`. Emits: `CALL_JOIN`, `CALL_SIGNAL`, `CALL_CHAT_SEND`, `CALL_EMOJI`, `CALL_STATUS`, `CALL_PING`, `CALL_APPROVE/REJECT/KICK/BLOCK/ALERT_ADMIN/SET_OPEN_JOIN/LEAVE/DISABLE` |
+| `assets/js/live.js` | Shared authenticated socket connection for non-call pages | Auto-connects with token from `/api/socket-token`, heartbeat every 25s, auto-reconnect with fresh token on auth failure, watchdog for wedged connections, event subscription system | Uses all `BMEv.ALL` events, subscribes to `bm:subscribe` rooms |
+| `assets/js/icons.js` | SVG icon helpers | `bmIcon(name, cls, fill, extra)` returns SVG string; `setBMIcon(el, name, fill)` swaps `<use>` href. Uses `window.BM_SPRITE` | - |
+| `assets/js/dashboard.js` | Dashboard UI chrome | Toast system (`bmToast`/`bmToastHide`), drawer, user menu, confirm dialog (`bmConfirm` returning Promise), notifications UI helpers, search with Persian normalization, keyboard shortcuts (⌘/Ctrl+K, Escape), focus trap, copy to clipboard (`copyMeetLink`) | - |
+
+### Page-Specific Modules
+| File | Purpose | Key Functions/Features |
+|---|---|---|
+| `assets/js/home.js` | Home dashboard logic | Recent meetings, notifications panel, join form validation, delete meeting, search/filter |
+| `assets/js/messages.js` | Messaging page | Conversation list, chat thread, send messages, admin chat, unread counts, marks read on load |
+| `assets/js/profile.js` | Profile page | Avatar upload, display name change (once per day), site icon management (manager), logout |
+| `assets/js/admin_members.js` | Member management | User list, rank changes, limit toggle, password reset, signup requests with chat, approve/reject, signup mode toggle |
+| `assets/js/create.js` | Create meeting page | Form submission, switches for default media/open join, quota display |
+| `assets/js/auth.js` | Login/signup page | View switching, phone/email login, OTP input (6 cells), signup form, validation |
+| `assets/js/forgot_password.js` | Password recovery | Find user/request thread, send messages |
+| `assets/js/call-web.js` | Shared web surface logic | Web box rendering, site proxy iframe, scroll/click sync, video/audio player sync, file display |
+| `assets/js/emoji-sfx.js` | Emoji sound effects | Web Audio synthesized sounds per emoji |
+| `assets/js/interactions.js` | UI interactions | Button press effects, etc. |
+| `assets/js/logout-confirm.js` | Logout confirmation | Uses `bmConfirm` if available, falls back to legacy modal |
+
+---
+
+## 10. CSS & Theming System
+
+### CSS Files
+| File | Purpose |
+|---|---|
+| `assets/css/styles.css` | Base styles, CSS variables, fonts (@font-face), custom utilities, scrollbars, call styles |
+| `assets/css/dashboard.css` | Dashboard skin styles (`.bm-dash`, `.bm-auth`, `.bm-call` classes) |
+| `assets/css/tailwind.css` | Compiled Tailwind CSS (committed, rebuild with `npm run tailwind:build`) |
+
+### CSS Variable System (`--bm-*` tokens)
+Defined in `:root` of `styles.css`. All colors use RGB triplet format for alpha transparency support: `rgb(var(--bm-*) / <alpha-value>)`.
+
+Key variables include: `--bm-primary`, `--bm-on-primary`, `--bm-primary-container`, `--bm-secondary`, `--bm-surface`, `--bm-surface-container`, `--bm-surface-container-highest`, `--bm-on-surface`, `--bm-on-surface-variant`, `--bm-outline`, `--bm-error`, etc.
+
+### Dashboard Tokens (`--d-*`)
+Defined on `.bm-dash`, `.bm-auth` elements in `dashboard.css`:
+`--d-bg`, `--d-surface`, `--d-accent`, `--d-text`, `--d-text-mute`, `--d-line`, `--d-line-strong`, etc.
+
+### Theming System
+- **Theme files**: Stored in `دیزاین بلک میت/` directory as CSS files (e.g., `obsidian_flux.css`)
+- **Cookie**: `bm_theme` selects active theme
+- **Route**: `GET /black-meet/theme.css` serves merged CSS (base + theme overrides) with `Cache-Control: no-cache`
+- **API**: `GET /black-meet/api/themes` returns available themes and current theme
+- **Loading**: `theme.css` is loaded in `head.ejs` after `tailwind.css`
+
+### Body Classes
+| Class | Usage | Notes |
+|---|---|---|
+| `bm-dash` | Home, profile, messages, meetings, members, create | Has `.hidden{display:none!important}` and icon size resets. Document layout props only apply here. |
+| `bm-auth` | Login/signup/forgot password | Uses auth shell layout, has `.hidden` override considerations |
+| `bm-call` | Call page | No `.hidden` override, preserves `h-screen` invariants |
+
+### Tailwind Integration
+- Config: `tailwind.config.js`
+- Colors mapped to `rgb(var(--bm-*) / <alpha-value>)`
+- JIT scans: `server/views/**/*.ejs`, `assets/js/**/*.js`, `shared/**/*.js`
+- Rebuild after adding new utilities: `npm run tailwind:build`
+
+---
+
+## 11. Role & Permission System
+
+Defined in `server/lib/ranks.js`. `is_manager` (from `users.is_manager`) is the super admin, above all ranks.
+
+### Ranks
+| Rank | Label | Daily Meeting Limit | Description |
+|---|---|---|---|
+| `user` | کاربر عادی | 2 | Regular member |
+| `admin` | ادمین | 5 | Can view members and requests |
+| `premium` | ادمین پریمیوم | 15 | Can view/edit members, approve/reject requests, use messages |
+| `manager` | مدیر اصلی | 0 (unlimited) | All permissions, cannot be limited/edited by others, info hidden from non-managers |
+
+### Permissions Matrix
+| Permission | Function | `user` | `admin` | `premium` | `manager` |
+|---|---|---|---|---|---|
+| View members list | `canViewMembers()` | No | No | Yes | Yes |
+| View signup requests | `canViewRequests()` | No | Yes | Yes | Yes |
+| Approve/reject requests, reply | `canDecideRequests()` | No | No | Yes | Yes |
+| Change signup mode | `canChangeSignupMode()` | No | No | Yes | Yes |
+| Manage users (edit/rank/reset) | `canManageUsers()` | No | No | Yes | Yes |
+| Use messages console | `canUseMessages()` | No | No | Yes | Yes |
+| Create meetings | Limited by `dailyLimitOf()` | 2/day | 5/day | 15/day | Unlimited |
+| Delete any meeting | API check | No | No | No | Yes (or creator) |
+
+### Enforcement
+- **Daily quota**: Enforced server-side in `POST /api/meetings/create` by counting meetings created today (`substr(created_at,1,10)` = local date). Error message includes `سقف تماس امروز`.
+- **API protection**: Endpoints check permissions via rank functions.
+- **Socket protection**: Room admin checked via `requireRoomAdmin()`. Manager flag is DB-derived at socket connection.
+- **UI gating**: Pages/routes check permissions and redirect or hide elements.
+
+### Signup Modes (`server/lib/settings.js`)
+| Mode | Value | Behavior |
+|---|---|---|
+| Open | `open` (default) | Anyone can register, account created immediately, proceeds to OTP |
+| Approval | `approval` | Registration saved to `signup_requests`, user sees pending message, can chat with manager via `/forgot-password?id=<phone>`, account created only on approval |
+| Closed | `closed` | Registration disabled, returns `SIGNUP_CLOSED_MSG` |
+
+Managed via `POST /api/admin/signup-mode` (requires `canChangeSignupMode`). Requests managed via admin endpoints.
+
+---
+
+## 12. Icon System
+
+### Server-side (EJS)
+In `pageLocals` (`server/routes/pages.js`), the `icon()` helper is available:
+```javascript
+icon(name, cls, fill, extraAttrs)
+// Returns: <svg class="bm-ico <cls>" <extraAttrs> aria-hidden="true" focusable="false">
+//            <use href="<assetUrl('icons/sprite.svg')>#ic-<name><'-fill' if fill>"></use>
+//          </svg>
+```
+Usage in templates: `<%- icon('mic', 'text-[20px]', true) %>`
+
+### Client-side (JavaScript)
+From `assets/js/icons.js`:
+```javascript
+window.bmIcon(name, cls, fill, extra) // returns HTML string
+window.setBMIcon(el, name, fill)      // swaps <use> href in existing icon element
+```
+Sprite path from `window.BM_SPRITE` or defaults to `/black-meet/icons/sprite.svg`.
+
+### Icon Sprite
+- Located at `icons/sprite.svg`
+- Generated from `fonts/material-symbols.woff2` using `tools/gen-icons.js`
+- Regenerate: `npm i --no-save fontkit wawoff2 && node tools/gen-icons.js`
+- Icons referenced as `#ic-<name>` or `#ic-<name>-fill` for filled variants
+- Always use `<svg class="bm-ico">` with `<use>` - never icon fonts
+
+---
+
+## 13. Adding New Features — Developer Guide
+
+### Adding New BMEv Constants
+1. Edit `shared/socket-events.js` - add constant to `E` object with unique string value
+2. Add to both directions documentation as needed
+3. Use the constant everywhere (`EV.NEW_EVENT`), never hardcode strings
+
+### Adding New Socket Handlers
+1. Add handler in `server/sockets.js` inside `io.on('connection', ...)`
+2. Follow patterns: validate auth/token, check room membership/admin status, use `internal.*` for business logic (note: `internal` wraps calls in Promise, use `internalRaw` for direct boolean checks)
+3. Emit events using `io.to(room).emit()`, `socket.emit()`, or `socket.to(room).emit()`
+4. For admin actions use `requireRoomAdmin()` helper
+5. Update in-memory `rooms` state as needed
+
+### Adding New REST Endpoints
+1. Add route in `server/routes/api.js`
+2. Follow patterns: `checkMethod()`, `checkCsrf()` for POST, `requireLoginApi()` for auth-required
+3. Use `dbm.get/all/run()`, `sessions.currentUser()`, permission checks via `ranks.*`
+4. Return via `ok()`, `bad()`, `out()` helpers
+5. Mount is automatic (router mounted at `/black-meet/api` in `app.js`)
+
+### Adding New EJS Views or Modifying Existing
+1. Create/modify in `server/views/`
+2. Add route in `server/routes/pages.js` with `pageLocals()` and auth checks
+3. Include `head.ejs` partial, use appropriate body class (`bm-dash`/`bm-auth`/`bm-call`)
+4. Preserve existing element IDs/classes that JS depends on
+5. Use `icon()` helper for icons, `asset()` for assets
+6. Follow RTL layout conventions
+
+### Adding New Frontend JS Logic
+1. Add file to `assets/js/` and include script in relevant view or `head.ejs`
+2. For call features, add to `assets/js/call.js` following existing patterns
+3. For non-call real-time features, use `window.BMLive.on()` and `window.BMLive.subscribe()`
+4. For dashboard features, follow `dashboard.js` patterns
+5. Always use `window.BMEv` constants for socket events
+
+### Adding New DB Columns or Tables (Migration Pattern)
+This project uses **idempotent schema** approach (no migration framework):
+1. Add table/column definitions to `server/lib/schema.sql` using `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
+2. For adding columns to existing tables, add idempotent `ALTER TABLE ... ADD COLUMN` in `server/lib/db.js` after schema load (check `PRAGMA table_info()` first)
+3. Never use `CURRENT_TIMESTAMP` defaults - timestamps written by app via `sqlNow()` from `helpers.js`
+4. Test with fresh DB and existing DB
+5. Consider backup/restore implications
+
+### CSS/Tailwind Conventions
+- Use CSS variables (`--bm-*`, `--d-*`) for colors
+- Colors in RGB triplet format for alpha support
+- Dashboard styles go in `assets/css/dashboard.css` scoped to body classes
+- Tailwind utilities are available but dashboard uses custom classes
+- After adding Tailwind classes, run `npm run tailwind:build`
+- Preserve `hidden`/responsive class behavior - be careful with `!important` overrides
+- Use logical properties for RTL support where possible
+- Follow existing spacing/typography patterns
+
+---
+
+## Development Notes
+
+- **Local server port**: 3000 (configurable via `PORT` env)
+- **Start script**: `start.bat` launches all services (app, TURN, tunnel)
+- **Git**: Branch workflow - create backup branch first, push to backup, then update `main` (Render deploys from `main`)
+- **No tests/linter/build step**: Except Tailwind CSS compilation
+- **Avatar storage**: Stored in DB (`bm_avatars`) not filesystem (disk ephemeral on Render)
+- **Site icon storage**: Stored in DB (`bm_assets`)
+- **TURN**: Free public relay `turn.jami.net` works out of box for cross-network calls
+- **Session**: Cookie `bm`, SQLite-backed, CSRF protected on all POST
