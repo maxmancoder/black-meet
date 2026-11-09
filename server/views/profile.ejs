@@ -1,92 +1,132 @@
 <%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
 </head>
-<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden flex">
+<%
+  var keyCount = (isManager || canMessages ? 1 : 0) + (canMembers || canRequests ? 1 : 0);
+%>
+<body class="bm-dash font-body-md">
 
-<div class="fixed inset-0 z-0 opacity-20 pointer-events-none" style="background-image:linear-gradient(135deg,#0b1020 0%,#1e1b4b 55%,#0b1020 100%);background-size:cover;background-position:center;"></div>
+<!-- ambient background (pure CSS, no image) -->
+<div class="dash-ambient" aria-hidden="true">
+    <span class="dash-ambient-glow"></span>
+    <span class="dash-ambient-grid"></span>
+</div>
 
-<nav aria-label="Sidebar" class="hidden md:flex flex-col py-lg bg-surface-container-low border-r border-white/5 shadow-2xl fixed inset-y-0 left-0 w-80 z-[60]">
-        <div class="flex items-center gap-sm px-lg mb-8">
-            <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center font-display-md text-display-md text-white" style="background:<%- esc(me.avatar_color) %>">
-                <% if (av) { %><img src="<%- esc(av) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %>
-            </div>
-        <div class="flex flex-col">
-            <span class="font-headline-md text-headline-md text-primary"><%- esc(me.display_name) %></span>
-            <span class="font-body-sm text-body-sm text-on-surface-variant"><%- rankLabel %></span>
-        </div>
+<a class="dash-skip" href="#dash-main">پرش به محتوای اصلی</a>
+
+<!-- ================= Desktop sidebar ================= -->
+<aside class="dash-sidebar" aria-label="منوی کناری">
+    <%- include('dash_sidebar', { drawer: false, activePage: 'profile' }) %>
+</aside>
+
+<!-- ================= Mobile drawer ================= -->
+<div id="dash-drawer" class="dash-drawer" aria-hidden="true">
+    <div class="dash-drawer-backdrop" data-drawer-close></div>
+    <div class="dash-drawer-panel" role="dialog" aria-modal="true" aria-label="منوی موبایل">
+        <%- include('dash_sidebar', { drawer: true, activePage: 'profile' }) %>
     </div>
-    <ul class="flex-1 space-y-2 font-body-md text-body-md">
-        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('home') %>"><%- icon('video_library') %> تماس‌ها</a></li>
-        <li><a class="flex items-center gap-4 py-3 px-4 bg-primary-container text-on-primary-container rounded-lg mx-2" href="<%- url('profile') %>"><%- icon('person', '', true) %> پروفایل</a></li>
-        <% if (isManager) { %>
-        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>"><%- icon('forum') %> پیام‌ها</a></li>
-        <% } else if (canMessages) { %>
-        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('messages') %>?chat=admin"><%- icon('forum') %> ارتباط با ادمین</a></li>
-        <% } %>
-        <% if (canMembers || canRequests) { %>
-        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="<%- url('members') %>"><%- icon('group_off') %> مدیریت اعضا</a></li>
-        <% } %>
-        <li><a class="flex items-center gap-4 py-3 px-4 text-on-surface-variant hover:bg-surface-container-high rounded-lg mx-2 transition-all" href="#" onclick="logout(event)"><%- icon('logout') %> خروج</a></li>
-    </ul>
-</nav>
+</div>
 
-<div class="flex-1 flex flex-col min-h-screen relative z-10 w-full md:pl-80">
-    <header class="bg-background/80 backdrop-blur-md fixed top-0 w-full z-50 flex items-center justify-between px-lg py-md">
-        <a href="<%- url('home') %>" class="flex items-center gap-2"><%- brandMark('w-8 h-8 rounded-xl') %><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></a>
-        <a href="<%- url('home') %>" aria-label="بازگشت به خانه" class="-m-2 p-3 text-on-surface-variant hover:text-on-surface rounded-full"><%- icon('close') %></a>
+<!-- ================= Shell ================= -->
+<div class="dash-shell">
+
+    <header class="dash-header" id="dash-header">
+        <button type="button" class="dash-iconbtn dash-burger" data-no-loader data-drawer-open
+                aria-label="باز کردن منو" aria-controls="dash-drawer" aria-expanded="false">
+            <%- icon('menu') %>
+        </button>
+
+        <a class="dash-header-brand" href="<%- url('home') %>" aria-label="Black Meet — خانه">
+            <%- brandMark('dash-header-brand-img') %>
+            <span>Black Meet</span>
+        </a>
+
+        <span class="dash-crumb" aria-hidden="true">
+            <span class="dash-crumb-home">خانه</span>
+            <span class="dash-crumb-sep">/</span>
+            <span class="dash-crumb-cur">پروفایل</span>
+        </span>
+
+        <div class="dash-header-spacer"></div>
+
+        <a class="dash-iconbtn" href="<%- url('home') %>" aria-label="بازگشت به خانه" title="بازگشت به خانه">
+            <%- icon('arrow_forward') %>
+        </a>
+
+        <button type="button" class="dash-header-user" data-no-loader data-user-menu-trigger
+                aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" aria-label="منوی حساب کاربری">
+            <span class="dash-avatar dash-avatar-sm" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+            <span class="dash-header-user-name"><%- esc(me.display_name) %></span>
+            <%- icon('more_vert', 'dash-header-user-more') %>
+        </button>
     </header>
 
-    <main class="flex-1 pt-24 pb-20 px-4 md:px-lg max-w-3xl mx-auto w-full">
-        <div class="glass-panel rounded-2xl shadow-2xl p-xl">
-            <!-- Avatar + identity -->
-            <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 mb-lg">
-                <div class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center font-display-lg text-display-lg text-white shrink-0" style="background:<%- esc(me.avatar_color) %>; box-shadow:0 0 18px rgba(99,102,241,.55), 0 0 40px rgba(59,130,246,.35), inset 0 0 0 2px rgba(255,255,255,.25);">
-                    <% if (av) { %><img src="<%- esc(av) %>" class="w-full h-full object-cover" alt=""/><% } else { %><%- esc(initials) %><% } %>
-                </div>
-                <div class="text-center sm:text-right flex-1 min-w-0">
-                    <div class="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                        <h1 class="font-display-md text-display-md text-on-surface"><%- esc(me.display_name) %></h1>
-                        <% if (me.is_manager) { %>
-                        <span class="manager-badge font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1">
-                            <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
-                        </span>
-                        <% } else if (rankLabel !== 'کاربر عادی') { %>
-                        <span class="font-label-sm text-label-sm px-3 py-1 rounded-full flex items-center gap-1 bg-primary-container text-on-primary-container">
-                            <%- icon('shield_person', 'text-[16px]', true) %> <%- rankLabel %>
-                        </span>
-                        <% } %>
-                    </div>
-                    <p class="font-body-sm text-body-sm text-on-surface-variant">@<%- esc(me.username) %></p>
-                    <div class="mt-3">
-                        <input id="avatar-input" type="file" accept="image/*" class="hidden" onchange="uploadAvatar()"/>
-                        <button type="button" data-no-loader onclick="document.getElementById('avatar-input').click()" class="text-[12px] px-3 py-1.5 rounded-md bg-surface-container-high text-on-surface hover:opacity-80 transition">تغییر تصویر پروفایل</button>
-                        <p class="font-label-sm text-on-surface-variant text-[11px] mt-1">فرمت‌های مجاز تصویر (حداکثر ۲ مگابایت).</p>
-                    </div>
-                </div>
-            </div>
+    <main class="dash-main dash-profile" id="dash-main">
 
-            <!-- Mobile quick keys: پیام‌ها / مدیریت اعضا (gated by rank) -->
-            <% if (isManager || canMessages || canMembers || canRequests) { %>
-            <% const keyCount = (isManager || canMessages ? 1 : 0) + (canMembers || canRequests ? 1 : 0); %>
-            <div class="md:hidden grid <%= keyCount === 2 ? 'grid-cols-2' : 'grid-cols-1' %> gap-3 mt-lg" id="mobile-profile-keys">
-                <% if (isManager || canMessages) { %>
-                <a id="key-messages" href="<%- url('messages') %><%- isManager ? '' : '?chat=admin' %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-primary/30 bg-gradient-to-b from-primary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
-                    <span class="w-12 h-12 rounded-2xl bg-primary-container text-on-primary-container flex items-center justify-center shadow-md shadow-primary/25 group-hover:shadow-primary/50 transition"><%- icon('forum', 'text-[24px]', true) %></span>
-                    <span class="font-label-md leading-tight">پیام‌ها</span>
-                    <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">گفتگوها و اعلان‌ها</span>
-                </a>
-                <% } %>
-                <% if (canMembers || canRequests) { %>
-                <a id="key-members" href="<%- url('members') %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-secondary/30 bg-gradient-to-b from-secondary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
-                    <span class="w-12 h-12 rounded-2xl bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-md shadow-secondary/25 group-hover:shadow-secondary/50 transition"><%- icon('group', 'text-[24px]', true) %></span>
-                    <span class="font-label-md leading-tight">مدیریت اعضا</span>
-                    <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">اعضا و درخواست‌ها</span>
-                </a>
-                <% } %>
+        <section class="dash-page-head">
+            <p class="dash-page-eyebrow"><%- icon('person') %><span>حساب کاربری</span></p>
+            <h1 class="dash-page-title">پروفایل من</h1>
+            <p class="dash-page-sub">تصویر، نام نمایشی و اطلاعات حساب خود را ببینید و مدیریت کنید.</p>
+        </section>
+
+        <!-- identity -->
+        <section class="dash-card dash-profile-hero" aria-labelledby="profile-name">
+            <div class="dash-profile-avatar" style="background:<%- esc(me.avatar_color) %>">
+                <% if (av) { %><img src="<%- esc(av) %>" alt="تصویر پروفایل"/><% } else { %><%- esc(initials) %><% } %>
             </div>
+            <div class="dash-profile-id">
+                <div class="dash-profile-name-row">
+                    <h2 class="dash-profile-name" id="profile-name"><%- esc(me.display_name) %></h2>
+                    <% if (me.is_manager) { %>
+                    <span class="dash-pill dash-pill-rank"><%- icon('shield_person', '', true) %><%- rankLabel %></span>
+                    <% } else if (rankLabel !== 'کاربر عادی') { %>
+                    <span class="dash-pill"><%- icon('shield_person', '', true) %><%- rankLabel %></span>
+                    <% } %>
+                </div>
+                <p class="dash-profile-handle" dir="ltr">@<%- esc(me.username) %></p>
+
+                <div class="dash-profile-avatar-key">
+                    <input id="avatar-input" type="file" accept="image/*" class="hidden" onchange="uploadAvatar()"/>
+                    <button type="button" class="dash-btn dash-btn-soft" data-no-loader
+                            onclick="document.getElementById('avatar-input').click()">
+                        <%- icon('upload') %><span>تغییر تصویر پروفایل</span>
+                    </button>
+                    <p class="dash-hint">فرمت‌های مجاز تصویر (حداکثر ۲ مگابایت).</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mobile quick keys: پیام‌ها / مدیریت اعضا (gated by rank) -->
+        <% if (isManager || canMessages || canMembers || canRequests) { %>
+        <div class="md:hidden grid <%= keyCount === 2 ? 'grid-cols-2' : 'grid-cols-1' %> gap-3" id="mobile-profile-keys">
+            <% if (isManager || canMessages) { %>
+            <a id="key-messages" href="<%- url('messages') %><%- isManager ? '' : '?chat=admin' %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-primary/30 bg-gradient-to-b from-primary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
+                <span class="w-12 h-12 rounded-2xl bg-primary-container text-on-primary-container flex items-center justify-center shadow-md shadow-primary/25 group-hover:shadow-primary/50 transition"><%- icon('forum', 'text-[24px]', true) %></span>
+                <span class="font-label-md leading-tight">پیام‌ها</span>
+                <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">گفتگوها و اعلان‌ها</span>
+            </a>
             <% } %>
+            <% if (canMembers || canRequests) { %>
+            <a id="key-members" href="<%- url('members') %>" class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-secondary/30 bg-gradient-to-b from-secondary-container/45 to-surface-container-high/70 px-3 py-5 text-on-surface shadow-lg shadow-black/20 active:scale-95 transition">
+                <span class="w-12 h-12 rounded-2xl bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-md shadow-secondary/25 group-hover:shadow-secondary/50 transition"><%- icon('group', 'text-[24px]', true) %></span>
+                <span class="font-label-md leading-tight">مدیریت اعضا</span>
+                <span class="font-body-sm text-[11px] text-on-surface-variant -mt-1">اعضا و درخواست‌ها</span>
+            </a>
+            <% } %>
+        </div>
+        <% } %>
 
-            <!-- Steel info boxes: glowing blue metallic edges -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
+        <!-- account information -->
+        <section class="dash-card" aria-labelledby="dash-info-title">
+            <div class="dash-card-head">
+                <span class="dash-card-ico dash-card-ico-accent"><%- icon('badge') %></span>
+                <div>
+                    <h2 class="dash-card-title" id="dash-info-title">اطلاعات حساب</h2>
+                    <p class="dash-card-sub">این اطلاعات را فقط خودتان و مدیر سامانه می‌بینید.</p>
+                </div>
+            </div>
+
+            <div class="dash-info-grid">
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کامل</span><span class="bm-infobox-val"><%- esc(me.full_name) %></span></div>
                 <div class="bm-infobox"><span class="bm-infobox-title">نام کاربری</span><span class="bm-infobox-val" dir="ltr">@<%- esc(me.username) %></span></div>
                 <!-- the editor slides out DIRECTLY under the display-name box; it is inside the same grid
@@ -104,11 +144,11 @@
                     <div id="dn-panel" class="bm-dn-panel" aria-hidden="true">
                         <div class="bm-infobox bm-dn-inner">
                             <input id="display-name" type="text" maxlength="40" value="<%- esc(me.display_name) %>"
-                                   class="form-input w-full" dir="rtl"/>
-                            <p id="display-name-hint" class="font-label-sm text-on-surface-variant text-[11px] mt-2">هر روز یک‌بار قابل تغییر است.</p>
-                            <div class="flex items-center gap-2 mt-2 w-fit">
-                                <button type="button" onclick="saveProfile()" id="btn-save-name" class="btn-primary px-4 py-1.5 text-[13px] w-auto">ذخیره</button>
-                                <button type="button" onclick="toggleDisplayNameEditor(false)" id="btn-cancel-name" class="btn-secondary px-4 py-1.5 text-[13px] w-auto">لغو</button>
+                                   class="dash-input w-full" dir="rtl"/>
+                            <p id="display-name-hint" class="dash-hint">هر روز یک‌بار قابل تغییر است.</p>
+                            <div class="dash-dn-actions">
+                                <button type="button" onclick="saveProfile()" id="btn-save-name" class="dash-btn dash-btn-solid">ذخیره</button>
+                                <button type="button" onclick="toggleDisplayNameEditor(false)" id="btn-cancel-name" class="dash-btn dash-btn-ghost">لغو</button>
                             </div>
                         </div>
                     </div>
@@ -119,61 +159,65 @@
                 <div class="bm-infobox"><span class="bm-infobox-title">نقش</span><span class="bm-infobox-val"><%- rankLabel %></span></div>
             </div>
 
-            <div class="mt-md rounded-lg bg-surface-container-low border border-outline-variant/30 px-4 py-3 text-body-sm text-on-surface-variant">
-                برای تغییر رمز عبور به ادمین پیام دهید!
+            <div class="dash-note">
+                <%- icon('lock') %>
+                <span>برای تغییر رمز عبور به ادمین پیام دهید!</span>
             </div>
+        </section>
 
-            <% if (me.is_manager) { %>
-            <!-- Manager's extra key card -->
-            <div class="bm-adminkey mt-lg p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-                <div class="flex items-center gap-4 min-w-0 flex-1">
-                    <span class="w-12 h-12 rounded-xl flex items-center justify-center text-amber-300 shrink-0" style="background:linear-gradient(150deg,rgba(251,191,36,.28),rgba(251,191,36,.06)); box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 0 14px rgba(251,191,36,.35);">
-                        <%- icon('key', 'text-[30px]', true) %>
-                    </span>
-                    <div class="min-w-0">
-                        <p class="font-label-md text-white flex items-center gap-2">کلید مدیر <span class="font-label-sm text-amber-300">(دسترسی ویژه)</span></p>
-                        <p class="font-body-sm text-body-sm text-[#cfd3ff]">شما به‌عنوان مدیر، کلید مدیریت اعضا و پیام‌ها را در اختیار دارید.</p>
-                    </div>
-                </div>
-                <a href="<%- url('members') %>" class="shrink-0 w-full sm:w-auto text-center bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl px-4 py-2.5 font-label-md hover:opacity-90 transition flex items-center justify-center gap-2">
-                    <%- icon('shield_person', '', true) %> مدیریت اعضا
-                </a>
-            </div>
-
-            <!-- the site icon: it is stored in the database and used everywhere -->
-            <div class="mt-lg rounded-2xl border border-outline-variant/30 bg-surface-container-low p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-                <img id="site-icon-preview" src="<%- siteIconUrl() %>" alt="آیکون سایت" class="w-16 h-16 rounded-2xl shrink-0 shadow-lg shadow-black/30"/>
-                <div class="min-w-0 flex-1">
-                    <p class="font-label-md text-on-surface">آیکون سایت</p>
-                    <p class="font-body-sm text-body-sm text-on-surface-variant">این آیکون در دیتابیس ذخیره می‌شود و در همهٔ صفحه‌ها (نشان مرورگر، سربرگ، صفحهٔ ورود) نمایش داده می‌شود.</p>
-                    <div class="bm-keyrow mt-3">
-                        <button type="button" onclick="document.getElementById('site-icon-input').click()" class="btn-secondary">انتخاب تصویر جدید</button>
-                        <button type="button" onclick="resetSiteIcon()" class="btn-secondary">بازگشت به پیش‌فرض</button>
-                        <input id="site-icon-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" onchange="uploadSiteIcon(this)"/>
-                        <span class="font-label-sm text-on-surface-variant">PNG یا JPG، حداکثر ۲ مگابایت</span>
-                    </div>
+        <% if (me.is_manager) { %>
+        <!-- Manager's extra key card -->
+        <section class="bm-adminkey dash-adminkey">
+            <div class="dash-adminkey-main">
+                <span class="dash-adminkey-ico"><%- icon('key', '', true) %></span>
+                <div class="min-w-0">
+                    <p class="dash-adminkey-title">کلید مدیر <span>(دسترسی ویژه)</span></p>
+                    <p class="dash-adminkey-sub">شما به‌عنوان مدیر، کلید مدیریت اعضا و پیام‌ها را در اختیار دارید.</p>
                 </div>
             </div>
-            <% } %>
-        </div>
+            <a href="<%- url('members') %>" class="dash-btn dash-btn-admin">
+                <%- icon('shield_person', '', true) %><span>مدیریت اعضا</span>
+            </a>
+        </section>
+
+        <!-- the site icon: it is stored in the database and used everywhere -->
+        <section class="dash-card dash-siteicon" aria-labelledby="dash-siteicon-title">
+            <img id="site-icon-preview" src="<%- siteIconUrl() %>" alt="آیکون سایت" class="dash-siteicon-preview"/>
+            <div class="min-w-0 flex-1">
+                <h2 class="dash-card-title" id="dash-siteicon-title">آیکون سایت</h2>
+                <p class="dash-card-sub">این آیکون در دیتابیس ذخیره می‌شود و در همهٔ صفحه‌ها (نشان مرورگر، سربرگ، صفحهٔ ورود) نمایش داده می‌شود.</p>
+                <div class="bm-keyrow mt-3">
+                    <button type="button" onclick="document.getElementById('site-icon-input').click()" class="dash-btn dash-btn-soft">انتخاب تصویر جدید</button>
+                    <button type="button" onclick="resetSiteIcon()" class="dash-btn dash-btn-ghost">بازگشت به پیش‌فرض</button>
+                    <input id="site-icon-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" onchange="uploadSiteIcon(this)"/>
+                    <span class="dash-hint">PNG یا JPG، حداکثر ۲ مگابایت</span>
+                </div>
+            </div>
+        </section>
+        <% } %>
     </main>
 </div>
 
 <!-- Avatar upload progress -->
 <div id="av-progress" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
-    <div class="glass-panel rounded-2xl p-5 w-full max-w-[300px] text-center">
-        <div id="av-prog-pct" class="font-display-md text-display-md text-primary mb-2">۰٪</div>
-        <div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden mb-3">
-            <div id="av-prog-bar" class="h-full bg-primary rounded-full transition-all duration-150" style="width:0%"></div>
-        </div>
-        <p class="font-label-sm text-on-surface-variant">در حال آپلود تصویر پروفایل...</p>
+    <div class="dash-modal-box">
+        <div id="av-prog-pct" class="dash-av-pct">۰٪</div>
+        <div class="dash-meter mb-3"><span id="av-prog-bar" style="width:0%"></span></div>
+        <p class="dash-hint text-center">در حال آپلود تصویر پروفایل...</p>
     </div>
 </div>
 
-<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
-    <%- icon('error') %><span id="toast-message"></span></div></div>
+<%- include('dash_usermenu') %>
+<%- include('dash_toast') %>
+<%- include('dash_bottomnav', { activePage: 'profile' }) %>
 
-<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>;</script>
+<script>
+window.CSRF = <%- json(csrf) %>;
+window.BASE = <%- json(base) %>;
+window.__isManager = <%- json(isManager) %>;
+window.canMessages = <%- json(canMessages) %>;
+</script>
+<script src="<%- asset('assets/js/dashboard.js') %>"></script>
 <script src="<%- asset('assets/js/profile.js') %>"></script>
 </body>
 </html>

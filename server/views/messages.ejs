@@ -1,62 +1,130 @@
 <%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
 </head>
-<body class="bg-background text-on-background font-body-md h-screen overflow-hidden flex flex-col">
+<body class="bm-dash font-body-md msg-page">
 
-<header class="relative z-10 bg-background/80 backdrop-blur-md flex items-center justify-between px-lg py-md border-b border-outline-variant/20">
-    <a href="<%- url('home') %>" class="flex items-center gap-3">
-        <%- icon('arrow_forward', 'text-on-surface-variant') %>
-        <div class="flex items-center gap-2"><%- brandMark('w-7 h-7 rounded-lg') %><span class="font-display-md text-display-md font-bold text-primary">Black Meet</span></div>
-    </a>
-    <span class="font-headline-md text-headline-md text-on-surface"><%- isManager ? 'پیام‌ها (مدیر)' : 'پیام‌ها' %></span>
-</header>
+<!-- ambient background (pure CSS, no image) -->
+<div class="dash-ambient" aria-hidden="true">
+    <span class="dash-ambient-glow"></span>
+    <span class="dash-ambient-grid"></span>
+</div>
 
-<main id="msg-main" class="relative z-10 flex-1 flex min-h-0">
-    <!-- Left: conversations -->
-    <aside class="conv-panel w-72 md:w-80 flex-shrink-0 bg-surface-container-low border-l border-outline-variant/20 flex flex-col">
-        <div class="p-md <%- isManager ? '' : 'hidden' %>">
-            <input id="conv-search" class="bm-search w-full bg-surface-container rounded-lg border border-outline-variant/30 py-2 px-3 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="جستجوی کاربر..." oninput="filterConvs()"/>
-        </div>
-        <div id="conv-list" class="flex-1 overflow-y-auto custom-scrollbar p-md pt-0 flex flex-col gap-1"></div>
-    </aside>
+<a class="dash-skip" href="#msg-main">پرش به محتوای اصلی</a>
 
-    <!-- Center: chat -->
-    <section class="chat-panel flex-1 flex flex-col min-w-0 bg-surface-container-lowest">
-        <!-- profile header -->
-        <div id="profile-header" class="hidden items-center gap-3 px-md py-md border-b border-outline-variant/20 bg-surface-container-low cursor-pointer" onclick="openProfileModal()">
-            <button id="chat-back" data-no-loader onclick="backToConvs(event)" class="md:hidden text-on-surface-variant hover:text-on-surface p-1 rounded-full flex-shrink-0"><%- icon('arrow_forward') %></button>
-            <div id="ph-avatar" class="w-11 h-11 rounded-full overflow-hidden border border-outline-variant flex-shrink-0"></div>
-            <div class="min-w-0">
-                <h3 id="ph-name" class="font-headline-md text-headline-md text-on-surface truncate"></h3>
-                <p id="ph-status" class="font-label-sm text-on-surface-variant text-[11px]"></p>
-            </div>
-        </div>
+<!-- ================= Desktop sidebar ================= -->
+<aside class="dash-sidebar" aria-label="منوی کناری">
+    <%- include('dash_sidebar', { drawer: false, activePage: 'messages' }) %>
+</aside>
 
-        <div id="chat-area" class="flex-1 overflow-y-auto custom-scrollbar p-md flex flex-col gap-3">
-            <div class="m-auto text-center text-on-surface-variant font-body-sm">یک گفتگو را انتخاب کنید</div>
-        </div>
-
-        <div class="p-md border-t border-outline-variant/20 bg-surface-container-low">
-            <div class="flex items-center gap-2">
-                <input id="msg-input" class="flex-1 bg-surface-container rounded-lg border border-outline-variant/30 py-3 px-4 text-body-sm text-on-surface focus:outline-none focus:border-primary-container" placeholder="پیام خود را بنویسید..." onkeydown="if(event.key==='Enter')sendMessage()"/>
-                <button class="bg-secondary-container text-on-secondary-container px-4 py-3 rounded-lg" onclick="sendMessage()"><%- icon('send') %></button>
-            </div>
-        </div>
-    </section>
-</main>
-
-<!-- Profile modal -->
-<div id="profile-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-background/70 backdrop-blur-sm p-4">
-    <div class="glass-panel rounded-2xl p-xl max-w-[420px] w-full text-center relative">
-        <button class="absolute top-3 left-3 text-on-surface-variant hover:text-on-surface" onclick="closeProfileModal()"><%- icon('close') %></button>
-        <div id="pm-avatar" class="w-24 h-24 mx-auto rounded-full overflow-hidden border border-outline-variant mb-4"></div>
-        <h3 id="pm-name" class="font-headline-md text-headline-md text-on-surface"></h3>
-        <p id="pm-username" class="font-label-sm text-on-surface-variant text-[12px] mt-1"></p>
-        <p id="pm-email" class="font-label-sm text-on-surface-variant text-[12px] mt-1" dir="ltr"></p>
+<!-- ================= Mobile drawer ================= -->
+<div id="dash-drawer" class="dash-drawer" aria-hidden="true">
+    <div class="dash-drawer-backdrop" data-drawer-close></div>
+    <div class="dash-drawer-panel" role="dialog" aria-modal="true" aria-label="منوی موبایل">
+        <%- include('dash_sidebar', { drawer: true, activePage: 'messages' }) %>
     </div>
 </div>
 
-<div class="fixed bottom-6 right-6 hidden z-50" id="toast"><div class="bg-error-container text-on-error-container px-6 py-3 rounded-lg shadow-xl flex items-center gap-3">
-    <%- icon('error') %><span id="toast-message"></span></div></div>
+<!-- ================= Shell ================= -->
+<div class="dash-shell msg-shell">
+
+    <header class="dash-header" id="dash-header">
+        <button type="button" class="dash-iconbtn dash-burger" data-no-loader data-drawer-open
+                aria-label="باز کردن منو" aria-controls="dash-drawer" aria-expanded="false">
+            <%- icon('menu') %>
+        </button>
+
+        <a class="dash-header-brand" href="<%- url('home') %>" aria-label="Black Meet — خانه">
+            <%- brandMark('dash-header-brand-img') %>
+            <span>Black Meet</span>
+        </a>
+
+        <span class="dash-crumb" aria-hidden="true">
+            <span class="dash-crumb-home">خانه</span>
+            <span class="dash-crumb-sep">/</span>
+            <span class="dash-crumb-cur"><%- isManager ? 'پیام‌ها' : 'ارتباط با ادمین' %></span>
+        </span>
+
+        <div class="dash-header-spacer"></div>
+
+        <a class="dash-iconbtn" href="<%- url('home') %>" aria-label="بازگشت به خانه" title="بازگشت به خانه">
+            <%- icon('arrow_forward') %>
+        </a>
+
+        <button type="button" class="dash-header-user" data-no-loader data-user-menu-trigger
+                aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" aria-label="منوی حساب کاربری">
+            <span class="dash-avatar dash-avatar-sm" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+            <span class="dash-header-user-name"><%- esc(me.display_name) %></span>
+            <%- icon('more_vert', 'dash-header-user-more') %>
+        </button>
+    </header>
+
+    <main id="msg-main" class="msg-main">
+        <!-- conversation list -->
+        <aside class="conv-panel msg-side" aria-label="گفتگوها">
+            <div class="msg-side-head">
+                <div class="msg-side-title-row">
+                    <span class="dash-card-ico dash-card-ico-accent"><%- icon('forum') %></span>
+                    <div>
+                        <h1 class="dash-card-title"><%- isManager ? 'پیام‌ها' : 'ارتباط با ادمین' %></h1>
+                        <p class="dash-card-sub"><%- isManager ? 'گفتگو با کاربران' : 'گفتگوی خصوصی با مدیر' %></p>
+                    </div>
+                </div>
+                <div class="dash-field dash-field-sm msg-search <%- isManager ? '' : 'hidden' %>">
+                    <span class="dash-field-ico" aria-hidden="true"><%- icon('search') %></span>
+                    <input id="conv-search" class="dash-input bm-search" type="search" autocomplete="off"
+                           placeholder="جستجوی کاربر..." aria-label="جستجوی کاربر" oninput="filterConvs()"/>
+                </div>
+            </div>
+            <div id="conv-list" class="msg-conv-list custom-scrollbar"></div>
+        </aside>
+
+        <!-- conversation -->
+        <section class="chat-panel msg-chat" aria-label="گفتگو">
+            <div id="profile-header" class="msg-chat-head hidden" onclick="openProfileModal()">
+                <button id="chat-back" data-no-loader onclick="backToConvs(event)" class="dash-iconbtn dash-iconbtn-sm md:hidden" aria-label="بازگشت به گفتگوها"><%- icon('arrow_forward') %></button>
+                <div id="ph-avatar" class="msg-chat-avatar"></div>
+                <div class="min-w-0">
+                    <h3 id="ph-name" class="msg-chat-name truncate"></h3>
+                    <p id="ph-status" class="msg-chat-status"></p>
+                </div>
+            </div>
+
+            <div id="chat-area" class="msg-chat-body custom-scrollbar">
+                <div class="dash-chat-empty">
+                    <span class="dash-chat-empty-ico"><%- icon('forum') %></span>
+                    <p class="dash-chat-empty-title">یک گفتگو را انتخاب کنید</p>
+                    <p class="dash-chat-empty-sub">پیام‌های عمومی و گفتگوهای خصوصی اینجا نمایش داده می‌شوند.</p>
+                </div>
+            </div>
+
+            <div class="msg-inputbar">
+                <div class="msg-inputrow">
+                    <input id="msg-input" class="dash-input" type="text" autocomplete="off"
+                           placeholder="پیام خود را بنویسید..." aria-label="متن پیام"
+                           onkeydown="if(event.key==='Enter')sendMessage()"/>
+                    <button type="button" class="dash-btn dash-btn-solid msg-send" onclick="sendMessage()" aria-label="ارسال پیام">
+                        <%- icon('send') %>
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Profile modal -->
+<div id="profile-modal" class="dash-modal hidden" role="dialog" aria-modal="true" aria-labelledby="pm-name" onclick="if(event.target===this)closeProfileModal()">
+    <div class="dash-modal-backdrop" onclick="closeProfileModal()"></div>
+    <div class="dash-modal-box" role="document">
+        <button type="button" class="dash-iconbtn dash-iconbtn-sm dash-modal-x" onclick="closeProfileModal()" aria-label="بستن"><%- icon('close') %></button>
+        <div id="pm-avatar" class="msg-profile-avatar"></div>
+        <h3 id="pm-name" class="dash-modal-title"></h3>
+        <p id="pm-username" class="dash-hint" dir="ltr"></p>
+        <p id="pm-email" class="dash-hint" dir="ltr"></p>
+    </div>
+</div>
+
+<%- include('dash_usermenu') %>
+<%- include('dash_toast') %>
 
 <style>
 /* mobile: list and chat take the full width, one at a time */
@@ -67,7 +135,15 @@
 }
 </style>
 
-<script>window.CSRF = <%- json(csrf) %>; window.BASE = <%- json(base) %>; window.__IS_MANAGER = <%- json(isManager) %>; window.MS_ID = <%- Number(me.id) %>; window.MS_USERNAME = <%- json(me.username) %>;</script>
+<script>
+window.CSRF = <%- json(csrf) %>;
+window.BASE = <%- json(base) %>;
+window.__IS_MANAGER = <%- json(isManager) %>;
+window.__isManager = <%- json(isManager) %>;
+window.MS_ID = <%- Number(me.id) %>;
+window.MS_USERNAME = <%- json(me.username) %>;
+</script>
+<script src="<%- asset('assets/js/dashboard.js') %>"></script>
 <script src="<%- asset('assets/js/messages.js') %>"></script>
 </body>
 </html>

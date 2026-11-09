@@ -1,0 +1,209 @@
+<%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
+</head>
+<body class="bm-dash font-body-md">
+
+<!-- ambient background (pure CSS, no image) -->
+<div class="dash-ambient" aria-hidden="true">
+    <span class="dash-ambient-glow"></span>
+    <span class="dash-ambient-grid"></span>
+</div>
+
+<a class="dash-skip" href="#dash-main">پرش به محتوای اصلی</a>
+
+<!-- ================= Desktop sidebar ================= -->
+<aside class="dash-sidebar" aria-label="منوی کناری">
+    <%- include('dash_sidebar', { drawer: false, activePage: 'meetings' }) %>
+</aside>
+
+<!-- ================= Mobile drawer ================= -->
+<div id="dash-drawer" class="dash-drawer" aria-hidden="true">
+    <div class="dash-drawer-backdrop" data-drawer-close></div>
+    <div class="dash-drawer-panel" role="dialog" aria-modal="true" aria-label="منوی موبایل">
+        <%- include('dash_sidebar', { drawer: true, activePage: 'meetings' }) %>
+    </div>
+</div>
+
+<!-- ================= Shell ================= -->
+<div class="dash-shell">
+
+    <header class="dash-header" id="dash-header">
+        <button type="button" class="dash-iconbtn dash-burger" data-no-loader data-drawer-open
+                aria-label="باز کردن منو" aria-controls="dash-drawer" aria-expanded="false">
+            <%- icon('menu') %>
+        </button>
+
+        <a class="dash-header-brand" href="<%- url('home') %>" aria-label="Black Meet — خانه">
+            <%- brandMark('dash-header-brand-img') %>
+            <span>Black Meet</span>
+        </a>
+
+        <span class="dash-crumb" aria-hidden="true">
+            <span class="dash-crumb-home">خانه</span>
+            <span class="dash-crumb-sep">/</span>
+            <span class="dash-crumb-cur">همهٔ تماس‌ها</span>
+        </span>
+
+        <div class="dash-header-spacer"></div>
+
+        <% if (canCreate) { %>
+        <a class="dash-btn dash-btn-solid" href="<%- url('create') %>" data-no-loader>
+            <%- icon('video_call') %><span>تماس جدید</span>
+        </a>
+        <% } else { %>
+        <button type="button" class="dash-btn dash-btn-soft" data-no-loader
+                onclick="bmToast(<%- json(createBlockMsg) %>, 'error')">
+            <%- icon('block') %><span>تماس جدید</span>
+        </button>
+        <% } %>
+
+        <button type="button" class="dash-header-user" data-no-loader data-user-menu-trigger
+                aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" aria-label="منوی حساب کاربری">
+            <span class="dash-avatar dash-avatar-sm" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+            <span class="dash-header-user-name"><%- esc(me.display_name) %></span>
+            <%- icon('more_vert', 'dash-header-user-more') %>
+        </button>
+    </header>
+
+    <main class="dash-main dash-meetings" id="dash-main">
+
+        <section class="dash-page-head">
+            <p class="dash-page-eyebrow"><%- icon('video_library') %><span>آرشیو تماس‌ها</span></p>
+            <h1 class="dash-page-title">همهٔ تماس‌ها</h1>
+            <p class="dash-page-sub">
+                هر تماسی که خودتان ساخته‌اید، از جدید به قدیم. تماس‌های در حال اجرا با نشان سبز مشخص شده‌اند.
+            </p>
+        </section>
+
+        <section class="dash-card" aria-labelledby="meetings-list-title">
+            <div class="dash-card-head dash-recent-head">
+                <div class="dash-recent-heading">
+                    <span class="dash-card-ico"><%- icon('video_library') %></span>
+                    <div>
+                        <h2 class="dash-card-title" id="meetings-list-title">فهرست تماس‌ها</h2>
+                        <p class="dash-card-sub" id="meetings-count">
+                            <%- totalCount ? toFaDigits(totalCount) + ' تماس' : 'هنوز تماسی نساخته‌اید' %>
+                        </p>
+                    </div>
+                </div>
+                <div class="dash-recent-tools">
+                    <div class="dash-field dash-field-sm">
+                        <span class="dash-field-ico" aria-hidden="true"><%- icon('search') %></span>
+                        <input id="recent-search" class="dash-input" type="search" autocomplete="off"
+                               placeholder="جستجو در تماس‌ها…" aria-label="جستجو در همهٔ تماس‌ها"/>
+                    </div>
+                    <a class="dash-link" href="<%- url('home') %>" data-no-loader>
+                        <%- icon('arrow_forward') %><span>بازگشت به خانه</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dash-chips" id="meet-filter" role="group" aria-label="فیلتر وضعیت تماس">
+                <button type="button" class="dash-chip is-on" data-filter="all" data-no-loader aria-pressed="true">
+                    <%- icon('video_library', '', true) %><span>همه</span> <b data-count="all"><%- toFaDigits(totalCount) %></b>
+                </button>
+                <button type="button" class="dash-chip" data-filter="live" data-no-loader aria-pressed="false">
+                    <%- icon('record_voice_over', '', true) %><span>در حال اجرا</span> <b data-count="live"><%- toFaDigits(activeCount) %></b>
+                </button>
+                <button type="button" class="dash-chip" data-filter="ended" data-no-loader aria-pressed="false">
+                    <%- icon('check_circle', '', true) %><span>پایان‌یافته</span> <b data-count="ended"><%- toFaDigits(endedCount) %></b>
+                </button>
+            </div>
+
+            <div id="recent-grid" class="dash-recent-grid">
+                <% if (meetings.length === 0) { %>
+                <div class="dash-empty" id="recent-empty">
+                    <span class="dash-empty-ico"><%- icon('calendar_add_on') %></span>
+                    <p class="dash-empty-title">هنوز تماسی نساخته‌اید</p>
+                    <p class="dash-empty-sub">اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.</p>
+                    <% if (canCreate) { %>
+                    <a class="dash-btn dash-btn-soft" href="<%- url('create') %>" data-no-loader>
+                        <%- icon('video_call') %><span>ایجاد تماس</span>
+                    </a>
+                    <% } %>
+                </div>
+                <% } else { meetings.forEach(function (m) { %>
+                <article class="dash-mcard<%- m.active ? ' is-live' : '' %>" data-recent-card
+                         data-active="<%- m.active ? 1 : 0 %>"
+                         data-created="<%- esc(String(m.created_at || '').slice(0, 7)) %>"
+                         data-title="<%- esc(String(m.title || '').toLowerCase()) %>">
+                    <div class="dash-mcard-top">
+                        <span class="dash-mcard-ico"><%- icon('video_library') %></span>
+                        <span class="dash-mcard-right">
+                            <% if (m.active) { %>
+                            <span class="dash-tag dash-tag-live"><span class="dash-live-dot" aria-hidden="true"></span> در حال اجرا</span>
+                            <% } else { %>
+                            <span class="dash-tag">پایان‌یافته</span>
+                            <% } %>
+                        </span>
+                    </div>
+                    <h3 class="dash-mcard-title" title="<%- esc(m.title) %>"><%- esc(m.title) %></h3>
+                    <p class="dash-mcard-meta">
+                        <%- icon('groups') %><span><%- toFaDigits(Number(m.members) || 0) %> عضو</span>
+                        <span class="dash-dot-sep" aria-hidden="true"></span>
+                        <span><%- esc(timeAgo(m.created_at)) %></span>
+                    </p>
+                    <div class="dash-mcard-foot">
+                        <span class="dash-mcard-room" dir="ltr"><%- esc(String(m.room_id || '').slice(0, 8)) %>…</span>
+                        <span class="dash-mcard-actions">
+                            <% if (m.active) { %>
+                            <button type="button" class="dash-mini" data-no-loader onclick="copyMeetLink(this)"
+                                    data-link="<%- esc(public + '/meeting?room=' + encodeURIComponent(m.room_id)) %>"
+                                    title="کپی لینک تماس" aria-label="کپی لینک تماس">
+                                <%- icon('link') %>
+                            </button>
+                            <a class="dash-mini dash-mini-open" href="<%- url('meeting') %>?room=<%- encodeURIComponent(m.room_id) %>"
+                               title="ورود به تماس" aria-label="ورود به تماس">
+                                <%- icon('login') %>
+                            </a>
+                            <% } %>
+                            <button type="button" class="dash-mini dash-mini-danger" data-no-loader
+                                    onclick="deleteRecent(<%- Number(m.id) %>, this)"
+                                    title="حذف دائمی تماس" aria-label="حذف دائمی تماس">
+                                <%- icon('close') %>
+                            </button>
+                        </span>
+                    </div>
+                </article>
+                <% }); } %>
+            </div>
+
+            <div class="dash-nomatch" id="recent-nomatch" hidden>
+                <%- icon('search') %>
+                <span>تماسی با این عنوان پیدا نشد.</span>
+            </div>
+
+            <template id="recent-empty-tpl">
+                <div class="dash-empty" id="recent-empty">
+                    <span class="dash-empty-ico"><%- icon('calendar_add_on') %></span>
+                    <p class="dash-empty-title">هنوز تماسی نساخته‌اید</p>
+                    <p class="dash-empty-sub">اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.</p>
+                    <a class="dash-btn dash-btn-soft" href="<%- url('create') %>" data-no-loader>
+                        <%- icon('video_call') %><span>ایجاد تماس</span>
+                    </a>
+                </div>
+            </template>
+        </section>
+
+        <p class="dash-foot-note">
+            <%- icon('lock') %>
+            <span>تماس‌ها فقط با تایید میزبان باز می‌شوند.</span>
+        </p>
+    </main>
+</div>
+
+<%- include('dash_usermenu') %>
+<%- include('dash_confirm') %>
+<%- include('dash_toast') %>
+<%- include('dash_bottomnav', { activePage: 'meetings' }) %>
+
+<script>
+window.CSRF = <%- json(csrf) %>;
+window.BASE = <%- json(base) %>;
+window.__isManager = <%- json(isManager) %>;
+window.MS_ID = <%- Number(me.id) %>;
+</script>
+<script src="<%- asset('assets/js/dashboard.js') %>"></script>
+<script src="<%- asset('assets/js/meetings.js') %>"></script>
+</body>
+</html>

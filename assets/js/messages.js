@@ -14,9 +14,12 @@
     if (/^https?:\/\//i.test(a)) return a;
     return BASE + '/' + a.replace(/^\/+/, '');
   }
-  function showToast(msg) {
+  function showToast(msg, kind) {
+    if (typeof window.bmToast === 'function') return window.bmToast(msg, kind);
     const t = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = msg;
+    const m = document.getElementById('toast-message');
+    if (!t || !m) return;
+    m.textContent = msg;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 4000);
   }
@@ -61,7 +64,7 @@
     const h = document.getElementById('profile-header');
     if (h) { h.classList.add('hidden'); h.classList.remove('flex'); }
     const box = document.getElementById('chat-area');
-    if (box) box.innerHTML = '<div class="m-auto text-center text-on-surface-variant font-body-sm">یک گفتگو را انتخاب کنید</div>';
+    if (box) box.innerHTML = '<div class="dash-chat-empty"><span class="dash-chat-empty-ico">' + bmIcon('forum') + '</span><p class="dash-chat-empty-title">یک گفتگو را انتخاب کنید</p><p class="dash-chat-empty-sub">پیام‌های عمومی و گفتگوهای خصوصی اینجا نمایش داده می‌شوند.</p></div>';
   };
 
   // incremental conversation row update (no full re-render)
@@ -77,8 +80,9 @@
         let dot = row.querySelector('.unread-dot');
         if (unread > 0 && !dot) {
           dot = document.createElement('span');
-          dot.className = 'unread-dot absolute top-0 right-0 w-3 h-3 bg-primary rounded-full border-2 border-surface-container-low';
-          row.querySelector('.relative') && row.querySelector('.relative').appendChild(dot);
+          dot.className = 'unread-dot dash-unread';
+          const av = row.querySelector('.dash-conv-av');
+          if (av) av.appendChild(dot);
         } else if (unread === 0 && dot) dot.remove();
       }
     });
@@ -89,25 +93,38 @@
     const box = document.getElementById('conv-list');
     box.innerHTML = '';
     const pub = document.createElement('div');
-    pub.className = 'flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ' + (view && view.type === 'public' ? 'bg-primary-container/40' : 'hover:bg-surface-container-high');
-    pub.innerHTML = '<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">' + bmIcon('campaign') + '</div>' +
-      '<div class="flex-1 min-w-0"><h4 class="font-body-sm font-semibold text-on-surface truncate">پیام عمومی</h4><p class="font-label-sm text-on-surface-variant text-[10px]">اعلان‌ها</p></div>';
+    pub.className = 'dash-conv' + (view && view.type === 'public' ? ' is-active' : '');
+    pub.innerHTML = '<div class="dash-conv-av dash-conv-av-pub">' + bmIcon('campaign') + '</div>' +
+      '<div class="dash-conv-meta"><h4 class="dash-conv-name">پیام عمومی</h4><p class="dash-conv-sub">اعلان‌ها</p></div>';
     pub.onclick = openPublic;
     box.appendChild(pub);
 
     convs.filter(c => !q || (c.display_name + ' ' + c.username).toLowerCase().includes(q)).forEach(c => {
       const el = document.createElement('div');
       el.dataset.uid = c.user_id;
-      el.className = 'flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ' + (view && view.type === 'user' && view.user_id === c.user_id ? 'bg-primary-container/40' : 'hover:bg-surface-container-high');
-      el.innerHTML = '<div class="relative w-10 h-10 rounded-full overflow-hidden border border-outline-variant">' + avatarInner(c.avatar, '#4f46e5', c.display_name) +
-        (Number(c.unread) > 0 ? '<span class="unread-dot absolute top-0 right-0 w-3 h-3 bg-primary rounded-full border-2 border-surface-container-low"></span>' : '') + '</div>' +
-        '<div class="flex-1 min-w-0"><h4 class="font-body-sm font-semibold text-on-surface truncate">' + esc(c.display_name) + '</h4><p class="font-label-sm text-on-surface-variant text-[10px]">@' + esc(c.username) + '</p></div>';
+      el.className = 'dash-conv' + (view && view.type === 'user' && view.user_id === c.user_id ? ' is-active' : '');
+      el.innerHTML = '<div class="dash-conv-av">' + avatarInner(c.avatar, '#4f46e5', c.display_name) +
+        (Number(c.unread) > 0 ? '<span class="unread-dot dash-unread"></span>' : '') + '</div>' +
+        '<div class="dash-conv-meta"><h4 class="dash-conv-name">' + esc(c.display_name) + '</h4><p class="dash-conv-sub" dir="ltr">@' + esc(c.username) + '</p></div>';
       el.onclick = () => openUser(c);
       box.appendChild(el);
     });
   }
 
   window.filterConvs = renderConvs;
+
+  // the list is re-rendered from `view` on every loadConvs(), but the public row is
+  // built once per render and openPublic() never reloads the list — so the "selected"
+  // mark is painted directly from `view` whenever a thread opens.
+  function markActive() {
+    document.querySelectorAll('#conv-list .dash-conv').forEach(row => {
+      const isPublic = !row.hasAttribute('data-uid');
+      const on = !!view && (isPublic
+        ? view.type === 'public'
+        : view.type === 'user' && Number(row.dataset.uid) === Number(view.user_id));
+      row.classList.toggle('is-active', on);
+    });
+  }
 
   function setHeader(c) {
     const h = document.getElementById('profile-header');
@@ -117,24 +134,33 @@
     document.getElementById('ph-avatar').innerHTML = avatarInner(c.avatar, '#4f46e5', name);
     document.getElementById('ph-name').textContent = name;
     document.getElementById('ph-status').textContent = c.type === 'public' ? 'پیام همگانی' : (isOnline(c.user_id) ? 'آنلاین' : 'آفلاین');
+    markActive();
   }
 
   // Every bubble says WHO wrote it. The rows come with `username` from the server; live
 // and optimistic messages only know a display name (or my own), so fall back to those.
-  function senderName(m, fromMgr) {
+  function senderName(m, incoming) {
     if (m && m.username) return '@' + m.username;
     if (m && (m.from_name || m.fromName)) return m.from_name || m.fromName;
     if (window.MS_USERNAME) return '@' + window.MS_USERNAME;
-    return fromMgr ? 'مدیر' : 'من';
+    return incoming ? 'مدیر' : 'من';
   }
 
-  function appendMessage(m, fromMgr) {
+  // `from_manager=1` marks a message written by the MAIN manager, so which side of the
+  // screen it belongs on depends on who is reading: the manager's own replies belong on
+  // his "me" side, while the other party's messages are incoming. (The bubble side used
+  // to be derived from the flag alone, so a manager saw his own replies on the far side.)
+  function isIncoming(flagFromManager) {
+    return !!flagFromManager !== !!window.__IS_MANAGER;
+  }
+
+  function appendMessage(m, incoming) {
     const box = document.getElementById('chat-area');
     const el = document.createElement('div');
-    el.className = 'flex flex-col gap-1 ' + (fromMgr ? 'items-start' : 'items-end');
-    const label = senderName(m, fromMgr);
+    el.className = 'dash-bubble-row ' + (incoming ? 'is-them' : 'is-me');
+    const label = senderName(m, incoming);
     el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' +
-      '<div class="' + (fromMgr ? 'bg-surface-container-high text-on-surface' : 'bg-primary-container text-on-primary-container') + ' p-3 rounded-2xl ' + (fromMgr ? 'rounded-tr-sm' : 'rounded-tl-sm') + ' text-body-sm max-w-[80%] border border-white/5">' + esc(m.body) + '</div>';
+      '<div class="dash-bubble">' + esc(m.body) + '</div>';
     box.appendChild(el);
     box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
@@ -145,8 +171,8 @@
     const box = document.getElementById('chat-area');
     box.innerHTML = '';
     (messages || []).forEach(m => {
-      const fromMgr = (type === 'public') ? true : !!m.from_manager;
-      appendMessage(m, fromMgr);
+      // the public channel is a broadcast feed: every bubble is incoming + labelled
+      appendMessage(m, type === 'public' ? true : isIncoming(m.from_manager));
     });
   }
 
@@ -182,7 +208,7 @@
       const bumpsMe = window.__IS_MANAGER ? !fromMgr : fromMgr;
       const open = view && view.type === 'user' && Number(view.user_id) === fromId;
       if (open) {
-        appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, fromMgr);
+        appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, isIncoming(fromMgr));
         updateConvRow(fromId, { unread: 0 });
         if (bumpsMe) fetch('api/messages/conversations?user_id=' + fromId); // mark seen server-side
       } else if (bumpsMe) {
@@ -251,7 +277,7 @@
     }
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
     const ownMgr = !!window.__IS_MANAGER;
-    appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, ownMgr);
+    appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, isIncoming(ownMgr));
     inp.value = '';
 
     if (!ownMgr) {

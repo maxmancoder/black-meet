@@ -1,0 +1,38 @@
+<%
+  // Shared account popover. dashboard.js positions and toggles #user-menu.
+  var canMessagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
+%>
+<div id="user-menu" class="dash-pop dash-menu hidden" role="menu" aria-label="منوی حساب کاربری">
+    <div class="dash-menu-head">
+        <span class="dash-avatar" style="background:<%- esc(me.avatar_color) %>"><% if (me.avatar) { %><img src="<%- esc(avatarUrl(me.avatar)) %>" alt=""/><% } else { %><%- esc(initials) %><% } %></span>
+        <span class="dash-menu-id">
+            <span class="dash-menu-name"><%- esc(me.display_name) %></span>
+            <span class="dash-menu-mail" dir="ltr"><%- esc(me.email) %></span>
+        </span>
+    </div>
+    <div class="dash-menu-items">
+        <a class="dash-menu-item" role="menuitem" href="<%- url('profile') %>">
+            <%- icon('person') %><span>پروفایل</span>
+        </a>
+        <a class="dash-menu-item" role="menuitem" href="<%- url('meetings') %>">
+            <%- icon('video_library') %><span>همهٔ تماس‌ها</span>
+        </a>
+        <a class="dash-menu-item" role="menuitem" href="<%- url('create') %>">
+            <%- icon('video_call') %><span>تماس جدید</span>
+        </a>
+        <% if (isManager || canMessages) { %>
+        <a class="dash-menu-item" role="menuitem" href="<%- canMessagesHref %>">
+            <%- icon('forum') %><span><%- isManager ? 'پیام‌ها' : 'ارتباط با ادمین' %></span>
+        </a>
+        <% } %>
+        <% if (canMembers || canRequests) { %>
+        <a class="dash-menu-item" role="menuitem" href="<%- url('members') %>">
+            <%- icon('groups') %><span>مدیریت اعضا</span>
+        </a>
+        <% } %>
+        <button type="button" class="dash-menu-item is-danger" role="menuitem" data-no-loader
+                onclick="bmCloseUserMenu();logout(event)">
+            <%- icon('logout') %><span>خروج از حساب</span>
+        </button>
+    </div>
+</div>

@@ -1,8 +1,16 @@
 <%
   // Shared dashboard navigation (desktop sidebar + mobile drawer).
-  // Included twice from home.ejs with { drawer: true|false }; only the drawer gets a
-  // close key, and only the desktop copy owns the #msg-unread-badge id so the badge
-  // updater in home.js can find BOTH copies (id + [data-msg-badge]).
+  // Included twice from every dash page with { drawer: true|false, activePage: 'home'|… };
+  // only the drawer gets a close key, and only the desktop copy owns the
+  // #msg-unread-badge id so the home badge updater can find BOTH copies
+  // (id + [data-msg-badge]).
+  var _active = (typeof activePage !== 'undefined' && activePage) ? activePage : 'home';
+  var _navCls = function (key) {
+    return 'dash-nav-item' + (_active === key ? ' is-active' : '');
+  };
+  var _current = function (key) {
+    return _active === key ? ' aria-current="page"' : '';
+  };
   var _messagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
   var _messagesLabel = isManager ? 'پیام‌ها' : 'ارتباط با ادمین';
   var _badgeAttr = drawer ? 'data-msg-badge' : 'id="msg-unread-badge"';
@@ -21,26 +29,29 @@
 
 <nav class="dash-nav" aria-label="<%- drawer ? 'منوی موبایل' : 'منوی کناری' %>">
     <p class="dash-nav-label">فضای کاری</p>
-    <a class="dash-nav-item is-active" href="<%- url('home') %>" aria-current="page">
-        <%- icon('home', '', true) %><span>خانه</span>
+    <a class="<%- _navCls('home') %>" href="<%- url('home') %>"<%- _current('home') %>>
+        <%- icon('home', '', _active === 'home') %><span>خانه</span>
     </a>
-    <a class="dash-nav-item" href="<%- url('create') %>">
+    <a class="<%- _navCls('create') %>" href="<%- url('create') %>"<%- _current('create') %>>
         <%- icon('video_call') %><span>تماس جدید</span>
     </a>
+    <a class="<%- _navCls('meetings') %>" href="<%- url('meetings') %>"<%- _current('meetings') %>>
+        <%- icon('video_library') %><span>همهٔ تماس‌ها</span>
+    </a>
     <% if (isManager || canMessages) { %>
-    <a class="dash-nav-item" href="<%- _messagesHref %>">
+    <a class="<%- _navCls('messages') %>" href="<%- _messagesHref %>"<%- _current('messages') %>>
         <%- icon('forum') %><span><%- _messagesLabel %></span>
         <span class="dash-nav-badge hidden" <%- _badgeAttr %>>0</span>
     </a>
     <% } %>
     <% if (canMembers || canRequests) { %>
-    <a class="dash-nav-item" href="<%- url('members') %>">
+    <a class="<%- _navCls('members') %>" href="<%- url('members') %>"<%- _current('members') %>>
         <%- icon('groups') %><span>مدیریت اعضا</span>
     </a>
     <% } %>
 
     <p class="dash-nav-label">حساب کاربری</p>
-    <a class="dash-nav-item" href="<%- url('profile') %>">
+    <a class="<%- _navCls('profile') %>" href="<%- url('profile') %>"<%- _current('profile') %>>
         <%- icon('person') %><span>پروفایل</span>
     </a>
     <a class="dash-nav-item is-danger" href="#" onclick="logout(event);return false;" data-no-loader>

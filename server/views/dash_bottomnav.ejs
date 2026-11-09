@@ -1,0 +1,40 @@
+<%
+  // Shared phone bottom navigation. Rendered by profile / meetings (home keeps its own
+  // copy inline because it also paints the live message badge). activePage marks the key.
+  var _active = (typeof activePage !== 'undefined' && activePage) ? activePage : 'home';
+  var _bnCls = function (key) {
+    return 'dash-bn-item' + (_active === key ? ' is-active' : '');
+  };
+  var _current = function (key) {
+    return _active === key ? ' aria-current="page"' : '';
+  };
+  var _canCreate = (typeof canCreate === 'undefined') ? true : !!canCreate;
+  var _blockMsg = (typeof createBlockMsg !== 'undefined' && createBlockMsg) ? createBlockMsg : 'سقف تماس امروز پر شده است';
+  var _messagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
+%>
+<nav class="dash-bottomnav" aria-label="ناوبری پایین">
+    <a class="<%- _bnCls('home') %>" href="<%- url('home') %>"<%- _current('home') %>>
+        <%- icon('home', '', _active === 'home') %><span>خانه</span>
+    </a>
+    <% if (_canCreate) { %>
+    <a class="<%- _bnCls('create') %>" href="<%- url('create') %>"<%- _current('create') %>>
+        <%- icon('video_call') %><span>تماس</span>
+    </a>
+    <% } else { %>
+    <button type="button" class="dash-bn-item" data-no-loader onclick="bmToast(<%- json(_blockMsg) %>, 'error')">
+        <%- icon('video_call') %><span>تماس</span>
+    </button>
+    <% } %>
+    <% if (isManager || canMessages) { %>
+    <a class="<%- _bnCls('messages') %>" href="<%- _messagesHref %>"<%- _current('messages') %>>
+        <span class="dash-bn-ico-wrap"><%- icon('forum') %><span class="dash-bn-badge hidden" data-msg-badge>0</span></span>
+        <span><%- isManager ? 'پیام‌ها' : 'ادمین' %></span>
+    </a>
+    <% } %>
+    <a class="<%- _bnCls('profile') %>" href="<%- url('profile') %>"<%- _current('profile') %>>
+        <%- icon('person') %><span>پروفایل</span>
+    </a>
+    <button type="button" class="<%- _active === 'meetings' ? 'dash-bn-item is-active' : 'dash-bn-item' %>" data-no-loader data-drawer-open aria-label="بیشتر">
+        <%- icon('more_vert') %><span>بیشتر</span>
+    </button>
+</nav>

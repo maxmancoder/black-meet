@@ -3,9 +3,14 @@
   const BASE = window.BASE;
   const csrf = window.CSRF;
 
-  function showToast(msg) {
+  function showToast(msg, kind) {
+    // the dash shell owns a single toast (dashboard.js); keep a safe fallback for
+    // any page that still renders the legacy #toast markup
+    if (typeof window.bmToast === 'function') return window.bmToast(msg, kind);
     const t = document.getElementById('toast');
-    document.getElementById('toast-message').textContent = msg;
+    const m = document.getElementById('toast-message');
+    if (!t || !m) return;
+    m.textContent = msg;
     t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 4000);
   }

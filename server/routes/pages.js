@@ -155,6 +155,9 @@ router.get('/create', (req, res) => {
 router.get('/profile', (req, res) => {
   if (!requireLogin(req, res)) return;
   const me = sessions.currentUser(req);
+  const quota = ranks.dailyQuota(me);
+  const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
+  const limited = !!me.is_limited;
   res.render('profile', pageLocals(req, res, {
     title: 'پروفایل - Black Meet',
     av: avatarUrl(me.avatar, req),
@@ -163,6 +166,45 @@ router.get('/profile', (req, res) => {
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
     canRequests: ranks.canViewRequests(me),
+    canCreate: !limited && !quotaFull,
+    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
+    initials: initials(me.display_name),
+  }));
+});
+
+// index of the meetings this user created (the same rows /home shows as "recent",
+// just not limited to six). It answers with real database rows only — no analytics.
+router.get('/meetings', (req, res) => {
+  if (!requireLogin(req, res)) return;
+  const me = sessions.currentUser(req);
+  const quota = ranks.dailyQuota(me);
+  const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
+  const limited = !!me.is_limited;
+
+  const meetings = dbm.all(
+    `SELECT m.id, m.room_id, m.title, m.created_at, m.active,
+            (SELECT COUNT(*) FROM meeting_participants p WHERE p.meeting_id=m.id AND p.status<>'removed') AS members
+     FROM meetings m WHERE m.creator_id=? ORDER BY m.created_at DESC LIMIT 200`,
+    [me.id]
+  ).map((m) => Object.assign({}, m, {
+    members: Number(m.members) || 0,
+    active: Number(m.active) ? 1 : 0,
+  }));
+
+  res.render('meetings', pageLocals(req, res, {
+    title: 'همهٔ تماس‌ها - Black Meet',
+    meetings,
+    activeCount: meetings.filter((m) => m.active).length,
+    endedCount: meetings.filter((m) => !m.active).length,
+    totalCount: meetings.length,
+    limited,
+    isManager: !!me.is_manager,
+    rankLabel: ranks.rankLabel(me),
+    canMessages: ranks.canUseMessages(me),
+    canMembers: ranks.canViewMembers(me),
+    canRequests: ranks.canViewRequests(me),
+    canCreate: !limited && !quotaFull,
+    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
     initials: initials(me.display_name),
   }));
 });
@@ -181,6 +223,11 @@ router.get('/messages', (req, res) => {
   res.render('messages', pageLocals(req, res, {
     title: 'پیام‌ها - Black Meet',
     isManager: !!me.is_manager,
+    rankLabel: ranks.rankLabel(me),
+    canMessages: ranks.canUseMessages(me),
+    canMembers: ranks.canViewMembers(me),
+    canRequests: ranks.canViewRequests(me),
+    initials: initials(me.display_name),
   }));
 });
 
