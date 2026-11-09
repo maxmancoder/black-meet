@@ -40,6 +40,15 @@
     WEB_SYNC: 'web:sync',
     WEB_ERR: 'web:err',
 
+    // shared whiteboard (canvas inside the call)
+    WB_OPEN: 'wb:open',        // admin opens the whiteboard for the room
+    WB_CLOSE: 'wb:close',      // admin closes the whiteboard for the room
+    WB_DRAW: 'wb:draw',        // a granted member sends a stroke segment
+    WB_CLEAR: 'wb:clear',      // admin clears the entire canvas
+    WB_GRANT: 'wb:grant',      // admin grants draw permission to a user
+    WB_REVOKE: 'wb:revoke',    // admin revokes draw permission from a user
+    WB_STATE: 'wb:state',      // server -> all: current whiteboard state + granted list
+
     // member lifecycle
     CALL_APPROVE: 'call:approve',
     CALL_REJECT: 'call:reject',
