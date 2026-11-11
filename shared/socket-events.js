@@ -58,6 +58,8 @@
     CALL_ALERT_ADMIN: 'call:alert-admin',
     CALL_SET_OPEN_JOIN: 'call:set-open-join', // admin: "join without approval"
     OPEN_JOIN_CHANGED: 'call:open-join-changed',
+    CALL_SET_BOX_VISIBILITY: 'call:set-box-visibility', // admin: show/hide stage boxes
+    BOX_VISIBILITY_CHANGED: 'call:box-visibility-changed',
     ADMIN_CHANGED: 'admin-changed',
     CALL_LEAVE: 'call:leave',
     CALL_DISABLE: 'call:disable',          // admin force-disable mic/cam/screen

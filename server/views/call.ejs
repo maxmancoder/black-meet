@@ -21,6 +21,37 @@
             <%- icon('link', 'text-[20px]') %>
             <span class="hidden sm:inline">کپی لینک</span>
         </button>
+        <!-- per-user: show/hide member boxes in the main stage (local only) -->
+        <div class="relative">
+            <button id="btn-member-boxes" onclick="toggleMemberBoxesMenu(event)" class="call-chip flex items-center gap-1 sm:gap-2" title="نمایش باکس اعضا" aria-haspopup="true" aria-expanded="false">
+                <%- icon('groups', 'text-[20px]') %>
+                <span class="hidden sm:inline">باکس اعضا</span>
+                <span class="bm-caret text-on-surface-variant"></span>
+            </button>
+            <div id="member-boxes-menu" class="hidden fixed z-[75] rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-primary/30 bg-gradient-to-b from-surface-container-highest to-surface-container-high min-w-[230px] max-w-[280px]" dir="rtl">
+                <div class="flex items-center gap-2 px-3 py-2.5 bg-gradient-to-l from-primary-container/80 to-secondary-container/60 border-b border-white/10">
+                    <%- icon('groups', 'text-[18px] text-primary') %>
+                    <span class="font-label-md text-on-surface">نمایش باکس اعضا</span>
+                </div>
+                <button type="button" data-no-soft data-mode="show" onclick="setLocalMemberBoxes('show')" class="mbox-opt w-full flex items-center gap-3 px-3 py-3 text-right transition-colors hover:bg-primary-container/30">
+                    <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-container to-secondary-container text-on-primary-container flex items-center justify-center shrink-0"><%- icon('groups', 'text-[20px]') %></span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block font-body-sm text-body-sm text-on-surface">نمایش باکس اعضا</span>
+                        <span class="block font-label-sm text-on-surface-variant text-[11px]">باکس اعضا در بخش اصلی تماس نمایش داده می‌شود</span>
+                    </span>
+                    <span class="mbox-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
+                </button>
+                <div class="h-px bg-white/10"></div>
+                <button type="button" data-no-soft data-mode="hide" onclick="setLocalMemberBoxes('hide')" class="mbox-opt w-full flex items-center gap-3 px-3 py-3 text-right transition-colors hover:bg-primary-container/30">
+                    <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-surface-container-highest to-surface-container border border-outline-variant/30 text-on-surface flex items-center justify-center shrink-0"><%- icon('person_remove', 'text-[20px]') %></span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block font-body-sm text-body-sm text-on-surface">عدم نمایش باکس اعضا</span>
+                        <span class="block font-label-sm text-on-surface-variant text-[11px]">باکس اعضا پنهان می‌شود؛ باکس اشتراک/لینک/تخته بهتر دیده می‌شود</span>
+                    </span>
+                    <span class="mbox-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
+                </button>
+            </div>
+        </div>
         <!-- shared web surface menu: website box / video box -->
         <div class="relative">
             <button id="btn-web" onclick="toggleWebMenu(event)" class="call-chip-cta flex items-center gap-1 sm:gap-2" title="لینک سایت / ویدیو">
@@ -131,6 +162,27 @@
                         <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
                     </span>
                 </label>
+                <!-- admin: which stage boxes are visible to everyone -->
+                <div class="p-3 rounded-xl bg-surface-container border border-outline-variant/30 mb-3">
+                    <div class="flex items-center gap-2 mb-1">
+                        <%- icon('groups', 'text-[18px] text-primary') %>
+                        <h3 class="font-body-sm text-body-sm text-on-surface">نمایش باکس‌ها</h3>
+                    </div>
+                    <p class="font-label-sm text-on-surface-variant text-[11px] mb-3">باکس‌هایی که انتخاب می‌شوند در بخش باکس‌ها نمایش داده می‌شوند؛ بقیه پنهان می‌مانند.</p>
+                    <div id="admin-box-list" class="flex flex-col gap-2"></div>
+                    <label class="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-outline-variant/20 cursor-pointer">
+                        <span class="min-w-0">
+                            <span class="block font-body-sm text-body-sm text-on-surface">نمایش باکس عضو جدید</span>
+                            <span class="block font-label-sm text-on-surface-variant text-[11px]">باکس اعضایی که بعداً وارد می‌شوند نمایش داده شود</span>
+                        </span>
+                        <span class="relative inline-flex items-center shrink-0">
+                            <input type="checkbox" id="show-new-box" class="peer sr-only" checked onchange="adminSetShowNewBox(this.checked)"/>
+                            <span class="w-11 h-6 rounded-full bg-surface-container-highest border border-outline-variant/40 transition-colors peer-checked:bg-primary/80"></span>
+                            <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
+                        </span>
+                    </label>
+                </div>
+
                 <h3 class="font-label-md text-on-surface-variant mb-2">درخواست‌های ورود</h3>
                 <div id="join-requests"></div>
                 <h3 class="font-label-md text-on-surface-variant mb-2 mt-4">مدیریت اعضا</h3>

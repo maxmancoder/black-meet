@@ -83,6 +83,56 @@
   // members key means "somebody new is in the room", not "somebody is still pending"
   const seenMemberIds = new Set();
   let joinedRoom = false;
+
+  // ---- box visibility ----
+  // Feature 1 (per-user, local): show/hide member tiles in the main stage. Default: show.
+  // Stored locally so it only affects this user on this device.
+  let localShowMembers = true;
+  try { localShowMembers = localStorage.getItem('bm_call_show_members') !== '0'; } catch (e) {}
+
+  // Feature 2 (room-wide, admin-controlled): which stage boxes everyone sees.
+  // hidden = set of box keys ('web', 'wb', or String(userId)). All visible by default.
+  let adminBoxes = { showNew: true, hidden: new Set() };
+
+  function isMemberTile(el) {
+    return !!(el && el.id && (el.id === 'tile-self' || el.id.indexOf('tile-') === 0));
+  }
+  function boxKeyOf(el) {
+    if (!el || !el.id) return '';
+    if (el.id === 'web-box') return 'web';
+    if (el.id === 'wb-box') return 'wb';
+    if (el.id === 'tile-self') return String(I.me.id);
+    if (el.id.indexOf('tile-') === 0) return String(el.id.slice(5));
+    return '';
+  }
+  function isSharingTile(el) {
+    if (!el || !el.id) return false;
+    if (el.id === 'tile-self') return !!sharing;
+    if (el.id.indexOf('tile-') === 0) {
+      const uid = parseInt(el.id.slice(5), 10);
+      const st = memberStatus.get(uid) || {};
+      return !!st.sharing;
+    }
+    return false;
+  }
+  function isBoxVisible(el) {
+    if (!el) return false;
+    const key = boxKeyOf(el);
+    // admin control applies to every stage box
+    if (key && adminBoxes.hidden.has(key)) return false;
+    // local "hide member boxes" (feature 1): only member tiles, but keep a sharer's box
+    if (isMemberTile(el) && !localShowMembers && !isSharingTile(el)) return false;
+    return true;
+  }
+
+  function setAdminBoxesState(boxes) {
+    boxes = boxes || {};
+    adminBoxes.showNew = boxes.showNew !== false;
+    const h = boxes.hidden;
+    if (h instanceof Set) adminBoxes.hidden = new Set(Array.from(h).map(String));
+    else if (Array.isArray(h)) adminBoxes.hidden = new Set(h.map(String));
+    else adminBoxes.hidden = new Set();
+  }
   const SELF = {
     userId: I.me.id, name: I.me.name, username: I.me.username,
     avatar_color: I.me.avatar_color, avatar: String(I.me.avatar || ''),
@@ -980,6 +1030,14 @@
       if (d.web && window.bmWebInit) window.bmWebInit(d.web);
       if (d.wb && d.wb.open && window.bmWbApplySync) window.bmWbApplySync(d.wb);
       if (d.openJoin !== undefined) paintOpenJoin(!!d.openJoin);
+      if (d.boxes) setAdminBoxesState(d.boxes);
+      renderAdminBoxList();
+      layoutGrid();
+    });
+    socket.on(EV.BOX_VISIBILITY_CHANGED, (d) => {
+      if (d && d.boxes) setAdminBoxesState(d.boxes);
+      renderAdminBoxList();
+      layoutGrid();
     });
     socket.on(EV.OPEN_JOIN_CHANGED, (d) => {
       paintOpenJoin(!!d.openJoin);
@@ -1001,6 +1059,8 @@
     });
     socket.on(EV.MEMBER_JOINED, ({ member }) => {
       adoptMembers([member], true);
+      renderAdminBoxList();
+      layoutGrid();
     });
     socket.on(EV.MEMBER_LEFT, ({ userId }) => {
       dropMember(userId);
@@ -1009,6 +1069,7 @@
       removeTile(userId);
       if (userId === I.me.id) currentList = currentList.filter(x => x.userId !== userId);
       renderPendingCards();
+      renderAdminBoxList();
       layoutGrid();
     });
     socket.on(EV.MEMBER_UPDATED, (d) => {
@@ -1028,6 +1089,7 @@
       if (m) Object.assign(m, d);
       updateTileStatus(d.userId);
       if (I.me.is_admin) renderAdminMembers(currentList);
+      if (d.sharing !== undefined) layoutGrid();
     });
     socket.on(EV.MEMBER_PENDING, ({ member }) => {
       adoptMembers([member], false);
@@ -1037,6 +1099,8 @@
     socket.on(EV.MEMBER_APPROVED, ({ member }) => {
       if (member.userId === I.me.id) approved = true;
       adoptMembers([member], true);
+      renderAdminBoxList();
+      layoutGrid();
     });
     socket.on(EV.MEMBER_KICKED, ({ userId }) => {
       dropMember(userId);
@@ -1044,6 +1108,8 @@
       destroyPC(userId);
       removeTile(userId);
       renderPendingCards();
+      renderAdminBoxList();
+      layoutGrid();
     });
     socket.on(EV.MEMBER_BLOCKED, ({ userId }) => {
       dropMember(userId);
@@ -1051,6 +1117,8 @@
       destroyPC(userId);
       removeTile(userId);
       renderPendingCards();
+      renderAdminBoxList();
+      layoutGrid();
     });
     socket.on(EV.FORCE_DISABLE, d => {
       if (d.kind === 'audio') {
@@ -1680,6 +1748,7 @@
       sharing = true;
       shareAudio = !!screenAudioTrack;
       replaceOutgoingVideo(screenTrack);
+      layoutGrid();
       // cap the outgoing bitrate to the chosen quality (keeps latency low too)
       if (q) {
         pcMap.forEach((st) => {
@@ -1728,7 +1797,7 @@
       screenTrack = null; // camera-fallback: stopShare must not stop the camera
       sharing = true;
       replaceOutgoingVideo(cameraTrack);
-      updateSelfVideo(); updateControlUI(); broadcastStatus();
+      updateSelfVideo(); updateControlUI(); broadcastStatus(); layoutGrid();
       showToast('اشتراک صفحه پشتیبانی نمی‌شود؛ دوربین به‌عنوان اشتراک فعال شد');
       return true;
     };
@@ -1763,10 +1832,155 @@
     replaceOutgoingVideo(currentVideoTrack);
     updateControlUI();
     broadcastStatus();
+    layoutGrid();
   }
 
   // ---------- Camera source menu (⋮ next to the cam button) ----------
   let camSources = [];
+  // ---------- per-user: show/hide member boxes (feature 1, local) ----------
+  function updateLocalMemberBoxesUI() {
+    const mode = localShowMembers ? 'show' : 'hide';
+    document.querySelectorAll('#member-boxes-menu .mbox-opt').forEach((btn) => {
+      const on = btn.getAttribute('data-mode') === mode;
+      btn.classList.toggle('is-active', on);
+      const chk = btn.querySelector('.mbox-check');
+      if (chk) chk.classList.toggle('hidden', !on);
+    });
+    const trig = $('btn-member-boxes');
+    if (trig) {
+      trig.title = localShowMembers ? 'نمایش باکس اعضا' : 'عدم نمایش باکس اعضا';
+      trig.setAttribute('aria-expanded', String(!($('member-boxes-menu') && $('member-boxes-menu').classList.contains('hidden'))));
+    }
+  }
+
+  function positionMemberBoxesMenu() {
+    const menu = $('member-boxes-menu');
+    const btn = $('btn-member-boxes');
+    if (!menu || !btn || menu.classList.contains('hidden')) return;
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth || 230;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w));
+    menu.style.left = left + 'px';
+    menu.style.top = (r.bottom + 8) + 'px';
+  }
+
+  window.toggleMemberBoxesMenu = function (e) {
+    if (e) e.stopPropagation();
+    const menu = $('member-boxes-menu');
+    if (!menu) return;
+    const opening = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !opening);
+    if (opening) {
+      updateLocalMemberBoxesUI();
+      positionMemberBoxesMenu();
+    }
+    const btn = $('btn-member-boxes');
+    if (btn) btn.setAttribute('aria-expanded', String(opening));
+  };
+
+  window.setLocalMemberBoxes = function (mode) {
+    localShowMembers = mode !== 'hide';
+    try { localStorage.setItem('bm_call_show_members', localShowMembers ? '1' : '0'); } catch (e) {}
+    updateLocalMemberBoxesUI();
+    const menu = $('member-boxes-menu');
+    if (menu) menu.classList.add('hidden');
+    const btn = $('btn-member-boxes');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    layoutGrid();
+  };
+
+  document.addEventListener('click', (e) => {
+    const menu = $('member-boxes-menu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    const btn = $('btn-member-boxes');
+    if ((btn && btn.contains(e.target)) || menu.contains(e.target)) return;
+    menu.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+  window.addEventListener('resize', positionMemberBoxesMenu);
+
+  // ---------- admin: stage box visibility (feature 2, room-wide) ----------
+  function adminBoxLabel(key) {
+    if (key === 'web') return 'باکس اشتراک/لینک';
+    if (key === 'wb') return 'تخته وایت‌برد';
+    const uid = parseInt(key, 10);
+    if (String(I.me.id) === String(uid)) return (I.me.name || 'شما') + ' (شما)';
+    const m = currentList.find(x => String(x.userId) === String(uid));
+    if (m && m.name) return m.name;
+    const meta = peerMeta.get(uid);
+    if (meta && meta.name) return meta.name;
+    return 'عضو #' + key;
+  }
+
+  function renderAdminBoxList() {
+    const box = $('admin-box-list');
+    const sw = $('show-new-box');
+    if (sw) sw.checked = !!adminBoxes.showNew;
+    if (!box) return;
+
+    const keys = [];
+    const seen = new Set();
+    const add = (k) => { k = String(k); if (!seen.has(k)) { seen.add(k); keys.push(k); } };
+
+    // member boxes (approved/known members including self)
+    add(I.me.id);
+    (currentList || []).forEach((m) => { if (m && m.userId != null) add(m.userId); });
+
+    // stage content boxes when present/open
+    if ($('web-box')) add('web');
+    if ($('wb-box')) add('wb');
+
+    box.innerHTML = '';
+    keys.forEach((key) => {
+      const checked = !adminBoxes.hidden.has(String(key));
+      const label = adminBoxLabel(key);
+      const row = document.createElement('label');
+      row.className = 'flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/25 cursor-pointer';
+      row.innerHTML =
+        '<span class="font-body-sm text-body-sm text-on-surface truncate min-w-0">' + escapeHtml(label) + '</span>' +
+        '<span class="relative inline-flex items-center shrink-0">' +
+          '<input type="checkbox" class="peer sr-only abox-cb" data-box="' + escapeHtml(key) + '"' + (checked ? ' checked' : '') + '/>' +
+          '<span class="w-11 h-6 rounded-full bg-surface-container-highest border border-outline-variant/40 transition-colors peer-checked:bg-primary/80"></span>' +
+          '<span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>' +
+        '</span>';
+      const cb = row.querySelector('input');
+      cb.addEventListener('change', () => { window.adminSetBoxVisible(key, cb.checked); });
+      box.appendChild(row);
+    });
+    if (!keys.length) {
+      box.innerHTML = '<p class="font-label-sm text-on-surface-variant">باکسی برای نمایش وجود ندارد.</p>';
+    }
+  }
+
+  function emitBoxVisibility(patch, cb) {
+    if (!socket || !socket.connected) { showToast('اتصال برقرار نیست'); if (cb) cb({ ok: false }); return; }
+    socket.emit(EV.CALL_SET_BOX_VISIBILITY, patch || {}, (res) => {
+      if (res && res.ok && res.boxes) {
+        setAdminBoxesState(res.boxes);
+        renderAdminBoxList();
+        layoutGrid();
+      } else if (!res || !res.ok) {
+        showToast('خطا در اعمال تغییرات');
+        renderAdminBoxList();
+      }
+      if (cb) cb(res || { ok: false });
+    });
+  }
+
+  window.adminSetShowNewBox = function (on) {
+    emitBoxVisibility({ showNew: !!on });
+  };
+
+  window.adminSetBoxVisible = function (boxId, visible) {
+    const key = String(boxId);
+    const hidden = new Set(Array.from(adminBoxes.hidden || []).map(String));
+    if (visible) hidden.delete(key); else hidden.add(key);
+    emitBoxVisibility({ showNew: !!adminBoxes.showNew, hidden: Array.from(hidden) });
+  };
+
+  // expose for web/whiteboard modules to refresh the admin list when boxes appear/disappear
+  window.bmRefreshAdminBoxList = renderAdminBoxList;
+
   function closeCamMenu() {
     const m = $('cam-menu');
     if (m) m.classList.add('hidden');
@@ -2207,7 +2421,8 @@
     if (window.bmWbOnMaximizeChange) window.bmWbOnMaximizeChange();
   }
 
-  function exitMaximize() {
+  function exitMaximize(opts) {
+    opts = opts || {};
     if (!isMaximized()) return;
     const el = maxEl;
     el.classList.remove('maximized-el');
@@ -2226,7 +2441,7 @@
     if (maxSidebarWasOpen && window.toggleSidebar) window.toggleSidebar(true);
     maxSidebarWasOpen = false;
     setControlBarVisible(true);
-    layoutGrid();
+    if (opts.relayout !== false) layoutGrid();
     if (window.bmWbOnMaximizeChange) window.bmWbOnMaximizeChange();
   }
 
@@ -2284,18 +2499,30 @@
     grid.style.display = 'grid';
     grid.style.gap = ''; // let .call-grid CSS pick the desktop/mobile gap
     const all = Array.from(grid.children);
-    const webBox = $('web-box');
+
+    // visibility: admin-controlled (room-wide) + local member-box preference (per-user).
+    // Hidden boxes stay in the DOM but take no space and are excluded from layout.
+    const visible = [];
+    all.forEach(t => {
+      const show = isBoxVisible(t);
+      t.style.display = show ? '' : 'none';
+      if (show) visible.push(t);
+    });
+
+    // if the maximized box became hidden (e.g. admin hid it), restore it then re-layout
+    if (isMaximized() && !isBoxVisible(maxEl)) {
+      exitMaximize({ relayout: false });
+      return layoutGrid();
+    }
     let focusedEl = focusedKey ? grid.querySelector('#tile-' + focusedKey) : null;
+    if (focusedEl && focusedEl.style.display === 'none') { focusedKey = null; focusedEl = null; }
     if (focusedKey && !focusedEl) { focusedKey = null; focusedEl = null; }
 
-    // reset every tile first, then apply the active layout.
-    // `display` MUST be cleared here: the maximize/fullscreen branches hide boxes with
-    // style.display and would otherwise leave them invisible for good.
-    all.forEach(t => {
+    // reset layout properties on visible boxes
+    visible.forEach(t => {
       t.style.order = '';
       t.style.gridColumn = '';
       t.style.gridRow = '';
-      t.style.display = '';
       t.classList.toggle('tile-focused', t === focusedEl);
     });
 
@@ -2307,32 +2534,19 @@
       return;
     }
 
-    // the shared website/video box always outranks the camera tiles
-    if (webBox && webBox.parentElement === grid) {
+    const webBox = $('web-box');
+    const hasWeb = webBox && webBox.parentElement === grid && webBox.style.display !== 'none';
+    if (hasWeb) {
       if (window.bmWebOnLayout) window.bmWebOnLayout();
-      const state = (window.bmWebLayoutState && window.bmWebLayoutState()) || { expanded: false };
-      const tiles = all.filter(t => t !== webBox);
-      // rows are sized from the space we actually have, so nothing ever overflows
-      const stage = Math.max(0, (grid.clientHeight || 0));
-            // the box is a normal tile now; the only "big" mode is the full-viewport overlay
-      {
-        grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
-        // The shared box is a NORMAL member tile: one grid cell, no fixed pixel height and
-        // no full-width row. It used to take the whole first row at up to 430px tall, which
-        // is why it looked nothing like the other boxes.
-        grid.style.gridTemplateRows = '';
-        grid.style.gridAutoRows = 'minmax(0, 1fr)';
-        grid.style.alignContent = 'stretch';
-        webBox.style.gridColumn = '';
-        webBox.style.gridRow = '';
-        webBox.style.height = '';
-      }
-      tiles.forEach(t => {
-        // the shared box is a normal tile: nothing is hidden behind it any more
-        t.style.display = '';
-        t.style.gridColumn = '';
-        t.style.order = '';
-      });
+      grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
+      grid.style.gridTemplateRows = '';
+      grid.style.gridAutoRows = 'minmax(0, 1fr)';
+      grid.style.alignContent = 'stretch';
+      webBox.style.gridColumn = '';
+      webBox.style.gridRow = '';
+      webBox.style.height = '';
+      const tiles = visible.filter(t => t !== webBox);
+      tiles.forEach(t => { t.style.gridColumn = ''; t.style.order = ''; });
       // clicking a tile still enlarges it, exactly like a normal member tile
       if (focusedEl && focusedEl.style.display !== 'none') {
         focusedEl.style.gridColumn = '1 / -1';
@@ -2340,16 +2554,17 @@
       }
       return;
     }
+
     grid.style.alignContent = '';
     grid.style.gridTemplateRows = '';
     grid.style.gridAutoRows = 'minmax(0, 1fr)';
 
-    if (!focusedKey) {
+    if (!focusedKey || !focusedEl) {
       grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))';
       return;
     }
 
-    const others = all.filter(t => t !== focusedEl);
+    const others = visible.filter(t => t !== focusedEl);
     if (window.matchMedia('(max-width: 767px)').matches || others.length === 0) {
       // mobile (or alone in the room): focused tile on top / full width
       grid.style.gridTemplateColumns = others.length ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)';
@@ -2379,7 +2594,7 @@
   };
 
   // small hooks used by call-web.js
-  window.bmCallRelayout = function () { layoutGrid(); };
+  window.bmCallRelayout = function () { renderAdminBoxList(); layoutGrid(); };
   window.bmCallRoster = function () { return currentList.slice(); };
 
   // The stage can change size without a window resize (sidebar open/close, rotation,
@@ -2469,6 +2684,8 @@
     (I.messages || []).forEach(m => appendMessage(m.user_id, m.display_name, m.body, m.user_id === I.me.id));
     (I.emojis || []).forEach(e => spawnEmoji(e.emoji, false));
     buildEmojiGrid();
+    updateLocalMemberBoxesUI();
+    renderAdminBoxList();
     layoutGrid();
     const mm = $('member-menu');
     if (mm) mm.addEventListener('click', e => e.stopPropagation());

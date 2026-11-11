@@ -49,6 +49,20 @@ function emitMemberUpdated(roomId, userId, patch) {
   io.to(roomId).emit(EV.MEMBER_UPDATED, Object.assign({ userId }, patch));
 }
 
+function publicBoxes(r) {
+  if (!r || !r.boxes) return { showNew: true, hidden: [] };
+  return { showNew: !!r.boxes.showNew, hidden: Array.from(r.boxes.hidden || []) };
+}
+
+function applyBoxPolicyForNewMember(r, userId) {
+  if (!r || !r.boxes) return false;
+  if (r.boxes.showNew) return false;
+  const key = String(userId);
+  if (r.boxes.hidden.has(key)) return false;
+  r.boxes.hidden.add(key);
+  return true;
+}
+
 function memberList(roomId) {
   const r = rooms.get(roomId);
   if (!r) return [];
@@ -196,6 +210,9 @@ function attach(httpServer) {
             // shared whiteboard: the stroke history is what a late joiner replays, so it
             // lives with the room (in memory, like `r.web`, and dies with the call)
             wb: { open: false, granted: new Set(), strokes: [] },
+            // admin-controlled stage-box visibility: which boxes are shown to everyone and
+            // whether a newly joined member's box appears by default (all selected by default)
+            boxes: { showNew: true, hidden: new Set() },
           });
           if (pendingClose.has(room)) { clearTimeout(pendingClose.get(room)); pendingClose.delete(room); }
         }
@@ -258,6 +275,7 @@ function attach(httpServer) {
           wb: r.wb.open
             ? { open: true, granted: [...r.wb.granted], strokes: r.wb.strokes }
             : { open: false },
+          boxes: publicBoxes(r),
         });
         ensurePingTimer(room);
 
@@ -270,8 +288,10 @@ function attach(httpServer) {
         }
 
         if (info.approved) {
+          const boxesChanged = applyBoxPolicyForNewMember(r, uid);
           socket.emit(EV.YOU_APPROVED, { ok: true });
           emitMemberJoined(room, you);
+          if (boxesChanged) io.to(room).emit(EV.BOX_VISIBILITY_CHANGED, { boxes: publicBoxes(r) });
         } else {
           r.pending.add(uid);
           io.to(room).emit(EV.MEMBER_PENDING, { member: you });
@@ -664,7 +684,9 @@ if (kind === 'audio') {
           const s = r.sockets.get(sid);
           if (s) { s.approved = true; io.to(sid).emit(EV.YOU_APPROVED, { ok: true }); }
         });
+        const boxesChanged = applyBoxPolicyForNewMember(r, targetId);
         io.to(room).emit(EV.MEMBER_APPROVED, { member: res.member });
+        if (boxesChanged) io.to(room).emit(EV.BOX_VISIBILITY_CHANGED, { boxes: publicBoxes(r) });
         if (typeof cb === 'function') cb({ ok: true, member: res.member });
       });
     });
@@ -715,6 +737,33 @@ if (kind === 'audio') {
       });
     });
 
+    // admin-controlled stage-box visibility (which boxes everyone sees + new-member default)
+    socket.on(EV.CALL_SET_BOX_VISIBILITY, (msg = {}, cb) => {
+      const r = webRoom();
+      if (!r || !r.sockets.get(socket.id)) return;
+      const me = r.sockets.get(socket.id);
+      if (!me || !me.is_admin) {
+        if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' });
+        return;
+      }
+      if (!r.boxes) r.boxes = { showNew: true, hidden: new Set() };
+
+      if (typeof msg.showNew === 'boolean') r.boxes.showNew = msg.showNew;
+
+      if (Array.isArray(msg.hidden)) {
+        r.boxes.hidden = new Set(msg.hidden.map((k) => String(k)));
+      } else if (msg.boxId != null) {
+        const key = String(msg.boxId);
+        const vis = msg.visible !== false; // default visible
+        if (vis) r.boxes.hidden.delete(key);
+        else r.boxes.hidden.add(key);
+      }
+
+      const boxes = publicBoxes(r);
+      io.to(socket.data.room).emit(EV.BOX_VISIBILITY_CHANGED, { boxes });
+      if (typeof cb === 'function') cb({ ok: true, boxes });
+    });
+
     // the admin switches "join without approval" for THIS call
     socket.on(EV.CALL_SET_OPEN_JOIN, (msg = {}, cb) => {
       const r = webRoom();
@@ -734,9 +783,10 @@ if (kind === 'audio') {
     });
 
     // Turning the switch ON must also release the people who are ALREADY waiting on the
-    // screen — otherwise the admin has to approve them one by one anyway.
+    // screen - otherwise the admin has to approve them one by one anyway.
     function releasePending(r) {
       let n = 0;
+      let boxesChanged = false;
       r.sockets.forEach((s, sid) => {
         if (s.approved) return;
         s.approved = true;
@@ -746,10 +796,12 @@ if (kind === 'audio') {
             [r.meetingId, s.userId]);
           if (pid) dbm.run("UPDATE meeting_participants SET status='approved' WHERE id=?", [pid.id]);
         } catch (e) { }
+        if (applyBoxPolicyForNewMember(r, s.userId)) boxesChanged = true;
         io.to(sid).emit(EV.YOU_APPROVED, { ok: true, via: 'open-join' });
         emitMemberJoined(socket.data.room, memberInfo(s));
         n++;
       });
+      if (boxesChanged) io.to(socket.data.room).emit(EV.BOX_VISIBILITY_CHANGED, { boxes: publicBoxes(r) });
       if (n) console.log('[call] released ' + n + ' waiting member(s) after the switch was turned on');
       updateSoloTimer(socket.data.room);
     }
