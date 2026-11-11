@@ -3,8 +3,8 @@
 </head>
 <%
   var canMessagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
-  var quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
-  var canCreate = !limited && !quotaFull;
+  // canCreate / createBlockMsg / quotaFull come from the server (they also reflect the
+  // site-wide meeting-creation mode). quotaPct is only for the progress bar.
   var quotaPct = quota.limit === 0 ? 0 : Math.min(100, Math.round((quota.used / quota.limit) * 100));
   var recentActive = recent.filter(function (m) { return !!m.active; }).length;
 %>
@@ -109,10 +109,10 @@
                     </a>
                     <% } else { %>
                     <button type="button" class="dash-btn dash-btn-primary dash-btn-lg is-disabled" data-no-loader
-                            onclick="bmToast(<%- json(limited ? 'حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد' : 'سقف تماس امروز شما پر شده است؛ فردا دوباره تلاش کنید') %>, 'error')"
+                            onclick='bmToast(<%- json(createBlockMsg) %>, "error")'
                             aria-disabled="true">
-                        <%- icon(limited ? 'block' : 'calendar_add_on', '', true) %>
-                        <span><%- limited ? 'حساب محدود شده' : 'سقف امروز پر شد' %></span>
+                        <%- icon((limited || (!quotaFull && !limited)) ? 'block' : 'calendar_add_on', '', true) %>
+                        <span><%- limited ? 'حساب محدود شده' : (quotaFull ? 'سقف امروز پر شد' : 'ایجاد تماس') %></span>
                     </button>
                     <% } %>
                     <button type="button" class="dash-btn dash-btn-ghost dash-btn-lg" data-no-loader onclick="bmFocusJoin()">
@@ -296,9 +296,15 @@
                         <span class="dash-empty-ico"><%- icon('calendar_add_on') %></span>
                         <p class="dash-empty-title">هنوز جلسه‌ای ایجاد نکرده‌ای</p>
                         <p class="dash-empty-sub">اولین تماس خودت را بساز و لینکش را با دوستانت به اشتراک بگذار.</p>
+                        <% if (canCreate) { %>
                         <a class="dash-btn dash-btn-soft" href="<%- url('create') %>" data-no-loader>
                             <%- icon('video_call') %><span>ایجاد تماس</span>
                         </a>
+                        <% } else { %>
+                        <button type="button" class="dash-btn dash-btn-soft" data-no-loader onclick='bmToast(<%- json(createBlockMsg) %>, "error")'>
+                            <%- icon('video_call') %><span>ایجاد تماس</span>
+                        </button>
+                        <% } %>
                     </div>
                 </template>
             </section>
@@ -396,7 +402,7 @@
     </a>
     <% } else { %>
     <button type="button" class="dash-bn-item" data-no-loader
-            onclick="bmToast(<%- json(limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است') %>, 'error')">
+            onclick='bmToast(<%- json(createBlockMsg) %>, "error")'>
         <%- icon('video_call') %><span>تماس</span>
     </button>
     <% } %>

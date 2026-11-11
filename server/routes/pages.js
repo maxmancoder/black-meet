@@ -100,6 +100,20 @@ router.get('/home', (req, res) => {
   );
 
   const quota = ranks.dailyQuota(me);
+  const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
+  const createMode = settings.meetingCreateMode();
+  const modeCheck = ranks.canCreateForMeetingMode(me, createMode);
+  let canCreate = true;
+  let createBlockMsg = '';
+  if (me.is_manager) {
+    canCreate = true; createBlockMsg = '';
+  } else if (!modeCheck.ok) {
+    canCreate = false; createBlockMsg = modeCheck.msg;
+  } else if (limited) {
+    canCreate = false; createBlockMsg = 'حساب شما محدود شده و امکان ایجاد تماس جدید وجود ندارد';
+  } else if (quotaFull) {
+    canCreate = false; createBlockMsg = 'سقف تماس امروز شما پر شده است؛ فردا دوباره تلاش کنید';
+  }
 
   // dashboard stats: only numbers this database can actually answer (no invented analytics)
   const now = new Date();
@@ -133,6 +147,9 @@ router.get('/home', (req, res) => {
     canRequests: ranks.canViewRequests(me),
     canMessages: ranks.canUseMessages(me),
     quota,
+    quotaFull,
+    canCreate,
+    createBlockMsg,
     quotaText: quota.limit === 0 ? null : (toFaDigits(quota.used) + ' از ' + toFaDigits(quota.limit)),
     firstName: String(me.display_name || '').split(/\s+/)[0] || '',
     initials: initials(me.display_name),
@@ -145,6 +162,18 @@ router.get('/create', (req, res) => {
   const quota = ranks.dailyQuota(me);
   const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
   const limited = !!me.is_limited;
+  const modeCheck = ranks.canCreateForMeetingMode(me, settings.meetingCreateMode());
+  let canCreate = true;
+  let createBlockMsg = '';
+  if (me.is_manager) {
+    canCreate = true; createBlockMsg = '';
+  } else if (!modeCheck.ok) {
+    canCreate = false; createBlockMsg = modeCheck.msg;
+  } else if (limited) {
+    canCreate = false; createBlockMsg = 'حساب شما محدود شده است';
+  } else if (quotaFull) {
+    canCreate = false; createBlockMsg = 'سقف تماس امروز پر شده است';
+  }
   res.render('create', pageLocals(req, res, {
     title: 'ایجاد تماس - Black Meet',
     limited,
@@ -156,8 +185,8 @@ router.get('/create', (req, res) => {
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
     canRequests: ranks.canViewRequests(me),
-    canCreate: !limited && !quotaFull,
-    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
+    canCreate,
+    createBlockMsg,
     initials: initials(me.display_name),
   }));
 });
@@ -168,6 +197,18 @@ router.get('/profile', (req, res) => {
   const quota = ranks.dailyQuota(me);
   const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
   const limited = !!me.is_limited;
+  const modeCheck = ranks.canCreateForMeetingMode(me, settings.meetingCreateMode());
+  let canCreate = true;
+  let createBlockMsg = '';
+  if (me.is_manager) {
+    canCreate = true; createBlockMsg = '';
+  } else if (!modeCheck.ok) {
+    canCreate = false; createBlockMsg = modeCheck.msg;
+  } else if (limited) {
+    canCreate = false; createBlockMsg = 'حساب شما محدود شده است';
+  } else if (quotaFull) {
+    canCreate = false; createBlockMsg = 'سقف تماس امروز پر شده است';
+  }
   res.render('profile', pageLocals(req, res, {
     title: 'پروفایل - Black Meet',
     av: avatarUrl(me.avatar, req),
@@ -176,8 +217,8 @@ router.get('/profile', (req, res) => {
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
     canRequests: ranks.canViewRequests(me),
-    canCreate: !limited && !quotaFull,
-    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
+    canCreate,
+    createBlockMsg,
     initials: initials(me.display_name),
   }));
 });
@@ -190,6 +231,19 @@ router.get('/meetings', (req, res) => {
   const quota = ranks.dailyQuota(me);
   const quotaFull = quota.limit !== 0 && quota.used >= quota.limit;
   const limited = !!me.is_limited;
+  const meetingCreateMode = settings.meetingCreateMode();
+  const modeCheck = ranks.canCreateForMeetingMode(me, meetingCreateMode);
+  let canCreate = true;
+  let createBlockMsg = '';
+  if (me.is_manager) {
+    canCreate = true; createBlockMsg = '';
+  } else if (!modeCheck.ok) {
+    canCreate = false; createBlockMsg = modeCheck.msg;
+  } else if (limited) {
+    canCreate = false; createBlockMsg = 'حساب شما محدود شده است';
+  } else if (quotaFull) {
+    canCreate = false; createBlockMsg = 'سقف تماس امروز پر شده است';
+  }
 
   const meetings = dbm.all(
     `SELECT m.id, m.room_id, m.title, m.created_at, m.active,
@@ -213,8 +267,10 @@ router.get('/meetings', (req, res) => {
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
     canRequests: ranks.canViewRequests(me),
-    canCreate: !limited && !quotaFull,
-    createBlockMsg: limited ? 'حساب شما محدود شده است' : 'سقف تماس امروز پر شده است',
+    canCreate,
+    createBlockMsg,
+    meetingCreateMode,
+    canChangeMeetingMode: !!me.is_manager,
     initials: initials(me.display_name),
   }));
 });
@@ -310,6 +366,20 @@ router.get('/members', (req, res) => {
 
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
 
+  const modeCheck = ranks.canCreateForMeetingMode(me, settings.meetingCreateMode());
+  let canCreate = true;
+  let createBlockMsg = '';
+  if (me.is_manager) {
+    canCreate = true; createBlockMsg = '';
+  } else if (!modeCheck.ok) {
+    canCreate = false; createBlockMsg = modeCheck.msg;
+  } else if (me.is_limited) {
+    canCreate = false; createBlockMsg = 'حساب شما محدود شده است';
+  } else {
+    const q = ranks.dailyQuota(me);
+    if (q.limit !== 0 && q.used >= q.limit) { canCreate = false; createBlockMsg = 'سقف تماس امروز پر شده است'; }
+  }
+
   res.render('admin_members', pageLocals(req, res, {
     title: 'مدیریت اعضا - Black Meet',
     me,
@@ -319,8 +389,8 @@ router.get('/members', (req, res) => {
     signupMode: settings.signupMode(),
     isManager: !!me.is_manager,
     canMessages: ranks.canUseMessages(me),
-    canCreate: true,
-    createBlockMsg: '',
+    canCreate,
+    createBlockMsg,
     canMembers,
     canRequests,
     canDecide,

@@ -52,7 +52,7 @@
         </a>
         <% } else { %>
         <button type="button" class="dash-btn dash-btn-soft" data-no-loader
-                onclick="bmToast(<%- json(createBlockMsg) %>, 'error')">
+                onclick='bmToast(<%- json(createBlockMsg) %>, "error")'>
             <%- icon('block') %><span>تماس جدید</span>
         </button>
         <% } %>
@@ -97,6 +97,48 @@
                     </a>
                 </div>
             </div>
+
+            <% if (canChangeMeetingMode) { %>
+            <div class="mem-mode" id="create-mode-row" style="margin-block: 4px 14px;">
+                <span class="mem-mode-label"><%- icon('video_call') %><span>دسترسی ایجاد تماس</span></span>
+                <div class="mem-menu-anchor">
+                    <button id="create-mode-btn" type="button" data-no-loader data-no-soft onclick="toggleCreateModeMenu(event)"
+                            class="mem-mode-btn" aria-haspopup="true" aria-expanded="false" aria-controls="create-mode-menu">
+                        <span class="mem-mode-left">
+                            <span id="create-mode-dot" class="mem-mode-dot bg-secondary"></span>
+                            <span id="create-mode-label" class="mem-mode-text">—</span>
+                        </span>
+                        <span class="bm-caret" aria-hidden="true"></span>
+                    </button>
+                    <div id="create-mode-menu" class="hidden mem-mode-menu glass-panel" role="menu" aria-label="دسترسی ایجاد تماس">
+                        <button type="button" class="mode-opt" data-mode="all" role="menuitem" onclick="setMeetingCreateMode('all')">
+                            <span class="mode-opt-icon"><%- icon('groups', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">فعال برای همه</span>
+                                <span class="mem-opt-sub">هر کاربری که به محدودیت ایجاد تماس خود نرسیده باشد می‌تواند تماس جدید ایجاد کند</span>
+                            </span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                        <button type="button" class="mode-opt" data-mode="premium" role="menuitem" onclick="setMeetingCreateMode('premium')">
+                            <span class="mode-opt-icon"><%- icon('shield_person', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">فعال برای پریمیوم‌ها</span>
+                                <span class="mem-opt-sub">فقط کاربران دارای اشتراک پریمیوم می‌توانند تماس ایجاد کنند</span>
+                            </span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                        <button type="button" class="mode-opt" data-mode="admin" role="menuitem" onclick="setMeetingCreateMode('admin')">
+                            <span class="mode-opt-icon"><%- icon('person', '', true) %></span>
+                            <span class="min-w-0">
+                                <span class="mem-opt-title">فعال برای ادمین‌ها</span>
+                                <span class="mem-opt-sub">فقط ادمین‌ها و ادمین‌های پریمیوم می‌توانند تماس ایجاد کنند</span>
+                            </span>
+                            <span class="mode-opt-check hidden" aria-hidden="true"><%- icon('check_circle', '', true) %></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <% } %>
 
             <div class="dash-chips" id="meet-filter" role="group" aria-label="فیلتر وضعیت تماس">
                 <button type="button" class="dash-chip is-on" data-filter="all" data-no-loader aria-pressed="true">
@@ -202,6 +244,8 @@ window.CSRF = <%- json(csrf) %>;
 window.BASE = <%- json(base) %>;
 window.__isManager = <%- json(isManager) %>;
 window.MS_ID = <%- Number(me.id) %>;
+window.MEETING_CREATE_MODE = <%- json(typeof meetingCreateMode !== 'undefined' ? meetingCreateMode : 'all') %>;
+window.CAN_CHANGE_MEETING_MODE = <%- json(typeof canChangeMeetingMode !== 'undefined' ? canChangeMeetingMode : false) %>;
 </script>
 <script src="<%- asset('assets/js/dashboard.js') %>"></script>
 <script src="<%- asset('assets/js/meetings.js') %>"></script>

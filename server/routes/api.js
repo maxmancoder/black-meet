@@ -292,17 +292,25 @@ router.post('/meetings/create', (req, res) => {
   if (title === '') title = 'تماس بدون عنوان';
   const me = sessions.currentUser(req);
 
-  if (me.is_limited) {
-    return bad(res, { ok: false, msg: 'حساب شما محدود شده و اجازه ایجاد تماس ندارید' }, 403);
-  }
+  // the site manager has no restrictions and can always create without limit
+  if (!me.is_manager) {
+    if (me.is_limited) {
+      return bad(res, { ok: false, msg: 'حساب شما محدود شده و اجازه ایجاد تماس ندارید' }, 403);
+    }
 
-  // daily quota: 2 for regular users, 5 for admins, 15 for premium admins (0 = unlimited)
-  const quota = ranks.dailyQuota(me);
-  if (quota.limit !== 0 && quota.used >= quota.limit) {
-    return bad(res, {
-      ok: false,
-      msg: 'به سقف تماس امروز خود رسیده‌اید (' + toFaDigits(quota.limit) + ' تماس در روز). فردا دوباره تلاش کنید',
-    }, 403);
+    const modeCheck = ranks.canCreateForMeetingMode(me, settings.meetingCreateMode());
+    if (!modeCheck.ok) {
+      return bad(res, { ok: false, msg: modeCheck.msg }, 403);
+    }
+
+    // daily quota: 2 for regular users, 5 for admins, 15 for premium admins (0 = unlimited)
+    const quota = ranks.dailyQuota(me);
+    if (quota.limit !== 0 && quota.used >= quota.limit) {
+      return bad(res, {
+        ok: false,
+        msg: 'به سقف تماس امروز خود رسیده‌اید (' + toFaDigits(quota.limit) + ' تماس در روز). فردا دوباره تلاش کنید',
+      }, 403);
+    }
   }
 
   const roomId = generateRoomId();
@@ -865,6 +873,20 @@ router.post('/admin/signup-mode', (req, res) => {
   const mode = String(req.body.mode || '');
   if (settings.SIGNUP_MODES.indexOf(mode) === -1) return bad(res, { ok: false, msg: 'حالت نامعتبر' });
   settings.setSetting('signup_mode', mode);
+  return ok(res, { ok: true, mode });
+});
+
+// site-wide meeting creation policy (manager only): all | premium | admin
+router.post('/admin/meeting-create-mode', (req, res) => {
+  if (!checkMethod(req, res, 'POST')) return;
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+
+  const mode = String(req.body.mode || '');
+  if (settings.MEETING_CREATE_MODES.indexOf(mode) === -1) return bad(res, { ok: false, msg: 'حالت نامعتبر' });
+  settings.setSetting('meeting_create_mode', mode);
   return ok(res, { ok: true, mode });
 });
 

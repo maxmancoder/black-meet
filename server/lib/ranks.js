@@ -84,8 +84,29 @@ function canUseMessages(u) {
   return r === 'manager' || r === 'premium';
 }
 
+// site-wide meeting creation policy (settings.meetingCreateMode):
+//   all     -> everyone, subject to their normal account limits/quotas
+//   premium -> only premium subscribers (rank premium) + manager
+//   admin   -> only admins and premium admins (ranks admin, premium) + manager
+// Manager is never restricted by this mode.
+function canCreateForMeetingMode(u, mode) {
+  if (!u) return { ok: false, msg: 'دسترسی ندارید' };
+  if (u.is_manager) return { ok: true };
+  if (mode === 'all' || !mode) return { ok: true };
+  const r = rankOf(u);
+  if (mode === 'premium') {
+    if (r === 'premium') return { ok: true };
+    return { ok: false, msg: 'در حال حاظر ایجاد تماس برای کاربران رایگان در دسترس نیست.' };
+  }
+  if (mode === 'admin') {
+    if (r === 'admin' || r === 'premium') return { ok: true };
+    return { ok: false, msg: 'در حال حاضر ایجاد تماس فقط برای ادمین‌ها در دسترس است.' };
+  }
+  return { ok: true };
+}
+
 module.exports = {
   RANKS, rankOf, rankLabel, dailyLimitOf, meetingsCreatedToday, dailyQuota,
   canViewMembers, canViewRequests, canDecideRequests, canChangeSignupMode, canManageUsers,
-  canUseMessages, normalizeRank,
+  canUseMessages, normalizeRank, canCreateForMeetingMode,
 };

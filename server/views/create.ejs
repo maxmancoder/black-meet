@@ -137,12 +137,17 @@
                     <%- icon('block') %>
                     <span>به سقف تماس امروز خود رسیده‌اید؛ فردا دوباره می‌توانید تماس جدید ایجاد کنید.</span>
                 </div>
+                <% } else if (!canCreate) { %>
+                <div class="create-alert" role="alert">
+                    <%- icon('block') %>
+                    <span><%- esc(createBlockMsg) %></span>
+                </div>
                 <% } %>
 
                 <div class="create-actions">
-                    <button id="create-btn" class="dash-btn dash-btn-lg <%- (limited || quotaFull) ? 'is-disabled' : 'dash-btn-primary' %>"
+                    <button id="create-btn" class="dash-btn dash-btn-lg <%- !canCreate ? 'is-disabled' : 'dash-btn-primary' %>"
                             type="button" onclick="createMeeting()"
-                            <%- (limited || quotaFull) ? 'disabled aria-disabled="true"' : '' %>>
+                            <%- !canCreate ? 'disabled aria-disabled="true"' : '' %>>
                         <%- icon('arrow_back') %><span class="dash-btn-label">ساخت تماس و ادامه</span>
                     </button>
                     <a class="dash-btn dash-btn-soft" href="<%- url('home') %>" data-no-loader>انصراف</a>

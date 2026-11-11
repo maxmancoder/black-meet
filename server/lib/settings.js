@@ -22,4 +22,15 @@ function signupMode() {
   return SIGNUP_MODES.indexOf(v) !== -1 ? v : 'open';
 }
 
-module.exports = { getSetting, setSetting, signupMode, SIGNUP_MODES };
+// meeting_create_mode: who may create a meeting (manager is always allowed, without limits)
+//   all     -> everyone, subject to their normal account limits/quotas
+//   premium -> only premium subscribers (rank premium / ادمین پریمیوم)
+//   admin   -> only admins and premium admins (ranks admin, premium)
+const MEETING_CREATE_MODES = ['all', 'premium', 'admin'];
+
+function meetingCreateMode() {
+  const v = getSetting('meeting_create_mode', 'all');
+  return MEETING_CREATE_MODES.indexOf(v) !== -1 ? v : 'all';
+}
+
+module.exports = { getSetting, setSetting, signupMode, SIGNUP_MODES, meetingCreateMode, MEETING_CREATE_MODES };

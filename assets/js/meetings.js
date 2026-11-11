@@ -134,5 +134,79 @@
     });
   };
 
+  /* ------------------------------------------------ meeting creation mode (manager) */
+  var createMode = window.MEETING_CREATE_MODE || 'all';
+  var CREATE_MODE_LABELS = { all: 'فعال برای همه', premium: 'فعال برای پریمیوم‌ها', admin: 'فعال برای ادمین‌ها' };
+  var CREATE_MODE_DOTS = { all: 'bg-secondary', premium: 'bg-primary', admin: 'bg-error' };
+
+  function setCreateModeUi(mode) {
+    var label = byId('create-mode-label');
+    var dot = byId('create-mode-dot');
+    if (label) label.textContent = CREATE_MODE_LABELS[mode] || mode;
+    if (dot) dot.className = 'mem-mode-dot ' + (CREATE_MODE_DOTS[mode] || 'bg-secondary');
+    $$('#create-mode-menu .mode-opt').forEach(function (b) {
+      var on = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('active', on);
+      var chk = b.querySelector('.mode-opt-check');
+      if (chk) chk.classList.toggle('hidden', !on);
+    });
+  }
+
+  function closeCreateModeMenu() {
+    var menu = byId('create-mode-menu');
+    var btn = byId('create-mode-btn');
+    if (menu && !menu.classList.contains('hidden')) {
+      menu.classList.add('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  window.toggleCreateModeMenu = function (e) {
+    if (e) e.stopPropagation();
+    var menu = byId('create-mode-menu');
+    var btn = byId('create-mode-btn');
+    if (!menu) return;
+    var open = menu.classList.contains('hidden');
+    closeCreateModeMenu();
+    if (open) {
+      menu.classList.remove('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+    }
+  };
+
+  window.setMeetingCreateMode = function (mode) {
+    var btn = byId('create-mode-btn');
+    if (btn) btn.disabled = true;
+    fetch((window.BASE || '') + '/api/admin/meeting-create-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ mode: mode, csrf: window.CSRF }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (btn) btn.disabled = false;
+        if (!d || !d.ok) {
+          window.bmToast((d && d.msg) || 'خطا در تغییر حالت', 'error');
+          return;
+        }
+        createMode = d.mode;
+        window.MEETING_CREATE_MODE = createMode;
+        setCreateModeUi(createMode);
+        closeCreateModeMenu();
+        window.bmToast('دسترسی ایجاد تماس: ' + (CREATE_MODE_LABELS[createMode] || createMode), 'success');
+      })
+      .catch(function () {
+        if (btn) btn.disabled = false;
+        window.bmToast('خطا در ارتباط با سرور', 'error');
+      });
+  };
+
+  doc.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && (e.target.closest('#create-mode-menu') || e.target.closest('#create-mode-btn'))) return;
+    closeCreateModeMenu();
+  });
+
+  if (window.CAN_CHANGE_MEETING_MODE) setCreateModeUi(createMode);
+
   paintCounts();
 })();
