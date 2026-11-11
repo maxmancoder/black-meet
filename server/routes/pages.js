@@ -8,6 +8,7 @@ const sessions = require('./../lib/sessions');
 const themesLib = require('./../lib/themes');
 const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
+const callfiles = require('./../lib/callfiles');
 const { toFaDigits } = require('./../lib/helpers');
 
 function pageLocals(req, res, extra) {
@@ -218,10 +219,44 @@ router.get('/meetings', (req, res) => {
   }));
 });
 
+// Who downloaded a file shared inside a call. Opens in a NEW TAB from the file box header
+// (the owner asked for exactly that), so it is a real page and not a modal. Only members of
+// the session can read it.
+router.get('/file-downloads', (req, res) => {
+  if (!requireLogin(req, res)) return;
+  const me = sessions.currentUser(req);
+  const room = String(req.query.room || '');
+  const fileId = String(req.query.id || '');
+  let meeting = null;
+  try {
+    meeting = room ? dbm.get('SELECT id, room_id, title, active FROM meetings WHERE room_id=?', [room]) : null;
+  } catch (e) { meeting = null; }
+  let member = false;
+  if (meeting) {
+    try {
+      member = !!dbm.get('SELECT 1 AS ok FROM meeting_participants WHERE meeting_id=? AND user_id=?',
+        [meeting.id, me.id]);
+    } catch (e) { member = false; }
+  }
+  if (!meeting || !member) {
+    res.redirect(baseUrl(req) + '/home');
+    return;
+  }
+  const meta = callfiles.meta(room, fileId);
+  const stats = callfiles.downloadStats(room, fileId);
+  res.render('file_downloads', pageLocals(req, res, {
+    title: 'دانلودکنندگان فایل - Black Meet',
+    fileName: (meta && meta.name) || 'فایل',
+    fileSize: (meta && meta.size) || 0,
+    total: stats.total,
+    downloaders: stats.users,
+    roomId: room,
+  }));
+});
+
 router.get('/forgot-password', (req, res) => {
   res.render('forgot_password', pageLocals(req, res, { title: 'بازیابی رمز عبور - Black Meet' }));
 });
-
 router.get('/messages', (req, res) => {
   if (!requireLogin(req, res)) return;
   const me = sessions.currentUser(req);

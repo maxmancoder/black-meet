@@ -1,0 +1,97 @@
+<%- include('head.ejs') %>
+<link rel="stylesheet" href="<%- asset('assets/css/dashboard.css') %>"/>
+<style>
+  /* self-contained: this page is opened in its own tab from the call file box, so it only
+     needs the dash tokens + a couple of rows (no Tailwind rebuild required) */
+  .dl-wrap { max-width: 820px; margin-inline: auto; padding: clamp(16px, 2.2vw, 28px) clamp(14px, 2.2vw, 30px) 40px; display: flex; flex-direction: column; gap: 16px; }
+  .dl-top { display: flex; align-items: center; gap: 10px; }
+  .dl-top .bm-brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+  .dl-top-name { font-family: "Digi Ghaf Bold", Vazirmatn, sans-serif; font-size: 18px; color: #fff; direction: ltr; }
+  .dl-top-back { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 12px; font-size: 12px; font-weight: 600; color: var(--d-text); text-decoration: none; border: 1px solid var(--d-line); background: rgba(255,255,255,.04); }
+  .dl-top-back:hover { background: rgba(255,255,255,.08); }
+  .dl-sum { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .dl-sum-ico { width: 52px; height: 52px; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(150deg, var(--d-accent), var(--d-accent-2)); box-shadow: 0 10px 26px rgba(93,67,246,.35); flex: none; }
+  .dl-sum-body { min-width: 0; flex: 1; }
+  .dl-sum-name { margin: 0; font-size: 15px; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+  .dl-sum-meta { margin: 2px 0 0; font-size: 12px; color: var(--d-text-mute); }
+  .dl-sum-num { text-align: center; padding: 8px 16px; border-radius: 14px; border: 1px solid var(--d-line); background: rgba(255,255,255,.03); }
+  .dl-sum-num b { display: block; font-family: "Digi Ghaf Bold", Vazirmatn, sans-serif; font-size: 24px; color: #fff; line-height: 1.2; }
+  .dl-sum-num span { font-size: 11px; color: var(--d-text-mute); }
+  .dl-list { display: flex; flex-direction: column; }
+  .dl-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-block-end: 1px solid rgba(255,255,255,.06); }
+  .dl-row:last-child { border-block-end: 0; }
+  .dl-av { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; background: var(--d-accent); }
+  .dl-av img { width: 100%; height: 100%; object-fit: cover; }
+  .dl-main { min-width: 0; flex: 1; }
+  .dl-name { margin: 0; font-size: 13px; font-weight: 600; color: var(--d-text); }
+  .dl-sub { margin: 1px 0 0; font-size: 11px; color: var(--d-text-mute); direction: ltr; text-align: right; }
+  .dl-count { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(93,67,246,.22); border: 1px solid rgba(93,67,246,.45); }
+  .dl-when { flex: none; font-size: 11px; color: var(--d-text-mute); }
+  .dl-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 16px; text-align: center; border: 1px dashed rgba(255,255,255,.13); border-radius: 16px; }
+  .dl-empty b { font-size: 14px; color: var(--d-text); }
+  .dl-empty span { font-size: 12px; color: var(--d-text-mute); }
+  @media (max-width: 520px) {
+    .dl-when { display: none; }
+    .dl-sum-num { padding: 6px 12px; }
+  }
+</style>
+</head>
+<body class="bm-dash">
+<div class="dl-wrap">
+  <div class="dl-top">
+    <%- brandMark('') %>
+    <span class="dl-top-name">Black Meet</span>
+    <a class="dl-top-back" href="<%- url('home') %>"><%- icon('arrow_forward', 'text-[16px]') %> بازگشت</a>
+  </div>
+
+  <div class="dash-page-head">
+    <p class="dash-page-eyebrow"><%- icon('download') %> گزارش دانلود</p>
+    <h1 class="dash-page-title">دانلودکنندگان فایل</h1>
+    <p class="dash-page-sub">هر عضوی که این فایل را دانلود کرده، با تعداد دفعات دانلود نمایش داده می‌شود.</p>
+  </div>
+
+  <div class="dash-card">
+    <div class="dl-sum">
+      <span class="dl-sum-ico"><%- icon('description', 'text-[26px]') %></span>
+      <div class="dl-sum-body">
+        <p class="dl-sum-name" dir="auto"><%- esc(fileName) %></p>
+        <p class="dl-sum-meta">
+          <% if (fileSize) { %><%= toFaDigits(String(Math.max(1, Math.round(fileSize / 1024)))) %> کیلوبایت · <% } %>
+          <%= toFaDigits(String(downloaders.length)) %> کاربر
+        </p>
+      </div>
+      <div class="dl-sum-num">
+        <b><%= toFaDigits(String(total)) %></b>
+        <span>بار دانلود</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-card">
+    <div class="dl-list">
+      <% if (!downloaders.length) { %>
+        <div class="dl-empty">
+          <%- icon('download', 'text-[34px]') %>
+          <b>هنوز کسی این فایل را دانلود نکرده</b>
+          <span>به‌محض اولین دانلود، نام و تعداد اینجا ثبت می‌شود.</span>
+        </div>
+      <% } else { %>
+        <% downloaders.forEach((u) => { %>
+          <div class="dl-row">
+            <span class="dl-av" style="background:<%- esc(u.avatar_color || '#5d43f6') %>">
+              <% if (u.avatar) { %><img src="<%- avatarUrl(u.avatar) %>" alt=""/><% } else { %><%= esc(initials(u.name)) %><% } %>
+            </span>
+            <div class="dl-main">
+              <p class="dl-name"><%- esc(u.name) %></p>
+              <% if (u.username) { %><p class="dl-sub">@<%- esc(u.username) %></p><% } %>
+            </div>
+            <span class="dl-when"><%= timeAgo(u.last_at) %></span>
+            <span class="dl-count"><%- icon('download', 'text-[14px]') %> <%= toFaDigits(String(u.count)) %></span>
+          </div>
+        <% }); %>
+      <% } %>
+    </div>
+  </div>
+</div>
+</body>
+</html>

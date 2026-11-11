@@ -660,6 +660,22 @@ router.get('/call/file/:id', (req, res) => {
   return ok(res, { ok: true, file: { id: meta.id, name: meta.name, mime: meta.mime, size: meta.size, viewable: meta.viewable } });
 });
 
+// live download badge for the file box (and the downloaders window reads the same rows)
+router.get('/call/file/:id/downloads', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const id = String(req.params.id || '');
+  const roomId = String(req.query.room || '').trim();
+  if (!roomId) return bad(res, { ok: false, msg: 'room لازم است' });
+  const access = callRoomAccess(req, res, roomId);
+  if (!access) return;
+  const stats = callfiles.downloadStats(roomId, id);
+  return ok(res, {
+    ok: true,
+    total: stats.total,
+    users: stats.users.map((u) => ({ user_id: u.user_id, name: u.name, username: u.username, count: u.count })),
+  });
+});
+
 // ------------------------------------------------------------------
 // admin (manager only)
 // ------------------------------------------------------------------

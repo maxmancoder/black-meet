@@ -386,7 +386,7 @@ function attach(httpServer) {
       return {
         kind: w.kind, url: w.url, src: w.src, host: w.host,
         name: w.name || '', size: Number(w.size) || 0, viewable: w.viewable !== false,
-        mime: w.mime || '', mode: w.mode || '',
+        mime: w.mime || '', mode: w.mode || '', downloads: Number(w.downloads) || 0,
         ownerId: w.ownerId, ownerName: w.ownerName || '',
         controlAll: w.controlAll !== false,
         controllers: Array.from(w.controllers || []),
@@ -502,6 +502,14 @@ if (kind === 'audio') {
         name: norm.name || '', size: norm.size || 0, viewable: norm.viewable !== false,
         mime: norm.mime || '',
         ownerId: uid, ownerName: s.name || '', scroll: null, video: null,
+        // the file box shows a live download counter; seed it from the DB when the box opens
+        downloads: (kind === 'file' && norm.name) ? (() => {
+          try {
+            const m = String(norm.url || '').match(/call-file\/([a-f0-9]{24,64})/);
+            if (m) return Number(callfiles.downloadStats(socket.data.room, m[1]).total) || 0;
+          } catch (e) { /* counter is cosmetic */ }
+          return 0;
+        })() : 0,
         // "دسترسی همزمان": when on, one person's scroll/click/play drives everyone
         follow: msg.follow !== false,
       }, keepRights);
@@ -579,7 +587,9 @@ if (kind === 'audio') {
         r.web.scroll = { ratio, at: Date.now() };
         payload.ratio = ratio;
       } else return;
-      socket.to(socket.data.room).emit(EV.WEB_SYNC, payload);
+      // volatile: a scroll position that is already stale must be dropped, not queued.
+      // Queueing was what made the other side run seconds behind the sender.
+      socket.to(socket.data.room).volatile.emit(EV.WEB_SYNC, payload);
     });
 
     // ---------- shared whiteboard (canvas inside the call) ----------
@@ -620,8 +630,9 @@ if (kind === 'audio') {
       const stroke = Object.assign({}, msg, { userId: uid });
       r.wb.strokes.push(stroke);
       if (r.wb.strokes.length > WB_MAX_STROKES) r.wb.strokes.shift();
-      // the sender already drew it locally — only the rest of the room needs it
-      socket.to(room).emit(EV.WB_DRAW, stroke);
+      // the sender already drew it locally — only the rest of the room needs it, and a
+      // stale stroke segment is worthless: drop it rather than queue it behind a slow link
+      socket.to(room).volatile.emit(EV.WB_DRAW, stroke);
     });
 
     socket.on(EV.WB_GRANT, (msg = {}) => {
@@ -965,4 +976,17 @@ r.sockets.forEach((s, sid) => {
 return io;
 }
 
-module.exports = { attach, get io() { return io; } };
+module.exports = {
+  attach,
+  get io() { return io; },
+  // Called from the call-file route when somebody really downloads a shared file: keep the
+  // room's counter in sync (so a late joiner sees the number in CALL_WELCOME) and tell
+  // everyone at once, which is what the file box's badge listens for.
+  noteWebDownload(roomId, fileId, total) {
+    const r = rooms.get(String(roomId || ''));
+    if (r && r.web && r.web.kind === 'file' && String(r.web.url || '').indexOf(String(fileId)) !== -1) {
+      r.web.downloads = Number(total) || 0;
+    }
+    if (io) io.to(String(roomId || '')).emit(EV.WEB_DOWNLOAD, { fileId: String(fileId || ''), total: Number(total) || 0 });
+  },
+};

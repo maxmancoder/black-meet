@@ -39,6 +39,7 @@
     WEB_STATE: 'web:state',
     WEB_SYNC: 'web:sync',
     WEB_ERR: 'web:err',
+    WEB_DOWNLOAD: 'web:download', // a member downloaded the shared file (live count badge)
 
     // shared whiteboard (canvas inside the call)
     WB_OPEN: 'wb:open',        // admin opens the whiteboard for the room

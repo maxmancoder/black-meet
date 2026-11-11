@@ -95,9 +95,6 @@
 <button class="<%= isAdmin ? '' : 'hidden' %> flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg relative" id="tab-admin" onclick="switchTab('admin')">
                 مدیریت <span id="admin-badge" class="absolute top-0 right-2 w-2 w-2 bg-error rounded-full hidden"></span>
             </button>
-            <button id="tab-wb" onclick="switchTab('wb')" title="تخته وایت‌برد" class="flex-1 pb-3 text-center font-label-md text-on-surface-variant border-b-2 border-transparent transition-colors hover:text-on-surface rounded-t-lg">
-                <%- icon('draw', 'bm-ico') %>
-            </button>
         </div>
 
         <div class="flex-1 overflow-hidden relative">
@@ -139,45 +136,8 @@
                 <h3 class="font-label-md text-on-surface-variant mb-2 mt-4">مدیریت اعضا</h3>
                 <div id="admin-members"></div>
             </div>
-            <div id="content-wb" class="hidden flex-col h-full overflow-hidden">
-
-                <!-- Toolbar: shown only when user can draw -->
-                <div id="wb-toolbar" class="hidden flex items-center gap-2 px-3 py-2 border-b border-white/10 flex-shrink-0">
-                    <button id="wb-btn-pen" onclick="bmWbSetTool('pen')" title="قلم" class="ctrl-live">
-                        <%- icon('draw', 'bm-ico') %>
-                    </button>
-                    <button id="wb-btn-eraser" onclick="bmWbSetTool('eraser')" title="پاک‌کن">
-                        <%- icon('ink_eraser', 'bm-ico') %>
-                    </button>
-                    <input type="color" id="wb-color" value="#ffffff"
-                           oninput="bmWbSetColor(this.value)"
-                           class="w-7 h-7 rounded cursor-pointer border-0 bg-transparent flex-shrink-0"
-                           title="رنگ">
-                    <input type="range" id="wb-size" min="2" max="40" value="4"
-                           oninput="bmWbSetSize(+this.value)"
-                           class="w-20 flex-shrink-0"
-                           title="ضخامت">
-                    <button id="wb-btn-clear" onclick="bmWbClear()" title="پاک کردن کل تخته" class="hidden mr-auto">
-                        <%- icon('delete_sweep', 'bm-ico') %>
-                    </button>
-                </div>
-
-                <!-- Canvas area -->
-                <div id="wb-canvas-wrap" class="flex-1 relative overflow-hidden bg-[#1a2236] min-h-0">
-                    <canvas id="wb-canvas" class="absolute inset-0 w-full h-full touch-none" style="pointer-events:none"></canvas>
-                    <div id="wb-viewer-badge"
-                         class="absolute bottom-2 left-2 text-xs opacity-50 pointer-events-none select-none">
-                        فقط مشاهده
-                    </div>
-                </div>
-
-                <!-- Admin grant/revoke panel -->
-                <div id="wb-admin-panel" class="hidden flex-col gap-1 px-3 py-2 border-t border-white/10 flex-shrink-0 max-h-40 overflow-y-auto">
-                    <p class="text-xs opacity-60 mb-1 select-none">دسترسی نقاشی</p>
-                    <div id="wb-grant-list"></div>
-                </div>
-
-            </div>
+            <!-- The whiteboard is a BOX on the stage (see assets/js/whiteboard.js), never a
+                 sidebar tab: the owner asked for a white board that appears only in the stage. -->
         </div>
     </aside>
 
@@ -214,11 +174,16 @@
 
 <!-- Bottom control bar. While a box is maximized it collapses into a small floating
      circle (the × at its top-right hides it, the circle brings it back). -->
-<nav id="control-bar" class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-grid-gutter bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-3 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)] group/nav" dir="ltr">
-    <button id="btn-bar-hide" onclick="toggleControlBar(false)" title="محو کردن منو"
-            class="hidden sm:flex absolute -top-11 right-0 w-9 h-9 rounded-full bg-surface-container-highest/90 backdrop-blur border border-white/15 text-on-surface-variant hover:text-on-surface items-center justify-center shadow-lg">
+<nav id="control-bar" class="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center bg-surface-container-highest/60 backdrop-blur-lg border border-white/10 shadow-2xl shadow-black/40 rounded-full px-2 sm:px-6 py-2 sm:py-3 max-w-[calc(100vw-16px)] group/nav" dir="ltr">
+    <!-- The hide key lives OUTSIDE the scrolling strip: with overflow-x on the strip an
+         absolutely-positioned child would be clipped away (that was the mobile bug). Its
+         position/stacking lives in styles.css (`#btn-bar-hide`) — a Tailwind `-top-10`
+         was never emitted, which left the × sitting inside the strip band. -->
+    <button id="btn-bar-hide" onclick="toggleControlBar(false)" title="محو کردن منو" data-no-soft
+            class="flex w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-surface-container-highest/90 backdrop-blur border border-white/15 text-on-surface-variant hover:text-on-surface items-center justify-center shadow-lg">
         <%- icon('close', 'text-[18px]') %>
     </button>
+    <div id="bar-scroll" class="bar-scroll flex items-center gap-1 sm:gap-grid-gutter min-w-0">
     <button id="btn-mic" class="bm-bar-item bg-white/5 text-on-surface rounded-full p-3 hover:bg-white/10 transition-all scale-110 active:scale-90 duration-150 flex flex-col items-center justify-center gap-1 min-w-[64px] group" onclick="toggleMic()">
         <%- icon('mic', 'text-[24px]', true, 'id="ic-mic"') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Mic</span>
@@ -255,6 +220,7 @@
         <%- icon('call_end', 'text-[24px]') %>
         <span class="font-label-sm text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-background/90 px-2 py-0.5 rounded text-[10px]">Leave</span>
     </button>
+    </div>
 </nav>
 
 <!-- Microphone settings: noise suppression (on by default) -->

@@ -108,6 +108,74 @@ function filePath(roomId, id) {
   return file ? path.join(dir, file) : null;
 }
 
+// ---------- downloads ----------
+// The owner asked the file box to show HOW MANY TIMES a file was downloaded and to open a
+// window listing WHO downloaded it (display name + count). The counters live in SQLite:
+// the bytes are deleted with the session, the numbers are not.
+function noteDownload(roomId, id, userId, name) {
+  const key = roomKey(roomId);
+  const fid = idOf(key, id);
+  const uid = Number(userId);
+  if (!key || !fid || !Number.isInteger(uid) || uid <= 0) return null;
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  // the same `YYYY-MM-DD HH:MM:SS` shape the rest of the app stores (helpers.timeAgo parses it)
+  const now = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+    p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  try {
+    dbm.run(
+      `INSERT INTO call_file_downloads (room, file_id, file_name, user_id, count, first_at, last_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)
+       ON CONFLICT(file_id, user_id) DO UPDATE SET
+         count = call_file_downloads.count + 1,
+         last_at = excluded.last_at`,
+      [key, fid, safeName(name || ''), uid, now, now]
+    );
+  } catch (e) { return null; }
+  return downloadStats(key, fid);
+}
+
+// { total, users:[{ user_id, count, last_at, name, display_name, avatar }] }
+function downloadStats(roomId, id) {
+  const key = roomKey(roomId);
+  const fid = idOf(key, id);
+  if (!key || !fid) return { total: 0, users: [] };
+  let rows = [];
+  try {
+    rows = dbm.all(
+      `SELECT d.user_id, d.count, d.last_at, d.first_at,
+              u.display_name, u.username, u.full_name, u.avatar, u.avatar_color, u.rank, u.is_manager
+         FROM call_file_downloads d
+         LEFT JOIN users u ON u.id = d.user_id
+        WHERE d.room = ? AND d.file_id = ?
+        ORDER BY d.count DESC, d.last_at DESC`,
+      [key, fid]
+    );
+  } catch (e) { return { total: 0, users: [] }; }
+  const users = rows.map((r) => ({
+    user_id: Number(r.user_id),
+    count: Number(r.count) || 0,
+    last_at: r.last_at || '',
+    first_at: r.first_at || '',
+    name: r.display_name || r.full_name || r.username || ('کاربر ' + r.user_id),
+    username: r.username || '',
+    avatar: r.avatar || '',
+    avatar_color: r.avatar_color || '',
+    is_manager: !!r.is_manager,
+    rank: r.rank || (r.is_manager ? 'manager' : 'user'),
+  }));
+  return { total: users.reduce((s, u) => s + u.count, 0), users };
+}
+
+function purgeDownloads(roomId) {
+  const key = roomKey(roomId);
+  if (!key) return 0;
+  try {
+    const r = dbm.run('DELETE FROM call_file_downloads WHERE room = ?', [key]);
+    return r && r.changes ? r.changes : 0;
+  } catch (e) { return 0; }
+}
+
 // ---------- lifecycle ----------
 // delete every file of a room (called when the last member leaves)
 function purgeRoom(roomId) {
@@ -120,6 +188,7 @@ function purgeRoom(roomId) {
     fs.rmSync(dir, { recursive: true, force: true });
   } catch (e) { /* nothing to delete */ }
   if (n) console.log('[callfiles] removed ' + n + ' file(s) of room ' + key);
+  purgeDownloads(key);
   return n;
 }
 
@@ -142,4 +211,8 @@ function purgeInactive() {
   return n;
 }
 
-module.exports = { store, meta, filePath, purgeRoom, purgeInactive, MAX_BYTES, isViewable, safeName, roomKey };
+module.exports = {
+  store, meta, filePath, purgeRoom, purgeInactive,
+  noteDownload, downloadStats, purgeDownloads,
+  MAX_BYTES, isViewable, safeName, roomKey,
+};

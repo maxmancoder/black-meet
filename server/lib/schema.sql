@@ -176,5 +176,21 @@ CREATE TABLE IF NOT EXISTS bm_avatars (
   updated_at INTEGER NOT NULL
 );
 
+-- how many times each member downloaded a file shared inside a call. The files themselves
+-- die with the session, but the counters are cheap and let the box show a live download
+-- badge and a "who downloaded this" window. One row per (file, user).
+CREATE TABLE IF NOT EXISTS call_file_downloads (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  room       TEXT    NOT NULL,
+  file_id    TEXT    NOT NULL,
+  file_name  TEXT    NOT NULL DEFAULT '',
+  user_id    INTEGER NOT NULL,
+  count      INTEGER NOT NULL DEFAULT 0,
+  first_at   TEXT    NOT NULL DEFAULT '',
+  last_at    TEXT    NOT NULL DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_call_file_dl ON call_file_downloads (file_id, user_id);
+CREATE INDEX IF NOT EXISTS ix_call_file_dl_room ON call_file_downloads (room);
+
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('001_phase0_schema', '2026-01-01 00:00:00');
 INSERT OR IGNORE INTO migrations (name, applied_at) VALUES ('002_phase1_realtime', '2026-01-01 00:00:00');

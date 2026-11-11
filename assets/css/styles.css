@@ -421,6 +421,15 @@ button, .btn-primary, .btn-secondary, .bm-switch {
    slides up from under the bar and goes back down when the pointer leaves. `group/nav`
    is a custom name, so it lives here instead of in the Tailwind build. */
 #btn-bar-hide {
+  /* position it HERE, not with Tailwind: `-top-10` was never emitted by the JIT build, so
+     the × fell back to its static flex position INSIDE the strip band where the share key
+     painted over it (that is why the phone × looked missing / dead). An absolutely
+     positioned child of an `overflow-x:auto` strip would be clipped, so it is a sibling
+     of `#bar-scroll` and hangs above the pill with its own stacking level. */
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
   opacity: 0;
   transform: translateY(12px);
   pointer-events: none;
@@ -432,22 +441,31 @@ button, .btn-primary, .btn-secondary, .bm-switch {
   transform: translateY(0);
   pointer-events: auto;
 }
-/* On a phone the bar has more keys than fit: let it scroll sideways INSIDE its own rounded
-   pill instead of pushing the page wide (the noise key used to stick out of the viewport). */
+/* On a phone the bar has more keys than fit: let the STRIP scroll sideways inside the
+   rounded pill instead of pushing the page wide. The strip is a real child element
+   (`#bar-scroll`) because an absolutely-positioned hide key inside an `overflow-x:auto`
+   box gets clipped — that is why the mobile × never appeared. */
+.bar-scroll { min-width: 0; }
 @media (max-width: 639px) {
   #control-bar {
     max-width: calc(100vw - 12px);
-    overflow-x: auto;
-    overflow-y: visible;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
   }
-  #control-bar::-webkit-scrollbar { display: none; }
+  #control-bar #bar-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: calc(100vw - 32px);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1px;
+  }
+  #control-bar #bar-scroll::-webkit-scrollbar { display: none; }
   #control-bar .bm-bar-item { flex: 0 0 auto; }
+  /* a phone has no hover: the × must be visible all the time */
+  #btn-bar-hide { opacity: 1; transform: none; pointer-events: auto; }
 }
-@media (max-width: 639px) { #btn-bar-hide { display: none; } }
 #btn-bar-show {
   transform: translateY(26px) scale(.5);
   opacity: 0;
@@ -644,6 +662,163 @@ button:not(.bm-soft) > *, .btn-primary > *, .btn-secondary > *,
 .web-box .web-body { min-height: 0; }
 .web-box.web-expanded { height: 100% !important; min-height: 0; }
 .web-box iframe { display: block; }
+
+/* ===== Shared whiteboard box ===== */
+/* A dedicated white board on the stage. The owner was explicit: white background (it is a
+   WHITEboard), and it must appear nowhere else on the page — so it is a normal grid cell
+   like the other boxes, never a sidebar tab. */
+.wb-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  isolation: isolate;
+  border-radius: .75rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--bm-primary) / .45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  background: #fff;
+}
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  flex-shrink: 0;
+  color: rgb(var(--bm-on-surface));
+  background: rgb(var(--bm-surface-container-highest) / .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgb(var(--bm-outline-variant) / .25);
+}
+.wb-head-ico { display: inline-flex; color: rgb(var(--bm-primary)); flex-shrink: 0; }
+.wb-head-title { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.wb-spacer { flex: 1 1 auto; }
+.wb-tools { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.wb-tool,
+.wb-hbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: .55rem;
+  flex-shrink: 0;
+  color: rgb(var(--bm-on-surface));
+  background: rgb(var(--bm-surface-bright) / .5);
+  transition: background-color .18s ease, color .18s ease;
+}
+.wb-tool:hover,
+.wb-hbtn:hover { background: rgb(var(--bm-surface-bright) / .9); }
+.wb-hbtn-danger { color: rgb(var(--bm-on-error-container)); background: rgb(var(--bm-error-container) / .9); }
+.wb-color {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: .45rem;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.wb-size { width: 66px; flex-shrink: 0; accent-color: rgb(var(--bm-primary)); }
+.wb-viewer {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: 10.5px;
+  padding: .18rem .5rem;
+  border-radius: 9999px;
+  color: rgb(var(--bm-on-surface-variant));
+  background: rgb(var(--bm-surface-container) / .8);
+  border: 1px solid rgb(var(--bm-outline-variant) / .3);
+  flex-shrink: 0;
+}
+.wb-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #fff;
+  overflow: hidden;
+}
+.wb-body canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+/* the grant panel is a small popover INSIDE the box (the sidebar tab that used to hold it
+   is gone — the board must live only on the stage) */
+.wb-grant {
+  position: absolute;
+  top: .5rem;
+  inset-inline-start: .5rem;
+  z-index: 5;
+  width: min(240px, calc(100% - 1rem));
+  max-height: calc(100% - 1rem);
+  overflow-y: auto;
+  border-radius: .7rem;
+  padding: .45rem;
+  color: rgb(var(--bm-on-surface));
+  background: rgb(var(--bm-surface-container-highest) / .97);
+  border: 1px solid rgb(var(--bm-primary) / .35);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(12px);
+}
+.wb-grant-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding-bottom: .35rem;
+  margin-bottom: .3rem;
+  border-bottom: 1px solid rgb(var(--bm-outline-variant) / .25);
+}
+.wb-grant-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: .4rem;
+  color: rgb(var(--bm-on-surface-variant));
+}
+.wb-grant-x:hover { background: rgb(var(--bm-surface-bright) / .7); }
+.wb-grant-list { display: flex; flex-direction: column; gap: .2rem; }
+.wb-grant-row { display: flex; align-items: center; gap: .4rem; }
+.wb-grant-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-grant-btn {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: .22rem .5rem;
+  border-radius: 9999px;
+  color: rgb(var(--bm-primary));
+  background: rgb(var(--bm-primary-container) / .28);
+  border: 1px solid rgb(var(--bm-primary) / .35);
+}
+.wb-grant-btn.is-on {
+  color: rgb(var(--bm-on-error-container));
+  background: rgb(var(--bm-error-container) / .85);
+  border-color: transparent;
+}
+.wb-grant-empty { font-size: 11px; color: rgb(var(--bm-on-surface-variant)); padding: .25rem; }
+/* the board is white, so the maximized overlay must not paint the dark page behind it.
+   The rule has to beat `dashboard.css`'s `.bm-call #max-overlay` (same specificity class
+   count) — that sheet loads AFTER this one, so source order alone would lose. */
+body.bm-call #max-overlay:has(> .wb-box),
+#max-overlay:has(> .wb-box) { background: #fff; }
 
 /* While a box is maximized it sits in a full-viewport layer (z-90). The side panel
    (z-40) and the chat toast (z-55) used to stay UNDER it, so "نمایش منو", the chat key and

@@ -103,8 +103,14 @@
   function upsertMember(m) {
     m = normalizeMember(m);
     const i = currentList.findIndex(x => x.userId === m.userId);
-    const merged = i >= 0 ? Object.assign({}, currentList[i], m) : m;
-    if (i >= 0) currentList[i] = merged; else currentList.push(merged);
+    if (i < 0) { currentList.push(m); return m; }
+    // merge field by field: a partial update (a bare {userId} or a patch) must never
+    // wipe a name/status we already know. `Object.assign` used to overwrite `name` with
+    // undefined and reset an approved member to "pending", which removed them from the
+    // whiteboard grant list and the admin panel.
+    const merged = Object.assign({}, currentList[i]);
+    Object.keys(m).forEach((k) => { if (m[k] !== undefined) merged[k] = m[k]; });
+    currentList[i] = merged;
     return merged;
   }
   function dropMember(userId) {
@@ -468,7 +474,10 @@
       peerFlushTimer = null;
       const q = peerQueue.splice(0, peerQueue.length);
       q.forEach((it, i) => setTimeout(() => {
-        const m = upsertMember({ userId: it.userId });
+        // read the roster entry — do NOT upsert a bare {userId} stub: normalizeMember
+        // would default it to status 'pending' and blank its name (that silently removed
+        // an approved member from the grant/admin lists)
+        const m = currentList.find(x => x.userId === it.userId) || { userId: it.userId };
         createPC(Object.assign({}, m, { userId: it.userId }), it.polite);
       }, i * 40));
     }, 0);
@@ -669,6 +678,14 @@
       try {
         if (e.track.kind === 'video') e.track.contentHint = 'motion';
         else if (e.track.kind === 'audio') { e.track.contentHint = 'speech'; e.track.enabled = true; }
+      } catch (err) {}
+      // Low-latency playback: without a hint the jitter buffer sits at ~30-50ms and can
+      // grow under any packet loss, which is exactly the "everything arrives late" feel.
+      // playoutDelayHint is in SECONDS, jitterBufferTarget in MILLISECONDS — browsers
+      // that do not know a property simply ignore the assignment.
+      try {
+        if ('playoutDelayHint' in e.receiver) e.receiver.playoutDelayHint = 0;
+        if ('jitterBufferTarget' in e.receiver) e.receiver.jitterBufferTarget = 0;
       } catch (err) {}
       rs.addTrack(e.track);
       const v = $('vid-' + peer.userId);
@@ -1109,6 +1126,7 @@
     socket.on(EV.WEB_STATE, d => { if (window.bmWebState) window.bmWebState(d); });
     socket.on(EV.WEB_SYNC, d => { if (window.bmWebSync) window.bmWebSync(d); });
     socket.on(EV.WEB_ERR, d => showToast((d && d.msg) || 'خطا'));
+    socket.on(EV.WEB_DOWNLOAD, d => { if (window.bmWebDownload) window.bmWebDownload(d); });
     startPingLoop();
     startConnectionWatchdog();
   }
@@ -1999,7 +2017,7 @@
   // ---------- Tabs ----------
   window.switchTab = function (tab) {
     currentTab = tab;
-    ['members', 'chat', 'admin', 'wb'].forEach(t => {
+    ['members', 'chat', 'admin'].forEach(t => {
       const c = $('content-' + t); if (c) { c.classList.add('hidden'); c.classList.remove('flex'); }
       const el = $('tab-' + t); if (el) { el.classList.remove('text-primary', 'border-primary'); el.classList.add('text-on-surface-variant', 'border-transparent'); }
     });
@@ -2011,11 +2029,6 @@
     if (tabs) tabs.classList.toggle('hidden', tab === 'chat');
     const cb = $('btn-chat-panel');
     if (cb) cb.classList.toggle('ctrl-live', tab === 'chat');
-    // remove ctrl-live from btn-wb when switching away from wb tab
-    if (tab !== 'wb') {
-      const wbb = $('btn-wb');
-      if (wbb) wbb.classList.remove('ctrl-live');
-    }
     layoutGrid();
   };
   let currentTab = 'members';
@@ -2191,6 +2204,7 @@
     maxSidebarWasOpen = !!(sb && !sb.classList.contains('hidden'));
     if (window.toggleSidebar) window.toggleSidebar(false);
     setControlBarVisible(false);
+    if (window.bmWbOnMaximizeChange) window.bmWbOnMaximizeChange();
   }
 
   function exitMaximize() {
@@ -2213,6 +2227,7 @@
     maxSidebarWasOpen = false;
     setControlBarVisible(true);
     layoutGrid();
+    if (window.bmWbOnMaximizeChange) window.bmWbOnMaximizeChange();
   }
 
   window.toggleMaximize = function (key) {
@@ -2231,6 +2246,13 @@
     if (!box) return;
     enterMaximize(box);
     if (window.bmWebSetExpanded) window.bmWebSetExpanded(false);
+  };
+  // used by the whiteboard box header button
+  window.bmEnterMaximizeWb = function () {
+    if (isMaximized()) return;
+    const box = $('wb-box');
+    if (!box) return;
+    enterMaximize(box);
   };
   window.bmIsMaximized = isMaximized;
 

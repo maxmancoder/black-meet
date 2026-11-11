@@ -155,6 +155,16 @@
     if (n >= 1024) return Math.round(n / 1024) + ' کیلوبایت';
     return n + ' بایت';
   }
+  // Persian digits for the counters (the UI is Persian RTL everywhere else)
+  function faNum(n) {
+    return String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+  }
+  // the random id of a shared file, taken from its served URL
+  function fileIdOf() {
+    const u = String((web && web.url) || '');
+    const m = u.match(/call-file\/([a-f0-9]{16,64})/i);
+    return m ? m[1] : '';
+  }
   function pickWebFile(f) {
     if (!f) return;
     const AUDIO = /^audio\//i;
@@ -310,6 +320,30 @@
     if (!s) return;
     s.emit(EV.CALL_WEB_CLOSE, {}, () => toast('باکس حذف شد'));
   };
+  // Opens the downloaders window for the file currently in the box. The page is
+  // login-gated and member-gated on the server; we only pass the room + file id.
+  window.openFileDownloaders = function () {
+    const id = fileIdOf();
+    if (!id) { toast('فایلی برای نمایش وجود ندارد'); return; }
+    const base = (window.BASE || '/black-meet').replace(/\/$/, '');
+    const url = base + '/file-downloads?room=' + encodeURIComponent(fileRoom())
+      + '&id=' + encodeURIComponent(id);
+    window.open(url, '_blank', 'noopener');
+  };
+  // live counter pushed by the server whenever somebody really downloads the file
+  window.bmWebDownload = function (d) {
+    if (!d) return;
+    const id = String(d.fileId || '');
+    if (!id || id !== fileIdOf()) return;      // another file's news
+    if (web) web.downloads = Number(d.total) || 0;
+    const num = $('web-dl-num');
+    if (num) num.textContent = faNum(web ? web.downloads : 0);
+    const btn = $('web-dl-count');
+    if (btn) {
+      btn.classList.add('ring-1', 'ring-primary/60');
+      setTimeout(() => btn.classList.remove('ring-1', 'ring-primary/60'), 900);
+    }
+  };
   window.toggleWebExpanded = function () {
     if (expanded) { window.bmExitMaximize && window.bmExitMaximize(); return; }
     // the whole-viewport overlay lives in call.js (it also handles the control bar)
@@ -342,6 +376,15 @@
     // a file box also offers an explicit download, so a viewer can always keep it
     const dl = kind === 'file' && web && web.url
       ? `<a href="${escapeHtml(web.url)}?room=${encodeURIComponent(fileRoom())}&download=1" target="_blank" rel="noopener" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="دانلود فایل">${bmIcon('download', 'text-[16px]')}</a>` : '';
+    // how many people have downloaded this file, and WHO they are — the owner asked for a
+    // visible counter that opens the list of downloaders in a new window
+    const dlCount = kind === 'file'
+      ? `<button type="button" id="web-dl-count" onclick="openFileDownloaders()"
+                class="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface shrink-0"
+                title="تعداد دانلود — فهرست دانلودکنندگان">
+           ${bmIcon('groups', 'text-[15px]')}
+           <span id="web-dl-num">${faNum(Number(web && web.downloads) || 0)}</span>
+         </button>` : '';
     return `
       <div class="web-head flex items-center gap-2 px-3 py-2 bg-surface-container-highest/90 backdrop-blur border-b border-white/10 shrink-0">
         ${bmIcon(icon, 'text-[18px] text-primary shrink-0')}
@@ -350,6 +393,7 @@
         ${kind === 'file' && web && web.size ? `<span class="text-[11px] text-on-surface-variant shrink-0">${faSize(web.size)}</span>` : ''}
         <div class="flex-1"></div>
         ${lockNote}
+        ${dlCount}
         ${dl}
         <button type="button" onclick="toggleWebMaximize()" class="px-2.5 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface" title="تمام‌صفحه">
           ${bmIcon((window.bmIsMaximized && window.bmIsMaximized()) ? 'fullscreen_exit' : 'fullscreen', 'text-[16px]')}
@@ -475,37 +519,77 @@
   }
 
   // The last scroll position we know about. Proxied pages can take seconds to finish
-// loading, so a scroll that arrives while the receiver is still parsing would be lost —
-// we keep the ratio and re-apply it until the document is tall enough to move.
-let lastRatio = 0;
+  // loading, so a scroll that arrives while the receiver is still parsing would be lost —
+  // we keep the ratio and re-apply it until the document is tall enough to move.
+  //
+  // IMPORTANT (the "everyone jumps to the bottom first" bug): the position must be applied
+  // INSTANTLY. The old code asked for `behavior:'smooth'` and re-issued it every 450 ms,
+  // and a proxied page often carries its own `scroll-behavior: smooth`; the two animations
+  // fought, the receiver relayed its own in-flight scroll back, and everyone bounced
+  // between the top/bottom of the page before settling on the sender's spot.
+  let lastRatio = 0;
   let scrollRetry = null;
+  let scrollTries = 0;
+  let applyingUntil = 0;      // ignore our own scroll events for this long
+  function suppressEcho(ms) { applyingUntil = Math.max(applyingUntil, Date.now() + (ms || 700)); }
+  function isApplying() { return applying || Date.now() < applyingUntil; }
+
+  // instant, and immune to a `scroll-behavior: smooth` declared by the proxied page
+  function jumpTop(frame, d, top) {
+    const de = d.documentElement;
+    const body = d.body;
+    const prevDe = de ? de.style.scrollBehavior : '';
+    const prevBody = body ? body.style.scrollBehavior : '';
+    if (de) de.style.scrollBehavior = 'auto';
+    if (body) body.style.scrollBehavior = 'auto';
+    try {
+      const w = frame.contentWindow;
+      if (w && typeof w.scrollTo === 'function') {
+        try { w.scrollTo({ top: top, left: 0, behavior: 'instant' }); }
+        catch (e) { w.scrollTo(0, top); }
+      }
+    } catch (e) { /* frame gone */ }
+    if (de) de.style.scrollBehavior = prevDe;
+    if (body) body.style.scrollBehavior = prevBody;
+  }
 
   function scrollToRatio(ratio, retry) {
     const frame = $('web-frame');
     if (!frame) return;
     const d = docOf(frame);
-    if (!d) { scheduleScroll(ratio); return; }
+    if (!d) { if (retry) scheduleScroll(ratio); return; }
     const de = d.documentElement;
     const max = Math.max(0, (de.scrollHeight || 0) - (frame.clientHeight || 0));
-    if (max <= 1 && retry) { scheduleScroll(ratio); return; }
+    const top = Math.max(0, clamp01(ratio) * max);
+    // the document is still growing: nothing to scroll to yet, try again shortly
+    if (max <= 1 && retry && scrollTries < 24) { scheduleScroll(ratio); return; }
     applying = true;
-    try {
-      const top = (Number(ratio) || 0) * max;
-      if (typeof frame.contentWindow.scrollTo === 'function') {
-        frame.contentWindow.scrollTo({ top: top, behavior: 'smooth' });
+    suppressEcho(700);
+    jumpTop(frame, d, top);
+    setTimeout(() => { applying = false; }, 60);
+    if (retry) {
+      // one settle pass: if the page grew while we moved, correct it — instantly, and
+      // without re-sending anything (transient jumps to the wrong place are exactly what
+      // the owner saw)
+      const want = Math.abs(top - (frame.contentWindow.pageYOffset || 0));
+      if (want > 4 && scrollTries < 24) {
+        scrollTries += 1;
+        scheduleScroll(ratio, 220);
       } else {
-        frame.contentWindow.scrollTo(0, top);
+        scrollTries = 0;
+        clearTimeout(scrollRetry);
       }
-    } catch (e) {}
-    setTimeout(() => { applying = false; }, 260);
-    if (retry) clearTimeout(scrollRetry);
+    }
   }
-  function scheduleScroll(ratio) {
+  function scheduleScroll(ratio, delay) {
     clearTimeout(scrollRetry);
-    scrollRetry = setTimeout(() => scrollToRatio(ratio, true), 450);
+    scrollRetry = setTimeout(() => scrollToRatio(ratio, true), delay || 300);
   }
   function applyScrollNow(ratio) {
-    lastRatio = Number(ratio) || 0;
+    // clamp: a bogus ratio (an old pixel value relayed by a stale document) must never
+    // be able to teleport the room to the bottom of the page
+    lastRatio = clamp01(ratio);
+    scrollTries = 0;
     scrollToRatio(lastRatio, true);
   }
 
@@ -515,7 +599,11 @@ let lastRatio = 0;
     if (!followOn()) return;
     const s = socket();
     if (!s || !s.connected) return;
-    s.emit(EV.CALL_WEB_SYNC, Object.assign({ kind }, payload));
+    // volatile: a stale scroll/click must be DROPPED, never queued behind a slow link
+    // (that queueing is what made the other side lag seconds behind the admin)
+    const msg = Object.assign({ kind }, payload);
+    try { s.volatile.emit(EV.CALL_WEB_SYNC, msg); }
+    catch (e) { s.emit(EV.CALL_WEB_SYNC, msg); }
   }
   function followOn() {
     return !web || web.follow !== false;
@@ -531,17 +619,18 @@ let lastRatio = 0;
 
   // keep pushing our scroll position for a moment so receivers converge on it
   let resendTimers = [];
+  function clamp01(n) { return Math.min(1, Math.max(0, Number(n) || 0)); }
   function currentRatio(frame) {
     try {
       const d = docOf(frame);
       if (!d) return null;
       const max = Math.max(1, (d.documentElement.scrollHeight || 0) - (frame.clientHeight || 0));
-      return (frame.contentWindow.pageYOffset || 0) / max;
+      return clamp01((frame.contentWindow.pageYOffset || 0) / max);
     } catch (e) { return null; }
   }
   function scheduleScrollResend(frame) {
     resendTimers.forEach(clearTimeout);
-    resendTimers = [500, 1500, 3000, 6000].map((ms) => setTimeout(() => {
+    resendTimers = [500, 1500, 3000].map((ms) => setTimeout(() => {
       if (!canControl() || !followOn()) return;
       const r = currentRatio(frame);
       if (r != null) send('scroll', { ratio: r });
@@ -555,13 +644,23 @@ let lastRatio = 0;
     boundDocs.add(d);
     try {
       frame.contentWindow.addEventListener('scroll', () => {
-        if (applying || !canControl()) return;
+        // a relayed scroll is being applied: never echo it back (that ping-pong is what
+        // made both sides jump around)
+        if (isApplying() || !canControl()) return;
+        // A listener bound to a document that has since been REPLACED must never emit.
+        // The iframe starts as the initial `about:blank`, whose document has a
+        // scrollHeight of roughly one viewport — `pageYOffset / max(1, scrollHeight - height)`
+        // then divides the pixel offset by 1 and sends e.g. `3544` as a "ratio", which
+        // teleported every receiver to the BOTTOM of the page. That was the owner's
+        // "it jumps to the end first" bug.
+        const cur = docOf(frame);
+        if (!cur || cur !== d) return;
         const now = Date.now();
         if (now - lastOwnEmit < 140) return;
         lastOwnEmit = now;
-        const de = d.documentElement;
+        const de = cur.documentElement;
         const max = Math.max(1, (de.scrollHeight || 0) - (frame.clientHeight || 0));
-        const ratio = (frame.contentWindow.pageYOffset || 0) / max;
+        const ratio = clamp01((frame.contentWindow.pageYOffset || 0) / max);
         send('scroll', { ratio: ratio });
         // A page that is still loading keeps changing its height, so the first ratio can
         // be stale. Re-send a few times: everyone ends up on the same spot.
@@ -572,6 +671,9 @@ let lastRatio = 0;
         // a replayed click must not navigate this tab (the room follows the sender)
         if (applying) { e.preventDefault(); return; }
         if (!canControl()) return;
+        // same guard as the scroll listener: never measure a replaced document
+        const cur = docOf(frame);
+        if (!cur || cur !== d) return;
         const de = d.documentElement;
         const a = e.target && e.target.closest && e.target.closest('a[href]');
         if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
@@ -638,11 +740,15 @@ let lastRatio = 0;
     const time = $('web-v-time');
     const dur = videoDuration();
     if (btn) btn.textContent = playerPlaying() ? 'Pause' : 'Play';
-    if (seek) {
+    if (seek && Date.now() >= seekHoldUntil) {
       const t = playerTime();
       seek.value = dur > 0 ? Math.round((t / dur) * 1000) : 0;
     }
-    if (time) time.textContent = fmtTime(playerTime());
+    if (time) {
+      const held = Date.now() < seekHoldUntil && dur > 0 && seek
+        ? (Number(seek.value) / 1000) * dur : playerTime();
+      time.textContent = fmtTime(held);
+    }
   }
 
   function videoDuration() {
@@ -663,13 +769,54 @@ let lastRatio = 0;
     paintControls();
   }
 
+  // The header transport bar is used by every member (the provider's own controls are
+  // hidden on purpose). It must act on THIS player first and only then tell the room —
+  // relaying alone left the person who pressed the key waiting for a round trip that never
+  // even came back (socket.to() excludes the sender).
   window.webVideoCommand = function (cmd, t) {
-    send('video', { cmd: cmd, t: t != null ? t : playerTime() });
+    const at = t != null ? Number(t) : playerTime();
+    const el = mediaEl();
+    if (el) {
+      applying = true;
+      try {
+        if (Math.abs((el.currentTime || 0) - at) > 1.2) el.currentTime = at;
+        if (cmd === 'play') {
+          playWanted = true;
+          hidePlayHint();
+          const p = el.play();
+          if (p && p.catch) p.catch(() => { });
+        } else if (cmd === 'pause') {
+          stopPlayRetry();
+          el.pause();
+        }
+      } catch (e) { }
+      setTimeout(() => { applying = false; }, 140);
+    } else {
+      ytTime = at;
+      ytPlaying = cmd === 'play';
+      ytCommand(cmd, at);
+    }
+    send('video', { cmd: cmd, t: at });
+    paintControls();
+    paintAudio();
   };
   window.onWebSeek = function (val) {
     const dur = videoDuration();
     const t = dur > 0 ? (Number(val) / 1000) * dur : 0;
+    seekHoldUntil = Date.now() + 1200;
+    const el = mediaEl();
+    if (el) {
+      applying = true;
+      try { el.currentTime = t; } catch (e) { }
+      lastSeekSent = Date.now();
+      setTimeout(() => { applying = false; }, 140);
+    } else {
+      ytTime = t;
+      ytCommand('seek', t);
+    }
     send('video', { cmd: 'seek', t: t });
+    paintControls();
+    paintAudio();
   };
 
   function mountVideo(body) {
@@ -684,7 +831,11 @@ let lastRatio = 0;
       body.appendChild(v);
       v.addEventListener('play', () => { if (canControl()) send('video', { cmd: 'play', t: v.currentTime }); paintControls(); hidePlayHint(); });
       v.addEventListener('pause', () => { if (canControl()) send('video', { cmd: 'pause', t: v.currentTime }); paintControls(); });
-      v.addEventListener('seeked', () => { if (canControl()) send('video', { cmd: 'seek', t: v.currentTime }); });
+      v.addEventListener('seeked', () => {
+        if (applying || Date.now() < lastSeekSent + 300) return;
+        lastSeekSent = Date.now();
+        if (canControl()) send('video', { cmd: 'seek', t: v.currentTime });
+      });
       v.addEventListener('timeupdate', () => {
         if (v.paused) return;
         if (Math.abs(v.currentTime - ytTime) > 2) send('video', { cmd: 'seek', t: v.currentTime });
@@ -753,6 +904,8 @@ let lastRatio = 0;
     } catch (e) {}
   }
   // ---------- audio box: our own player (the native one is too small to share) ----------
+  let seekHoldUntil = 0;   // while the listener drags the seek slider, the repaint must not fight it
+  let lastSeekSent = 0;    // suppress the echo of a seek we just sent
   function isAudioUrl(u) {
     return /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|weba|mp4)(\?|#|$)/i.test(u) || /\b(audio|music|track)\b/i.test(u);
   }
@@ -844,7 +997,12 @@ let lastRatio = 0;
       if (!d) return;
       const de = d.documentElement;
       const max = Math.max(0, (de.scrollHeight || 0) - (frame.clientHeight || 0));
-      frame.contentWindow.scrollTo({ top: Math.round(ratio * max), behavior: 'smooth' });
+      // instant, like the site box: a smooth animation here relays its own in-flight
+      // positions and makes both sides bounce
+      const prev = de.style.scrollBehavior;
+      de.style.scrollBehavior = 'auto';
+      frame.contentWindow.scrollTo({ top: Math.round(clamp01(ratio) * max), behavior: 'instant' });
+      de.style.scrollBehavior = prev;
     } catch (e) { /* not same-origin (pdf): nothing to do */ }
   }
 
@@ -886,8 +1044,12 @@ let lastRatio = 0;
     playHintEl = null;
   }
   // returns true when the element is actually playing
-function tryPlay(el, what) {
+  // `opts.gesture === false` => do NOT attach the global pointerdown/keydown retry: that
+  // listener is why the audio box sometimes started playing on its own the moment anybody
+  // clicked anywhere on the call page.
+  function tryPlay(el, what, opts) {
     if (!el) return false;
+    const gesture = !opts || opts.gesture !== false;
     playWanted = true;
     try {
       const p = el.play();
@@ -895,13 +1057,15 @@ function tryPlay(el, what) {
       p.catch(() => {
         if (!playWanted) return;
         // NotAllowedError = autoplay blocked. Try once on the next gesture, then ask.
-        const once = () => {
-          document.removeEventListener('pointerdown', once, true);
-          document.removeEventListener('keydown', once, true);
-          if (playWanted) tryPlay(el, what);
-        };
-        document.addEventListener('pointerdown', once, true);
-        document.addEventListener('keydown', once, true);
+        if (gesture) {
+          const once = () => {
+            document.removeEventListener('pointerdown', once, true);
+            document.removeEventListener('keydown', once, true);
+            if (playWanted) tryPlay(el, what, opts);
+          };
+          document.addEventListener('pointerdown', once, true);
+          document.addEventListener('keydown', once, true);
+        }
         if (playRetry) clearInterval(playRetry);
         let tries = 0;
         playRetry = setInterval(() => {
@@ -966,27 +1130,27 @@ function tryPlay(el, what) {
     a.addEventListener('play', () => {
       spinDisc(true);
       paintAudio();
-      if (canControl()) send('audio', { cmd: 'play', t: a.currentTime });
+      if (!applying && canControl()) send('audio', { cmd: 'play', t: a.currentTime });
     });
     a.addEventListener('pause', () => {
       spinDisc(false);
       paintAudio();
-      if (canControl()) send('audio', { cmd: 'pause', t: a.currentTime });
+      if (!applying && canControl()) send('audio', { cmd: 'pause', t: a.currentTime });
     });
-    a.addEventListener('seeked', () => { if (canControl()) send('audio', { cmd: 'seek', t: a.currentTime }); });
+    a.addEventListener('seeked', () => {
+      // a relayed seek must not echo back; the local one already went out from onAudioSeek
+      if (applying || Date.now() < lastSeekSent + 300) return;
+      lastSeekSent = Date.now();
+      if (canControl()) send('audio', { cmd: 'seek', t: a.currentTime });
+    });
     a.addEventListener('loadedmetadata', () => { if (web && web.video) applyMediaCmd(web.video); paintAudio(); });
     a.addEventListener('error', () => {
       const h = $('web-a-hint');
       if (h) h.textContent = 'این لینک صوتی پشتیبانی نشد؛ یک لینک مستقیم فایل صوتی (mp3 / m4a / ogg) بدهید';
     });
-    a.addEventListener('canplay', () => {
-      // start the room together, but only once per box: a second canplay would restart
-      // the track from the beginning
-      if (canControl() && a.dataset.bmAutoplay !== '1') {
-        a.dataset.bmAutoplay = '1';
-        tryPlay(a, 'برای پخش هم‌زمان صدا کلیک کنید');
-      }
-    });
+    // NO autoplay on `canplay`: that handler is what started the track "by itself" without
+    // anybody pressing play. The room decides — a late joiner who enters while the room is
+    // already playing lands on `applyMediaCmd(web.video)` a few lines up.
     paintAudio();
     setInterval(paintAudio, 500);
   }
@@ -1004,8 +1168,15 @@ function tryPlay(el, what) {
     const playing = !a.paused;
     if (btn) btn.innerHTML = bmIcon(playing ? 'pause' : 'play', 'text-[30px]', true);
     const d = a.duration && isFinite(a.duration) ? a.duration : 0;
-    if (seek) seek.value = d > 0 ? Math.round((a.currentTime / d) * 1000) : 0;
-    if (cur) cur.textContent = fmtTime(a.currentTime);
+    // while the listener drags the slider, the 500ms repaint must NOT move it back —
+    // that "snap back to where it was" is exactly the reported bug
+    if (seek && Date.now() >= seekHoldUntil) {
+      seek.value = d > 0 ? Math.round((a.currentTime / d) * 1000) : 0;
+    }
+    // while dragging, show the position the listener is pointing at, not the old one
+    const dragged = seek && Date.now() < seekHoldUntil && d > 0
+      ? (Number(seek.value) / 1000) * d : a.currentTime;
+    if (cur) cur.textContent = fmtTime(dragged);
     if (dur) dur.textContent = fmtTime(d);
   }
   window.audioToggle = function () {
@@ -1014,31 +1185,44 @@ function tryPlay(el, what) {
     if (a.paused) {
       // the move is applied locally first (no lag) AND relayed, so stopping it anywhere
       // stops it for everybody
+      playWanted = true;
+      hidePlayHint();
       const p = a.play();
       if (p && p.catch) p.catch(() => { });
-      playWanted = true;
-      send('audio', { cmd: 'play', t: a.currentTime });
+      if (canControl()) send('audio', { cmd: 'play', t: a.currentTime });
     } else {
       stopPlayRetry();
       a.pause();
-      send('audio', { cmd: 'pause', t: a.currentTime });
+      if (canControl()) send('audio', { cmd: 'pause', t: a.currentTime });
     }
     paintAudio();
-    hidePlayHint();
   };
+  // seek / skip: move THIS player immediately, then tell the room. Sending only (the old
+  // behaviour) left the sender's own slider to be repainted from the untouched position.
+  function audioSeekTo(t) {
+    const a = $('web-audio');
+    if (!a || !(a.duration > 0)) return;
+    const target = Math.max(0, Math.min(a.duration, Number(t) || 0));
+    applying = true;
+    try { a.currentTime = target; } catch (e) { }
+    seekHoldUntil = Date.now() + 900;
+    lastSeekSent = Date.now();
+    if (canControl()) send('audio', { cmd: 'seek', t: target });
+    paintAudio();
+    setTimeout(() => { applying = false; }, 80);
+  }
   window.onAudioSeek = function (val) {
     const a = $('web-audio');
-    if (!a || !a.duration) return;
-    send('audio', { cmd: 'seek', t: (Number(val) / 1000) * a.duration });
+    if (!a || !(a.duration > 0)) return;
+    // the slider itself is the intent — hold the repaint while the finger is down
+    seekHoldUntil = Date.now() + 1200;
+    audioSeekTo((Number(val) / 1000) * a.duration);
   };
   // jump forward/back: the move is applied locally too (no lag for the person pressing)
   window.onAudioSkip = function (secs) {
     const a = $('web-audio');
-    if (!a || !a.duration) return;
-    const t = Math.max(0, Math.min(a.duration, a.currentTime + Number(secs || 0)));
-    try { a.currentTime = t; } catch (e) {}
-    send('audio', { cmd: 'seek', t: t });
-    paintAudio();
+    if (!a || !(a.duration > 0)) return;
+    audioSeekTo(a.currentTime + Number(secs || 0));
   };
   window.onAudioVolume = function (val) {
     const a = $('web-audio');
@@ -1054,8 +1238,12 @@ function tryPlay(el, what) {
       try {
         if (Math.abs((el.currentTime || 0) - (Number(v.t) || 0)) > 1.2) el.currentTime = Number(v.t) || 0;
         if (v.playing) {
-          // autoplay may still be refused on this client -> retry / one-tap overlay
-          tryPlay(el, web && web.kind === 'audio' ? 'برای پخش هم‌زمان صدا کلیک کنید' : 'برای پخش هم‌زمان ویدیو کلیک کنید');
+          // autoplay may still be refused on this client -> retry / one-tap overlay.
+          // For the AUDIO box the retry must never hook a global click: that made the
+          // track start on its own whenever somebody pressed anything.
+          const isAudio = !!(web && web.kind === 'audio');
+          tryPlay(el, isAudio ? 'برای پخش هم‌زمان صدا کلیک کنید' : 'برای پخش هم‌زمان ویدیو کلیک کنید',
+            { gesture: !isAudio });
         } else { stopPlayRetry(); el.pause(); hidePlayHint(); }
       } catch (e) {}
       ytTime = Number(v.t) || 0;
@@ -1087,7 +1275,7 @@ function tryPlay(el, what) {
       relayout();
       return;
     }
-    if (web.scroll && typeof web.scroll.ratio === 'number') lastRatio = web.scroll.ratio;
+    if (web.scroll && typeof web.scroll.ratio === 'number') lastRatio = clamp01(web.scroll.ratio);
     if (prev && prev.kind === web.kind && prev.url === web.url) {
       // same box re-announced (the follow switch or the access rights changed):
       // refresh the header IN PLACE — re-creating the iframe would reload the page

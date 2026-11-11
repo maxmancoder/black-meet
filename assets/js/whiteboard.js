@@ -1,264 +1,364 @@
-// assets/js/whiteboard.js — the call page's shared whiteboard: a canvas that the admin
-// opens and grants draw access on, with strokes relayed in real time (WB_* events).
-// Plain browser script, no bundler/import/export; public API lives on window.
+// assets/js/whiteboard.js — the call page's shared whiteboard.
+//
+// It is a BOX on the call stage (the same kind of cell the shared site/video/audio/file
+// boxes use), not a sidebar tab: the owner asked for a dedicated white board with a WHITE
+// background that never appears anywhere else on the page. The admin opens it from the
+// bottom bar; everyone in the room gets the same box. Strokes are batched per animation
+// frame and sent with a volatile emit, so a slow link drops stale points instead of
+// queueing seconds of them (which is what made the board feel ~4 seconds behind).
+// Plain browser script, no bundler/import/export; the public API lives on window.
 (function () {
   'use strict';
 
+  const I = window.INIT;
+  const EV = window.BMEv;
+
   // ---------- private state ----------
-  let wbCanvas, wbCtx;
-  let wbOpen = false;
-  let wbCanDraw = false;
-  let wbIsAdmin = false;
-  let wbDrawing = false;
-  let wbLastX = 0, wbLastY = 0;
-  let wbTool = 'pen';
-  let wbColor = '#ffffff';
-  let wbSize = 4;
-  let wbSocket = null;
-  let wbMyId = null;      // current user's id — set from window.INIT.me.id in bmWbInit
-  let wbWasOpen = false;  // track "just opened" so we only auto-switch the sidebar once
+  let sock = null;
+  let box = null, wrap = null, canvas = null, ctx = null;
+  let open = false, canDraw = false, isAdmin = false;
+  let granted = [];
+  let drawing = false, lx = 0, ly = 0;
+  let tool = 'pen';
+  // a white board needs dark ink: the old default was #ffffff (invisible on white)
+  let color = '#1f2937';
+  let size = 3;
+  const myId = (I && I.me) ? I.me.id : null;
+
+  // pending segments for the current animation frame
+  let pending = [];
 
   function $(id) { return document.getElementById(id); }
+  function toast(msg) { if (window.showToast) window.showToast(msg); }
+  function ico(name, cls, fill) {
+    return window.bmIcon ? window.bmIcon(name, cls, fill) : '';
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
 
-  function wbPoint(e) {
-    const r = wbCanvas.getBoundingClientRect();
+  function meAdmin() {
+    return !!(I && I.me && (I.me.is_admin || I.me.is_manager));
+  }
+
+  // ---------- geometry ----------
+  function resizeCanvas() {
+    if (!canvas || !wrap) return;
+    const w = Math.max(1, Math.round(wrap.clientWidth));
+    const h = Math.max(1, Math.round(wrap.clientHeight));
+    if (canvas.width === w && canvas.height === h) return;
+    // keep what is already drawn: scale the old bitmap into the new size
+    const prev = document.createElement('canvas');
+    prev.width = canvas.width || 1;
+    prev.height = canvas.height || 1;
+    try { prev.getContext('2d').drawImage(canvas, 0, 0); } catch (e) { /* first run */ }
+    canvas.width = w;
+    canvas.height = h;
+    ctx = canvas.getContext('2d');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (prev.width > 1 && prev.height > 1) {
+      try { ctx.drawImage(prev, 0, 0, w, h); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function point(e) {
+    const r = canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - r.left) / r.width,
-      y: (e.clientY - r.top) / r.height,
+      x: r.width ? (e.clientX - r.left) / r.width : 0,
+      y: r.height ? (e.clientY - r.top) / r.height : 0,
     };
   }
 
-  function wbResizeCanvas() {
-    const c = wbCanvas;
-    if (!c || !wbCtx) return;
-    // save the pixels, resize to the element's CSS box, then put them back
-    let img = null;
-    try { img = wbCtx.getImageData(0, 0, c.width, c.height); } catch (e) {}
-    c.width = c.offsetWidth;
-    c.height = c.offsetHeight;
-    wbCtx.lineCap = 'round';
-    wbCtx.lineJoin = 'round';
-    if (img) {
-      try { wbCtx.putImageData(img, 0, 0); } catch (e) {}
-    }
-  }
-
-  function wbDrawSegment(x1, y1, x2, y2, color, size, tool) {
-    const c = wbCanvas;
-    const ctx = wbCtx;
-    if (!c || !ctx) return;
+  function drawSeg(x1, y1, x2, y2, col, w, tl) {
+    if (!canvas || !ctx) return;
     ctx.save();
-    if (tool === 'eraser') {
+    if (tl === 'eraser') {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.lineWidth = Math.max(6, (w || size) * 3);
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = col || color;
+      ctx.lineWidth = w || size;
     }
-    ctx.lineWidth = size;
     ctx.beginPath();
-    ctx.moveTo(x1 * c.width, y1 * c.height);
-    ctx.lineTo(x2 * c.width, y2 * c.height);
+    ctx.moveTo(x1 * canvas.width, y1 * canvas.height);
+    ctx.lineTo(x2 * canvas.width, y2 * canvas.height);
     ctx.stroke();
     ctx.restore();
   }
 
-  function wbOnDown(e) {
-    if (!wbCanDraw || !wbOpen) return;
-    try { wbCanvas.setPointerCapture(e.pointerId); } catch (err) {}
-    wbDrawing = true;
-    const p = wbPoint(e);
-    wbLastX = p.x;
-    wbLastY = p.y;
-  }
-
-  function wbOnMove(e) {
-    if (!wbDrawing) return;
-    const p = wbPoint(e);
-    wbDrawSegment(wbLastX, wbLastY, p.x, p.y, wbColor, wbSize, wbTool);
-    if (wbSocket) {
-      wbSocket.emit(BMEv.WB_DRAW, {
-        x1: wbLastX, y1: wbLastY, x2: p.x, y2: p.y,
-        color: wbColor, size: wbSize, tool: wbTool,
-      });
+  // a relayed packet: { pts:[x1,y1,x2,y2,...], color, size, tool } (older builds sent x1..y2)
+  function drawPacket(d) {
+    if (!d) return;
+    if (Array.isArray(d.pts)) {
+      for (let i = 0; i + 3 < d.pts.length; i += 4) {
+        drawSeg(d.pts[i], d.pts[i + 1], d.pts[i + 2], d.pts[i + 3], d.color, d.size, d.tool);
+      }
+      return;
     }
-    wbLastX = p.x;
-    wbLastY = p.y;
+    if (typeof d.x1 === 'number') drawSeg(d.x1, d.y1, d.x2, d.y2, d.color, d.size, d.tool);
   }
 
-  function wbOnUp() {
-    wbDrawing = false;
+  // ---------- local input ----------
+  function onDown(e) {
+    if (!canDraw || !open) return;
+    if (e.button != null && e.button !== 0 && e.pointerType === 'mouse') return;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* not fatal */ }
+    drawing = true;
+    const p = point(e);
+    lx = p.x; ly = p.y;
+    e.preventDefault();
   }
 
-  function wbShow(el, show) {
-    if (!el) return;
-    el.classList.toggle('hidden', !show);
+  function onMove(e) {
+    if (!drawing || !canDraw) return;
+    const p = point(e);
+    drawSeg(lx, ly, p.x, p.y, color, size, tool);
+    pending.push(lx, ly, p.x, p.y);
+    lx = p.x; ly = p.y;
+    if (!pending.raf) {
+      pending.raf = requestAnimationFrame(flush);
+    }
+    e.preventDefault();
   }
 
-  // Renders the admin grant/revoke panel from the live room roster.
-  function bmWbRenderGrantList(granted) {
+  function onUp() { drawing = false; }
+
+  // one socket message per animation frame instead of one per pointermove
+  function flush() {
+    const pts = pending.slice(0);
+    pending = [];
+    if (!pts.length || !sock || !sock.connected) return;
+    const msg = { pts: pts, color: color, size: size, tool: tool };
+    // volatile: if the socket buffer is backed up the stale packet is dropped, never queued
+    try { sock.volatile.emit(EV.WB_DRAW, msg); } catch (e) { try { sock.emit(EV.WB_DRAW, msg); } catch (e2) { } }
+  }
+
+  // ---------- box rendering ----------
+  function renderBox() {
+    if (box) { paint(); return; }
+    const grid = $('video-grid');
+    if (!grid) return;
+
+    box = document.createElement('div');
+    box.id = 'wb-box';
+    box.className = 'wb-box';
+    box.innerHTML = `
+      <div class="wb-head">
+        <span class="wb-head-ico">${ico('draw', 'text-[18px]', false)}</span>
+        <span class="wb-head-title">تخته وایت‌برد</span>
+        <div class="wb-tools" id="wb-toolbar" style="display:none">
+          <button type="button" id="wb-btn-pen" class="wb-tool ctrl-live" onclick="bmWbSetTool('pen')" title="قلم" data-no-soft>${ico('draw', 'text-[17px]')}</button>
+          <button type="button" id="wb-btn-eraser" class="wb-tool" onclick="bmWbSetTool('eraser')" title="پاک‌کن" data-no-soft>${ico('ink_eraser', 'text-[17px]')}</button>
+          <input type="color" id="wb-color" value="#1f2937" oninput="bmWbSetColor(this.value)" title="رنگ" class="wb-color"/>
+          <input type="range" id="wb-size" min="2" max="40" value="3" oninput="bmWbSetSize(+this.value)" title="ضخامت" class="wb-size"/>
+        </div>
+        <span class="wb-spacer"></span>
+        <span id="wb-viewer-badge" class="wb-viewer hidden">${ico('visibility', 'text-[14px]')} فقط مشاهده</span>
+        <button type="button" id="wb-btn-clear" class="wb-hbtn hidden" onclick="bmWbClear()" title="پاک کردن کل تخته" data-no-soft>${ico('delete_sweep', 'text-[17px]')}</button>
+        <button type="button" id="wb-btn-grant" class="wb-hbtn hidden" onclick="toggleWbGrants(event)" title="دسترسی نقاشی" data-no-soft>${ico('shield_person', 'text-[17px]')}</button>
+        <button type="button" class="wb-hbtn" onclick="toggleWbMaximize()" title="تمام‌صفحه" data-no-soft>${ico('fullscreen', 'text-[17px]', false, 'id="wb-max-ico"')}</button>
+        <button type="button" id="wb-btn-close" class="wb-hbtn wb-hbtn-danger hidden" onclick="bmWbToggle()" title="بستن تخته" data-no-soft>${ico('close', 'text-[17px]')}</button>
+      </div>
+      <div class="wb-body" id="wb-canvas-wrap">
+        <canvas id="wb-canvas"></canvas>
+        <div class="wb-grant hidden" id="wb-grant-panel">
+          <div class="wb-grant-head">
+            <span>دسترسی نقاشی</span>
+            <button type="button" onclick="toggleWbGrants(event)" class="wb-grant-x" data-no-soft>${ico('close', 'text-[15px]')}</button>
+          </div>
+          <div id="wb-grant-list" class="wb-grant-list"></div>
+        </div>
+      </div>
+      <div class="mx-back hidden" id="wb-mx-back" onclick="toggleWbMaximize()">
+        ${ico('fullscreen_exit', 'text-[15px]')} بازگشت به حالت عادی
+      </div>`;
+
+    grid.insertBefore(box, grid.firstChild);
+    wrap = $('wb-canvas-wrap');
+    canvas = $('wb-canvas');
+    ctx = canvas.getContext('2d');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    canvas.style.pointerEvents = 'none';
+    resizeCanvas();
+
+    if (window.ResizeObserver && wrap) {
+      const ro = new ResizeObserver(() => resizeCanvas());
+      ro.observe(wrap);
+    }
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    canvas.addEventListener('pointerleave', onUp);
+
+    paint();
+    relayout();
+  }
+
+  function removeBox() {
+    if (box && box.classList.contains('maximized-el') && window.bmExitMaximize) window.bmExitMaximize();
+    if (box && box.parentNode) box.parentNode.removeChild(box);
+    box = null; wrap = null; canvas = null; ctx = null;
+    drawing = false;
+    pending = [];
+    relayout();
+  }
+
+  function relayout() { if (window.bmCallRelayout) window.bmCallRelayout(); }
+
+  function toolbarVisible(on) {
+    const t = $('wb-toolbar');
+    if (t) t.style.display = on ? '' : 'none';
+  }
+
+  // apply the room state to the UI
+  function paint() {
+    if (!box) return;
+    toolbarVisible(canDraw);
+    const badge = $('wb-viewer-badge');
+    if (badge) badge.classList.toggle('hidden', canDraw);
+    const clear = $('wb-btn-clear');
+    if (clear) clear.classList.toggle('hidden', !isAdmin);
+    const grant = $('wb-btn-grant');
+    if (grant) grant.classList.toggle('hidden', !isAdmin);
+    const close = $('wb-btn-close');
+    if (close) close.classList.toggle('hidden', !isAdmin);
+    if (canvas) canvas.style.pointerEvents = canDraw ? 'auto' : 'none';
+    if (isAdmin) renderGrantList();
+    // the toolbar keys reflect the active tool
+    const pen = $('wb-btn-pen');
+    const eraser = $('wb-btn-eraser');
+    if (pen) pen.classList.toggle('ctrl-live', tool === 'pen');
+    if (eraser) eraser.classList.toggle('ctrl-live', tool === 'eraser');
+    const wbb = $('btn-wb');
+    if (wbb) wbb.classList.toggle('ctrl-live', open);
+  }
+
+  function applyState(d) {
+    open = !!(d && d.open);
+    granted = (d && Array.isArray(d.granted)) ? d.granted : [];
+    isAdmin = meAdmin();
+    canDraw = isAdmin || granted.indexOf(myId) !== -1;
+    if (open) { renderBox(); paint(); }
+    else { removeBox(); paintBtn(); }
+  }
+
+  function paintBtn() {
+    const wbb = $('btn-wb');
+    if (wbb) wbb.classList.toggle('ctrl-live', !!open);
+  }
+
+  // ---------- admin grant/revoke panel ----------
+  function renderGrantList() {
     const list = $('wb-grant-list');
     if (!list) return;
-    const gset = Array.isArray(granted) ? granted : [];
     const roster = (window.bmCallRoster && window.bmCallRoster()) || [];
     const rows = [];
-    roster.forEach(function (m) {
-      if (!m || m.userId === wbMyId) return;
+    roster.forEach((m) => {
+      if (!m || m.userId === myId) return;
       if (m.status && m.status !== 'approved') return;
-      const on = gset.indexOf(m.userId) !== -1;
+      const on = granted.indexOf(m.userId) !== -1;
       const label = on ? 'گرفتن دسترسی' : 'دادن دسترسی';
       const fn = on ? 'bmWbRevoke' : 'bmWbGrant';
-      const cls = on
-        ? 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-error-container text-on-error-container'
-        : 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary-container text-on-primary-container';
       rows.push(
-        '<div class="flex items-center justify-between gap-2 py-1.5 border-b border-white/5 last:border-0">' +
-          '<span class="text-[12px] text-on-surface truncate">' + String(m.name || ('کاربر ' + m.userId)).replace(/</g, '&lt;') + '</span>' +
-          '<button type="button" class="' + cls + '" onclick="' + fn + '(' + Number(m.userId) + ')">' + label + '</button>' +
+        '<div class="wb-grant-row">' +
+        '<span class="wb-grant-name">' + esc(m.name || ('کاربر ' + m.userId)) + '</span>' +
+        '<button type="button" data-no-soft class="wb-grant-btn' + (on ? ' is-on' : '') + '" onclick="' + fn + '(' + Number(m.userId) + ')">' + label + '</button>' +
         '</div>'
       );
     });
-    list.innerHTML = rows.length ? rows.join('') : '<p class="text-[12px] text-on-surface-variant">عضو دیگری در اتاق نیست</p>';
+    list.innerHTML = rows.length ? rows.join('') : '<p class="wb-grant-empty">عضو دیگری در اتاق نیست</p>';
   }
 
-  // UI update shared by the live WB_STATE event and the late-joiner sync.
-  function bmWbApplyState(d) {
-    wbOpen = !!(d && d.open);
-    const granted = (d && d.granted) ? d.granted : [];
-    const I = window.INIT;
-    wbIsAdmin = !!(I && I.me && I.me.is_admin);
-    wbCanDraw = wbIsAdmin || granted.indexOf(wbMyId) !== -1;
+  window.toggleWbGrants = function (e) {
+    if (e) e.stopPropagation();
+    const p = $('wb-grant-panel');
+    if (!p) return;
+    p.classList.toggle('hidden');
+    if (!p.classList.contains('hidden')) renderGrantList();
+  };
 
-    if (wbOpen) {
-      // auto-switch the sidebar to the whiteboard tab the moment it opens
-      if (!wbWasOpen) {
-        wbWasOpen = true;
-        if (typeof window.switchTab === 'function') window.switchTab('wb');
-        if (typeof window.toggleSidebar === 'function') window.toggleSidebar(true);
-      }
-      const badge = $('wb-viewer-badge');
-      wbShow(badge, !wbCanDraw);
-      wbShow($('wb-toolbar'), wbCanDraw);
-      if (wbIsAdmin) {
-        wbShow($('wb-btn-clear'), true);
-        wbShow($('wb-admin-panel'), true);
-        bmWbRenderGrantList(granted);
-      } else {
-        wbShow($('wb-btn-clear'), false);
-        wbShow($('wb-admin-panel'), false);
-      }
-      if (wbCanvas) wbCanvas.style.pointerEvents = wbCanDraw ? 'auto' : 'none';
-      const wbb = $('btn-wb');
-      if (wbb) wbb.classList.add('ctrl-live');
-    } else {
-      wbWasOpen = false;
-      wbCanDraw = false;
-      const wbbOff = $('btn-wb');
-      if (wbbOff) wbbOff.classList.remove('ctrl-live');
-      // closing the board hides the panel again; when the whiteboard tab was the one
-      // on screen we return to the members section instead of leaving an empty pane
-      const wbPanel = $('content-wb');
-      if (wbPanel && !wbPanel.classList.contains('hidden') && typeof window.switchTab === 'function') {
-        window.switchTab('members');
-      }
-      wbShow(wbPanel, false);
-      if (wbCtx && wbCanvas) wbCtx.clearRect(0, 0, wbCanvas.width, wbCanvas.height);
-      wbShow($('wb-toolbar'), false);
-      wbShow($('wb-admin-panel'), false);
-      wbShow($('wb-viewer-badge'), false);
-      if (wbCanvas) wbCanvas.style.pointerEvents = 'none';
-    }
-  }
+  window.toggleWbMaximize = function () {
+    if (!box) return;
+    if (window.bmIsMaximized && window.bmIsMaximized()) { window.bmExitMaximize(); return; }
+    if (window.bmEnterMaximizeWb) window.bmEnterMaximizeWb();
+    const badge = $('wb-max-ico');
+    if (badge) { /* the caller repaints the icon */ }
+    setTimeout(paint, 30);
+  };
 
   // ---------- public API ----------
-
   window.bmWbInit = function () {
-    const I = window.INIT;
-    wbMyId = I && I.me ? I.me.id : null;
-    wbCanvas = $('wb-canvas');
-    if (!wbCanvas) return;
-    wbCtx = wbCanvas.getContext('2d');
-    wbCtx.lineCap = 'round';
-    wbCtx.lineJoin = 'round';
-    wbResizeCanvas();
-
-    if (typeof ResizeObserver !== 'undefined' && wbCanvas.parentElement) {
-      const ro = new ResizeObserver(function () { wbResizeCanvas(); });
-      ro.observe(wbCanvas.parentElement);
-    }
-
-    wbCanvas.addEventListener('pointerdown', wbOnDown);
-    wbCanvas.addEventListener('pointermove', wbOnMove);
-    wbCanvas.addEventListener('pointerup', wbOnUp);
-    wbCanvas.addEventListener('pointercancel', wbOnUp);
+    isAdmin = meAdmin();
+    // nothing else happens until the room says the board is open
   };
 
   window.bmWbSocketBind = function (socket) {
-    wbSocket = socket;
-    if (!wbSocket) return;
+    sock = socket;
+    if (!sock) return;
 
-    wbSocket.on(BMEv.WB_STATE, function (d) {
-      bmWbApplyState(d);
+    sock.on(EV.WB_STATE, (d) => applyState(d));
+
+    sock.on(EV.WB_DRAW, (d) => drawPacket(d));
+
+    sock.on(EV.WB_CLEAR, () => {
+      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
 
-    wbSocket.on(BMEv.WB_DRAW, function (d) {
-      if (!d) return;
-      wbDrawSegment(d.x1, d.y1, d.x2, d.y2, d.color, d.size, d.tool);
-    });
-
-    wbSocket.on(BMEv.WB_CLEAR, function () {
-      if (wbCtx && wbCanvas) wbCtx.clearRect(0, 0, wbCanvas.width, wbCanvas.height);
-    });
-
-    // late joiner: CALL_WELCOME carries the full canvas
-    wbSocket.on(BMEv.CALL_WELCOME, function (d) {
+    sock.on(EV.CALL_WELCOME, (d) => {
       if (d && d.wb && d.wb.open) window.bmWbApplySync(d.wb);
     });
   };
 
   window.bmWbApplySync = function (wbData) {
     if (!wbData || !wbData.open) return;
-    wbOpen = true;
-    const granted = wbData.granted || [];
-    const I = window.INIT;
-    wbIsAdmin = !!(I && I.me && I.me.is_admin);
-    wbCanDraw = wbIsAdmin || granted.indexOf(wbMyId) !== -1;
-    (wbData.strokes || []).forEach(function (s) {
-      wbDrawSegment(s.x1, s.y1, s.x2, s.y2, s.color, s.size, s.tool);
-    });
-    // trigger a WB_STATE-style UI update
-    bmWbApplyState({ open: true, granted: granted });
+    const g = wbData.granted || [];
+    applyState({ open: true, granted: g });
+    (wbData.strokes || []).forEach(drawPacket);
   };
 
   window.bmWbToggle = function () {
-    if (!wbSocket) return;
-    wbSocket.emit(wbOpen ? BMEv.WB_CLOSE : BMEv.WB_OPEN);
+    if (!sock) return;
+    if (!meAdmin()) {
+      // a viewer cannot open/close the room's board — the key opens it full screen instead
+      if (open) window.toggleWbMaximize();
+      else toast('تخته وایت‌برد را ادمین تماس باز می‌کند');
+      return;
+    }
+    sock.emit(open ? EV.WB_CLOSE : EV.WB_OPEN);
   };
 
   window.bmWbClear = function () {
-    if (!wbSocket) return;
-    wbSocket.emit(BMEv.WB_CLEAR);
+    if (!sock) return;
+    sock.emit(EV.WB_CLEAR);
   };
 
-  window.bmWbSetTool = function (tool) {
-    wbTool = tool;
+  window.bmWbSetTool = function (t) {
+    tool = t;
     const pen = $('wb-btn-pen');
     const eraser = $('wb-btn-eraser');
-    if (pen) pen.classList.toggle('ctrl-live', tool === 'pen');
-    if (eraser) eraser.classList.toggle('ctrl-live', tool === 'eraser');
+    if (pen) pen.classList.toggle('ctrl-live', t === 'pen');
+    if (eraser) eraser.classList.toggle('ctrl-live', t === 'eraser');
   };
 
-  window.bmWbSetColor = function (color) { wbColor = color; };
-
-  window.bmWbSetSize = function (size) { wbSize = size; };
+  window.bmWbSetColor = function (c) { color = c || color; };
+  window.bmWbSetSize = function (s) { size = Number(s) || size; };
 
   window.bmWbGrant = function (userId) {
-    if (!wbSocket) return;
-    wbSocket.emit(BMEv.WB_GRANT, { userId: userId });
+    if (!sock) return;
+    sock.emit(EV.WB_GRANT, { userId: userId });
+  };
+  window.bmWbRevoke = function (userId) {
+    if (!sock) return;
+    sock.emit(EV.WB_REVOKE, { userId: userId });
   };
 
-  window.bmWbRevoke = function (userId) {
-    if (!wbSocket) return;
-    wbSocket.emit(BMEv.WB_REVOKE, { userId: userId });
-  };
+  // the maximized layer must repaint its icon when call.js moves the box in/out
+  window.bmWbOnMaximizeChange = function () { setTimeout(paint, 30); };
 })();

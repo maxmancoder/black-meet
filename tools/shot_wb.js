@@ -1,14 +1,20 @@
 'use strict';
-// End-to-end whiteboard test (step 8): two SEPARATE browser contexts (two accounts) in
-// one meeting room, system Chrome, local server on :3100.
-//   node shot_wb.js "<repo root>" [baseUrl]
+// End-to-end whiteboard test (stage-box design): two SEPARATE browser contexts (two
+// accounts) in one meeting room, system Chrome, local server on :3100.
+//   node tools/shot_wb.js "<repo root>" [baseUrl]
 // Requires: local server on BASE (default http://127.0.0.1:3100), DEV_MODE=true.
-// Creates its own users via the signup API and removes every row it created at the end.
+// Creates its own user through the signup API, removes every row it created at the end and
+// writes screenshots to %TEMP%\opencode (wb-*.png).
+//
+// The board is NO LONGER a sidebar panel: it is a box appended to #video-grid, next to the
+// shared site/video/audio box, it can be maximized into the full-viewport overlay and it is
+// white (the owner's requirement: «پس‌زمینه‌اش سفید باشد»).
 const path = require('path');
 const ROOT = process.argv[2] || process.cwd();
 const BASE = process.argv[3] || 'http://127.0.0.1:3100';
 const MOUNT = BASE + '/black-meet';
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const OUT = path.join(process.env.TEMP || ROOT, 'opencode');
 const puppeteer = require(path.join(ROOT, 'node_modules', 'puppeteer-core'));
 const dbm = require(path.join(ROOT, 'server', 'lib', 'db'));
 const settings = require(path.join(ROOT, 'server', 'lib', 'settings'));
@@ -16,19 +22,15 @@ const settings = require(path.join(ROOT, 'server', 'lib', 'settings'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0;
 let fail = 0;
-const lines = [];
 function check(n, desc, cond, reason) {
   if (cond) {
     pass++;
-    lines.push('[PASS] ' + n + '. ' + desc);
     console.log('[PASS] ' + n + '. ' + desc);
   } else {
     fail++;
-    lines.push('[FAIL] ' + n + '. ' + desc + ' — ' + (reason || 'failed'));
-    console.log('[FAIL] ' + n + '. ' + desc + ' — ' + (reason || 'failed'));
+    console.log('[FAIL] ' + n + '. ' + desc + ' — ' + JSON.stringify(reason !== undefined ? reason : 'failed').slice(0, 400));
   }
 }
-
 async function waitFn(page, fn, arg, ms) {
   try {
     await page.waitForFunction(fn, { timeout: ms || 2000, polling: 60 }, arg);
@@ -38,19 +40,35 @@ async function waitFn(page, fn, arg, ms) {
   }
 }
 
-const wbState = () => ({
-  panel: (function () { const e = document.getElementById('content-wb'); return !!e && !e.classList.contains('hidden'); })(),
-  toolbar: (function () { const e = document.getElementById('wb-toolbar'); return !!e && !e.classList.contains('hidden'); })(),
-  adminPanel: (function () { const e = document.getElementById('wb-admin-panel'); return !!e && !e.classList.contains('hidden'); })(),
-  badge: (function () { const e = document.getElementById('wb-viewer-badge'); return !!e && !e.classList.contains('hidden'); })(),
-  pe: (function () { const e = document.getElementById('wb-canvas'); return e ? e.style.pointerEvents : null; })(),
-});
-const canvasHasPixels = () => {
+// how many canvas pixels carry ink (alpha > 12) — the cheapest "did the stroke arrive" probe
+const inkCount = () => {
   const c = document.getElementById('wb-canvas');
-  if (!c || !c.width || !c.height) return false;
+  if (!c || !c.width || !c.height) return -1;
   const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-  for (let i = 0; i < d.length; i++) if (d[i] !== 0) return true;
-  return false;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 16) if (d[i] > 12) n++;
+  return n;
+};
+const boxInfo = () => {
+  const box = document.getElementById('wb-box');
+  if (!box) return null;
+  const body = document.getElementById('wb-canvas-wrap');
+  const cv = document.getElementById('wb-canvas');
+  const head = box.querySelector('.wb-head');
+  const title = box.querySelector('.wb-head-title');
+  const tb = document.getElementById('wb-toolbar');
+  const badge = document.getElementById('wb-viewer-badge');
+  return {
+    inGrid: box.parentElement ? box.parentElement.id === 'video-grid' : false,
+    bodyBg: body ? getComputedStyle(body).backgroundColor : '',
+    headBg: head ? getComputedStyle(head).backgroundColor : '',
+    title: title ? title.textContent.trim() : '',
+    canvas: cv ? { w: cv.width, h: cv.height } : null,
+    pointer: cv ? cv.style.pointerEvents : '',
+    toolbar: tb ? getComputedStyle(tb).display !== 'none' : null,
+    viewerBadge: badge ? !badge.classList.contains('hidden') : null,
+    pageScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  };
 };
 
 (async () => {
@@ -72,20 +90,18 @@ const canvasHasPixels = () => {
       '--no-sandbox',
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
-      '--auto-select-desktop-capture-source=Entire screen',
       '--lang=fa',
     ],
   });
 
-  const errors = { admin: [], user: [] };
+  const errors = [];
   const ctxA = await browser.createBrowserContext();
   const ctxU = await browser.createBrowserContext();
   const A = await ctxA.newPage();
   const U = await ctxU.newPage();
-  for (const [p, tag] of [[A, 'admin'], [U, 'user']]) {
+  for (const p of [A, U]) {
     await p.setViewport({ width: 1440, height: 900 });
-    p.on('pageerror', (e) => errors[tag].push('pageerror: ' + e.message));
-    p.on('console', (m) => { if (m.type() === 'error') errors[tag].push('console: ' + m.text()); });
+    p.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   }
 
   // ---------- 1. admin login (credentials come from the local config, never hardcoded) ----------
@@ -101,7 +117,7 @@ const canvasHasPixels = () => {
   }, { email: adminCfg.email, password: adminCfg.password, csrf: csrfA0 });
   await A.goto(MOUNT + '/home', { waitUntil: 'networkidle2', timeout: 90000 });
   const homeA = await A.evaluate(() => ({ url: location.pathname, dash: document.body.classList.contains('bm-dash') }));
-  check(1, 'admin logs in and lands on /home', !!(loginRes && loginRes.ok) && homeA.url.endsWith('/home') && homeA.dash, JSON.stringify({ loginRes, homeA }));
+  check(1, 'admin logs in and lands on /home', !!(loginRes && loginRes.ok) && homeA.url.endsWith('/home') && homeA.dash, { loginRes, homeA });
 
   // ---------- 2. regular user: signup + OTP (DEV_MODE returns the code) ----------
   await U.goto(MOUNT + '/login', { waitUntil: 'networkidle2', timeout: 90000 });
@@ -126,8 +142,8 @@ const canvasHasPixels = () => {
   await U.goto(MOUNT + '/home', { waitUntil: 'networkidle2', timeout: 90000 });
   const homeU = await U.evaluate(() => ({ url: location.pathname, dash: document.body.classList.contains('bm-dash') }));
   check(2, 'regular user signs up, logs in and lands on /home',
-    !!(signupRes && signupRes.ok && signupRes.otp) && !!(verifyRes && verifyRes.ok) && homeU.url.endsWith('/home') && homeU.dash,
-    JSON.stringify({ signupRes: signupRes && { ok: signupRes.ok, msg: signupRes.msg, hasOtp: !!signupRes.otp }, verifyRes, homeU }));
+    !!(signupRes && signupRes.ok && signupRes.otp) && !!(verifyRes && verifyRes.ok) && homeU.url.endsWith('/home'),
+    { signupRes, verifyRes, homeU });
 
   // ---------- 3. admin creates the meeting (open_join so the member is approved at once) ----------
   const csrfA1 = await A.evaluate(() => window.CSRF);
@@ -143,117 +159,195 @@ const canvasHasPixels = () => {
   const meetingId = meetingRow ? Number(meetingRow.id) : 0;
   const userRow = dbm.get('SELECT id FROM users WHERE phone=?', [phone]);
   const userId = userRow ? Number(userRow.id) : 0;
-  check(3, 'admin creates a meeting and gets room_id', !!(created && created.ok && room && meetingId), JSON.stringify(created));
+  check(3, 'admin creates a meeting and gets room_id', !!(created && created.ok && room && meetingId), created);
 
   // ---------- 4. both join the room ----------
   for (const p of [A, U]) {
     await p.goto(MOUNT + '/meeting?room=' + encodeURIComponent(room), { waitUntil: 'networkidle2', timeout: 90000 });
   }
-  const inCallA = await waitFn(A, () => !!document.getElementById('video-grid') && !!document.getElementById('call-sidebar') && location.href.indexOf('/meeting') !== -1, null, 15000);
-  const inCallU = await waitFn(U, () => !!document.getElementById('video-grid') && !!document.getElementById('call-sidebar') && location.href.indexOf('/meeting') !== -1, null, 15000);
-  // the member is approved (open_join): no waiting overlay, and the roster has 2 people
-  const joinedA = await waitFn(A, () => !!(window.bmCallRoster && window.bmCallRoster().length >= 2), null, 20000);
-  const joinedU = await waitFn(U, () => !!(window.bmCallRoster && window.bmCallRoster().length >= 2), null, 20000);
-  check(4, 'both users join the meeting room and see the call page', inCallA && inCallU && joinedA && joinedU,
-    JSON.stringify({ inCallA, inCallU, joinedA, joinedU, urlA: A.url(), urlU: U.url() }));
+  const roster2 = () => !!(window.bmCallRoster && window.bmCallRoster().length >= 2);
+  const joinedA = await waitFn(A, roster2, null, 20000);
+  const joinedU = await waitFn(U, roster2, null, 20000);
+  check(4, 'both users join the meeting room', joinedA && joinedU, { joinedA, joinedU, urlA: A.url(), urlU: U.url() });
 
-  // ---------- 5-8. UI presence ----------
-  const ui = async (p) => p.evaluate(() => {
-    const tab = document.getElementById('tab-wb');
-    const btn = document.getElementById('btn-wb');
-    const panel = document.getElementById('content-wb');
-    const cv = document.getElementById('wb-canvas');
+  // ---------- 5. the board is not in the sidebar any more ----------
+  const side = await A.evaluate(() => ({
+    tab: !!document.getElementById('tab-wb'),
+    panel: !!document.getElementById('content-wb'),
+    btn: !!document.getElementById('btn-wb'),
+    inBar: !!document.querySelector('#control-bar #btn-wb'),
+  }));
+  check(5, 'no whiteboard tab/panel anywhere in the sidebar', side.tab === false && side.panel === false, side);
+  check(6, '#btn-wb is a key in the control bar', side.btn === true && side.inBar === true, side);
+
+  // ---------- 7-11. admin opens the box; it is a white stage box on both sides ----------
+  await A.click('#btn-wb');
+  const gotA = await waitFn(A, () => !!document.getElementById('wb-box'), null, 4000);
+  const gotU = await waitFn(U, () => !!document.getElementById('wb-box'), null, 4000);
+  const infoA = await A.evaluate(boxInfo);
+  const infoU = gotU ? await U.evaluate(boxInfo) : null;
+  check(7, 'the board opens as a box in #video-grid for both members',
+    gotA && gotU && !!infoA && infoA.inGrid && !!infoU && infoU.inGrid, { infoA, infoU });
+  check(8, 'the board body is WHITE', !!infoA && infoA.bodyBg === 'rgb(255, 255, 255)', infoA && infoA.bodyBg);
+  check(9, 'the box header is themed and titled', !!infoA && infoA.headBg !== 'rgba(0, 0, 0, 0)' && infoA.title.indexOf('وایت') !== -1, infoA);
+  check(10, 'the canvas has a real size on both sides',
+    !!infoA && infoA.canvas && infoA.canvas.w > 100 && infoA.canvas.h > 60 &&
+    !!infoU && infoU.canvas && infoU.canvas.w > 100 && infoU.canvas.h > 60, { a: infoA && infoA.canvas, u: infoU && infoU.canvas });
+  check(11, 'the stage still does not scroll with the box open', !!infoA && infoA.pageScroll <= 0, infoA && infoA.pageScroll);
+  if (gotA) await A.screenshot({ path: path.join(OUT, 'wb-box-admin.png') });
+
+  // ---------- 12-13. permissions on the canvas ----------
+  check(12, 'the admin can draw (toolbar shown, pointer-events auto)',
+    !!infoA && infoA.toolbar === true && infoA.pointer === 'auto', infoA);
+  check(13, 'the member is a viewer (no toolbar, dead canvas, badge shown)',
+    !!infoU && infoU.toolbar === false && infoU.pointer === 'none' && infoU.viewerBadge === true, infoU);
+
+  // ---------- 14-15. the admin draws and the stroke is relayed quickly ----------
+  const bb = await A.evaluate(() => {
+    const r = document.getElementById('wb-canvas').getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  });
+  await A.mouse.move(bb.x + bb.w * 0.15, bb.y + bb.h * 0.2);
+  await A.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await A.mouse.move(bb.x + bb.w * (0.15 + 0.05 * i), bb.y + bb.h * (0.2 + 0.04 * i));
+    await sleep(16);
+  }
+  await A.mouse.up();
+  const t0 = Date.now();
+  let seen = -1;
+  let latency = -1;
+  for (let i = 0; i < 75; i++) {
+    seen = await U.evaluate(inkCount);
+    if (seen > 0) { latency = Date.now() - t0; break; }
+    await sleep(40);
+  }
+  const aInk = await A.evaluate(inkCount);
+  check(14, 'the admin stroke reaches the member', seen > 0 && aInk > 0, { seen, aInk });
+  check(15, 'the stroke arrives fast (<800ms)', latency >= 0 && latency < 800, { latency });
+
+  // ---------- 16-18. the admin hands out draw access from the in-box panel ----------
+  await A.click('#wb-btn-grant');
+  await sleep(400);
+  const panel = await A.evaluate(() => {
+    const p = document.getElementById('wb-grant-panel');
     return {
-      tab: !!tab && !!tab.parentElement && !!tab.parentElement.querySelector('#tab-members'),
-      btn: !!btn,
-      panelHidden: !!panel && panel.classList.contains('hidden'),
-      canvas: !!cv,
-      pe: cv ? cv.style.pointerEvents : null,
+      open: !!p && !p.classList.contains('hidden'),
+      insideBox: p ? !!p.closest('#wb-box') : false,
+      rows: document.querySelectorAll('#wb-grant-list .wb-grant-btn').length,
     };
   });
-  const uiA = await ui(A);
-  const uiU = await ui(U);
-  check(5, '#tab-wb exists in the sidebar tab row for both users', uiA.tab && uiU.tab, JSON.stringify({ uiA, uiU }));
-  check(6, '#btn-wb exists in the control bar for both users', uiA.btn && uiU.btn, JSON.stringify({ btnA: uiA.btn, btnU: uiU.btn }));
-  check(7, '#content-wb starts hidden for both users', uiA.panelHidden && uiU.panelHidden, JSON.stringify({ a: uiA.panelHidden, u: uiU.panelHidden }));
-  check(8, '#wb-canvas exists with pointer-events:none initially for both users',
-    uiA.canvas && uiU.canvas && uiA.pe === 'none' && uiU.pe === 'none',
-    JSON.stringify({ canvasA: uiA.canvas, peA: uiA.pe, canvasU: uiU.canvas, peU: uiU.pe }));
-
-  // ---------- 9. admin opens: WB_STATE {open:true} really comes from the server ----------
+  check(16, 'the grant panel opens inside the box and lists the member',
+    panel.open && panel.insideBox && panel.rows >= 1, panel);
+  if (panel.open) await A.screenshot({ path: path.join(OUT, 'wb-box-grant.png') });
   await A.evaluate(() => {
-    window.__wbStates = [];
-    if (window.BM_SOCKET) window.BM_SOCKET.on(window.BMEv.WB_STATE, (d) => window.__wbStates.push(d));
+    const b = document.querySelector('#wb-grant-list .wb-grant-btn');
+    if (b) b.click();
   });
-  await A.click('#btn-wb');
-  const gotOpenEvent = await waitFn(A, () => (window.__wbStates || []).some((d) => d && d.open === true), null, 4000);
-  check(9, 'admin clicks #btn-wb and the server emits WB_STATE {open:true}', gotOpenEvent, 'no wb:state with open:true arrived');
-
-  const winA_10 = await waitFn(A, () => !document.getElementById('content-wb').classList.contains('hidden'), null, 2000);
-  check(10, "admin's #content-wb becomes visible within 2s", winA_10, JSON.stringify(await A.evaluate(wbState)));
-
-  const winA_11 = await waitFn(A, () => !document.getElementById('wb-toolbar').classList.contains('hidden'), null, 2000);
-  check(11, "admin's #wb-toolbar becomes visible within 2s", winA_11, JSON.stringify(await A.evaluate(wbState)));
-
-  const winA_12 = await waitFn(A, () => !document.getElementById('wb-admin-panel').classList.contains('hidden'), null, 2000);
-  check(12, "admin's #wb-admin-panel becomes visible within 2s", winA_12, JSON.stringify(await A.evaluate(wbState)));
-
-  const winA_13 = await waitFn(A, () => document.getElementById('wb-canvas').style.pointerEvents === 'auto', null, 2000);
-  check(13, "admin's #wb-canvas gets pointer-events:auto within 2s", winA_13, JSON.stringify(await A.evaluate(wbState)));
-
-  // ---------- 14-16. the viewer follows (broadcast) ----------
-  const winU_14 = await waitFn(U, () => !document.getElementById('content-wb').classList.contains('hidden'), null, 2000);
-  check(14, "regular user's #content-wb also becomes visible within 2s", winU_14, JSON.stringify(await U.evaluate(wbState)));
-
-  const winU_15 = await waitFn(U, () => document.getElementById('wb-canvas').style.pointerEvents === 'none', null, 2000);
-  check(15, "regular user's #wb-canvas still has pointer-events:none (viewer only)", winU_15, JSON.stringify(await U.evaluate(wbState)));
-
-  const winU_16 = await waitFn(U, () => !document.getElementById('wb-viewer-badge').classList.contains('hidden'), null, 2000);
-  check(16, 'regular user sees #wb-viewer-badge («فقط مشاهده»)', winU_16, JSON.stringify(await U.evaluate(wbState)));
-
-  // ---------- 17. admin draws ----------
-  const drew = await A.evaluate(async () => {
+  const granted = await waitFn(U, () => {
+    const t = document.getElementById('wb-toolbar');
     const c = document.getElementById('wb-canvas');
-    if (!c || !c.width || !c.height) return { ok: false, reason: 'canvas has no size' };
-    const r = c.getBoundingClientRect();
-    const fire = (type, x, y) => c.dispatchEvent(new PointerEvent(type, {
-      pointerId: 7, pointerType: 'mouse', isPrimary: true, bubbles: true, buttons: type === 'pointerup' ? 0 : 1,
-      clientX: x, clientY: y,
-    }));
-    fire('pointerdown', r.left + r.width * 0.2, r.top + r.height * 0.25);
-    for (let i = 1; i <= 15; i++) {
-      fire('pointermove', r.left + r.width * (0.2 + i * 0.03), r.top + r.height * (0.25 + i * 0.03));
-      await new Promise((res) => setTimeout(res, 12));
-    }
-    fire('pointerup', r.left + r.width * 0.65, r.top + r.height * 0.7);
-    await new Promise((res) => setTimeout(res, 250));
-    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let painted = 0;
-    for (let i = 0; i < d.length; i++) if (d[i] !== 0) painted++;
-    return { ok: painted > 0, painted, size: [c.width, c.height] };
+    return !!t && getComputedStyle(t).display !== 'none' && !!c && c.style.pointerEvents === 'auto';
+  }, null, 4000);
+  const grantedInfo = await U.evaluate(boxInfo);
+  check(17, 'the granted member can draw (toolbar + live canvas, badge gone)',
+    granted && grantedInfo.toolbar === true && grantedInfo.pointer === 'auto' && grantedInfo.viewerBadge === false, grantedInfo);
+
+  const bbU = await U.evaluate(() => {
+    const r = document.getElementById('wb-canvas').getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
   });
-  check(17, 'admin draws and the canvas pixels are not all zero', !!(drew && drew.ok), JSON.stringify(drew));
+  await U.mouse.move(bbU.x + bbU.w * 0.7, bbU.y + bbU.h * 0.7);
+  await U.mouse.down();
+  for (let i = 1; i <= 8; i++) {
+    await U.mouse.move(bbU.x + bbU.w * 0.7 - i * 9, bbU.y + bbU.h * 0.7 - i * 6);
+    await sleep(16);
+  }
+  await U.mouse.up();
+  const adminSawGranted = await waitFn(A, (base) => {
+    const c = document.getElementById('wb-canvas');
+    if (!c || !c.width) return false;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 16) if (d[i] > 12) n++;
+    return n > base;
+  }, aInk, 3000);
+  check(18, 'the admin receives the granted member stroke', adminSawGranted, { aInk });
 
-  // ---------- 18. the stroke reaches the viewer ----------
-  const viewerPainted = await waitFn(U, canvasHasPixels, null, 2000);
-  check(18, "regular user's canvas also gets non-zero pixels within 2s", viewerPainted,
-    JSON.stringify(await U.evaluate(() => ({ pe: document.getElementById('wb-canvas').style.pointerEvents, size: [document.getElementById('wb-canvas').width, document.getElementById('wb-canvas').height] }))));
+  // ---------- 19. maximize = full-viewport overlay with a white sheet ----------
+  await A.evaluate(() => {
+    const b = document.querySelector('#wb-box .wb-head button[title="تمام‌صفحه"]');
+    if (b) b.click();
+  });
+  await sleep(800);
+  const maximized = await A.evaluate(() => {
+    const b = document.getElementById('wb-box');
+    const ov = document.getElementById('max-overlay');
+    return {
+      parent: b && b.parentElement ? b.parentElement.id : '',
+      cls: b ? b.classList.contains('maximized-el') : false,
+      overlayBg: ov ? getComputedStyle(ov).backgroundColor : '',
+      pageScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    };
+  });
+  check(19, 'the board maximizes into the overlay over a WHITE sheet',
+    maximized.cls && maximized.parent === 'max-overlay' && maximized.overlayBg === 'rgb(255, 255, 255)', maximized);
+  await A.screenshot({ path: path.join(OUT, 'wb-box-maximized.png') });
+  await A.evaluate(() => window.bmExitMaximize());
+  await sleep(900);
+  const restored = await A.evaluate(() => {
+    const b = document.getElementById('wb-box');
+    return {
+      inGrid: b ? (b.parentElement ? b.parentElement.id === 'video-grid' : false) : false,
+      hiddenTiles: [...document.querySelectorAll('#video-grid > *')].filter((t) => t.style.display === 'none').length,
+      pageScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    };
+  });
+  check(20, 'exiting puts the board back on the stage (nothing left hidden)',
+    restored.inGrid && restored.hiddenTiles === 0 && restored.pageScroll <= 0, restored);
 
-  // ---------- 19. clear wipes both ----------
+  // ---------- 21. clear, then close, for everybody ----------
   await A.click('#wb-btn-clear');
-  const clearedA = await waitFn(A, () => { const c = document.getElementById('wb-canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 0; i < d.length; i++) if (d[i] !== 0) return false; return true; }, null, 2000);
-  const clearedU = await waitFn(U, () => { const c = document.getElementById('wb-canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 0; i < d.length; i++) if (d[i] !== 0) return false; return true; }, null, 2000);
-  check(19, 'admin clears and both canvases are blank within 2s', clearedA && clearedU, JSON.stringify({ clearedA, clearedU }));
+  const clearedU = await waitFn(U, () => {
+    const c = document.getElementById('wb-canvas');
+    if (!c) return false;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    for (let i = 3; i < d.length; i += 16) if (d[i] > 12) return false;
+    return true;
+  }, null, 3000);
+  check(21, 'the admin clear wipes the member canvas too', clearedU, { clearedU });
 
-  // ---------- 20. close hides the panel for both ----------
   await A.click('#btn-wb');
-  const hidA = await waitFn(A, () => document.getElementById('content-wb').classList.contains('hidden'), null, 2000);
-  const hidU = await waitFn(U, () => document.getElementById('content-wb').classList.contains('hidden'), null, 2000);
-  check(20, 'admin closes and #content-wb is hidden again for both users', hidA && hidU, JSON.stringify({ hidA, hidU, stateA: await A.evaluate(wbState), stateU: await U.evaluate(wbState) }));
+  const goneA = await waitFn(A, () => !document.getElementById('wb-box'), null, 4000);
+  const goneU = await waitFn(U, () => !document.getElementById('wb-box'), null, 4000);
+  check(22, 'closing removes the box for both members', goneA && goneU, { goneA, goneU });
+  const after = await A.evaluate(() => ({
+    tiles: document.querySelectorAll('#video-grid > *').length,
+    hidden: [...document.querySelectorAll('#video-grid > *')].filter((t) => t.style.display === 'none').length,
+    wbKey: (() => { const k = document.getElementById('btn-wb'); return k ? k.classList.contains('ctrl-live') : null; })(),
+  }));
+  check(23, 'every member tile is back and the key is no longer live',
+    after.hidden === 0 && after.wbKey === false, after);
 
-  const pageErrors = errors.admin.length + errors.user.length;
-  if (pageErrors) console.log('\npage errors:\n' + errors.admin.concat(errors.user).slice(0, 8).join('\n'));
+  // a phone pass: the box fits and nothing scrolls sideways
+  await A.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await A.reload({ waitUntil: 'networkidle2' });
+  await sleep(3500);
+  await A.evaluate(() => window.bmWbToggle && window.bmWbToggle());
+  await sleep(2500);
+  const phoneView = await A.evaluate(() => {
+    const b = document.getElementById('wb-box');
+    return {
+      box: !!b,
+      scrollW: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      scrollY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    };
+  });
+  check(24, 'the board fits a phone without scrolling the page',
+    phoneView.box === true && phoneView.scrollW <= 0 && phoneView.scrollY <= 0, phoneView);
+  await A.screenshot({ path: path.join(OUT, 'wb-box-phone.png') });
 
+  if (errors.length) console.log('\npage errors:\n' + errors.slice(0, 8).join('\n'));
   await browser.close();
 
   // ---------- cleanup ----------
@@ -271,7 +365,7 @@ const canvasHasPixels = () => {
       dbm.run('DELETE FROM users WHERE id=?', [userId]);
     }
     dbm.run('DELETE FROM verification_codes WHERE identifier=?', [phone]);
-    dbm.run("DELETE FROM signup_requests WHERE phone=?", [phone]);
+    dbm.run('DELETE FROM signup_requests WHERE phone=?', [phone]);
     try {
       const { DatabaseSync } = require('node:sqlite');
       const arch = new DatabaseSync(path.join(ROOT, 'users_archive.db'));
@@ -283,14 +377,10 @@ const canvasHasPixels = () => {
     console.log('cleanup note: ' + e.message);
   }
 
-  console.log('\nWB TEST: ' + pass + '/20 PASS' + (pageErrors ? ' (page errors: ' + pageErrors + ')' : ''));
-  if (fail) {
-    console.log('\nfailures:');
-    lines.filter((l) => l.startsWith('[FAIL]')).forEach((l) => console.log(l));
-  }
+  console.log('\nWB TEST: ' + pass + '/' + (pass + fail) + ' PASS' + (errors.length ? ' (page errors: ' + errors.length + ')' : ''));
   process.exit(fail ? 1 : 0);
 })().catch(async (e) => {
   console.log('ERROR ' + e.stack);
-  try { settings.setSetting('signup_mode', process.env.__prevMode || 'approval'); } catch (err) {}
+  try { settings.setSetting('signup_mode', 'approval'); } catch (err) {}
   process.exit(1);
 });

@@ -103,6 +103,16 @@ function createApp() {
     // private: never a shared proxy cache; the file dies with the session anyway
     res.setHeader('Cache-Control', 'private, max-age=3600');
     if (req.query.download === '1') res.setHeader('Content-Disposition', 'attachment; filename="' + meta.name.replace(/["\\\r\n]/g, '_') + '"');
+    // A real download is counted (an inline view is not): the file box shows the number and
+    // opens a window with who downloaded it. Broadcast so every member sees it at once.
+    if (req.query.download === '1' || !meta.viewable) {
+      const stats = callfiles.noteDownload(room, req.params.id, userId, meta.name);
+      if (stats) {
+        try {
+          require('./sockets').noteWebDownload(room, meta.id, stats.total);
+        } catch (e) { /* the badge is cosmetic: never fail the download over it */ }
+      }
+    }
     res.sendFile(abs);
   });
   app.use('/black-meet', pages);
