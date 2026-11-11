@@ -77,6 +77,7 @@ Persian (RTL) group voice/video-chat app like Google Meet. Single **Node.js** pr
 
 - `.gitignore` lists `config.json`, `.env`, `tunnel_url.txt`, `turn_host.txt`, `node.err`, `dev_otp.log`, `black_meet.db*`, `bin/cloudflared.exe`, `**/bore.exe`, `logs/` — but several may be **already tracked** in history. Before any push: `git rm --cached <file>`. Never commit them again; tunnel scripts rewrite the txt files constantly.
 - GitHub remote is `https://github.com/maxmancoder/black-meet`. `gh` CLI is not installed. (Current workspace may not even be a git repo — check `git status` first.)
+- **Every push must also publish a NEW backup branch on the same commit** (owner rule): `git branch backup/<slug> <commit>` then `git push -u origin backup/<slug>` in the SAME step as the `main` push. Nothing was ever pushed here without one — the branch name describes the work (`backup/whiteboard-feature`, `backup/docs-complete-technical-readme`). Push and deploy still need explicit owner permission each time.
 
 ## DB / migrations
 
