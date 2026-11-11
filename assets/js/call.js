@@ -523,13 +523,13 @@
     peerFlushTimer = setTimeout(() => {
       peerFlushTimer = null;
       const q = peerQueue.splice(0, peerQueue.length);
-      q.forEach((it, i) => setTimeout(() => {
+      q.forEach((it) => {
         // read the roster entry — do NOT upsert a bare {userId} stub: normalizeMember
         // would default it to status 'pending' and blank its name (that silently removed
         // an approved member from the grant/admin lists)
         const m = currentList.find(x => x.userId === it.userId) || { userId: it.userId };
         createPC(Object.assign({}, m, { userId: it.userId }), it.polite);
-      }, i * 40));
+      });
     }, 0);
   }
   function initials(name) {
@@ -984,7 +984,7 @@
     socket.on('connect', () => {
       setConn('زنده', 'bg-secondary');
       joinedRoom = false;
-      if (mediaReady) doJoin();
+      doJoin();
       // the network flapped: the peer connections are probably dead. Ask every peer
       // for a fresh ICE session instead of waiting for a page refresh.
       pcMap.forEach((st) => {
@@ -2694,10 +2694,18 @@
     // whiteboard canvas / pointer wiring (call.ejs ships the markup)
     if (window.bmWbInit) window.bmWbInit();
 
+    // Connect and join as early as possible — do not wait for camera/mic permission
+    // or device startup, which can take seconds and made "establishing connection"
+    // feel very slow. Media is acquired in parallel and added to peers once ready.
+    connectSocket();
     startMedia().then(() => {
       mediaReady = true;
-      connectSocket();
-      // if socket already connected (fast reconnect), join now
+      if (socket && socket.connected) doJoin();
+      // attach the newly acquired tracks to every peer and announce the real state
+      pcMap.forEach((st) => addLocalTracks(st));
+      if (approved) broadcastStatus();
+    }).catch(() => {
+      mediaReady = true;
       if (socket && socket.connected) doJoin();
     });
   }
