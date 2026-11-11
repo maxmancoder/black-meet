@@ -29,6 +29,7 @@ const ICONS = [
   'person_remove', 'phone', 'phone_iphone', 'record_voice_over', 'screen_share',
   'search', 'send', 'shield_person', 'switch_camera', 'tune', 'upload', 'download', 'graphic_eq', 'graphic_eq',
   'description', 'snippet_folder', 'cloud_upload',
+  'draw', 'ink_eraser', 'delete_sweep',
   'video_call', 'video_library',
   'videocam', 'videocam_off', 'volume_up',
 ];
