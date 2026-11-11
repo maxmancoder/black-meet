@@ -908,6 +908,8 @@
       timeout: 20000
     });
     window.BM_SOCKET = socket;
+    // whiteboard events ride on the same socket
+    if (window.bmWbSocketBind) window.bmWbSocketBind(socket);
 
     // the call closes itself when nobody joined within the time limit
     socket.on(EV.CALL_SOLO_ENDED, onSoloEnded);
@@ -959,6 +961,7 @@
       }
       // an already-running site/video box must appear for late joiners too
       if (d.web && window.bmWebInit) window.bmWebInit(d.web);
+      if (d.wb && d.wb.open && window.bmWbApplySync) window.bmWbApplySync(d.wb);
       if (d.openJoin !== undefined) paintOpenJoin(!!d.openJoin);
     });
     socket.on(EV.OPEN_JOIN_CHANGED, (d) => {
@@ -1996,7 +1999,7 @@
   // ---------- Tabs ----------
   window.switchTab = function (tab) {
     currentTab = tab;
-    ['members', 'chat', 'admin'].forEach(t => {
+    ['members', 'chat', 'admin', 'wb'].forEach(t => {
       const c = $('content-' + t); if (c) { c.classList.add('hidden'); c.classList.remove('flex'); }
       const el = $('tab-' + t); if (el) { el.classList.remove('text-primary', 'border-primary'); el.classList.add('text-on-surface-variant', 'border-transparent'); }
     });
@@ -2008,6 +2011,11 @@
     if (tabs) tabs.classList.toggle('hidden', tab === 'chat');
     const cb = $('btn-chat-panel');
     if (cb) cb.classList.toggle('ctrl-live', tab === 'chat');
+    // remove ctrl-live from btn-wb when switching away from wb tab
+    if (tab !== 'wb') {
+      const wbb = $('btn-wb');
+      if (wbb) wbb.classList.remove('ctrl-live');
+    }
     layoutGrid();
   };
   let currentTab = 'members';
@@ -2443,6 +2451,9 @@
     const mm = $('member-menu');
     if (mm) mm.addEventListener('click', e => e.stopPropagation());
     document.addEventListener('click', () => { const m = $('member-menu'); if (m) m.classList.add('hidden'); });
+
+    // whiteboard canvas / pointer wiring (call.ejs ships the markup)
+    if (window.bmWbInit) window.bmWbInit();
 
     startMedia().then(() => {
       mediaReady = true;

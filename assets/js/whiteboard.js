@@ -148,9 +148,13 @@
         wbShow($('wb-admin-panel'), false);
       }
       if (wbCanvas) wbCanvas.style.pointerEvents = wbCanDraw ? 'auto' : 'none';
+      const wbb = $('btn-wb');
+      if (wbb) wbb.classList.add('ctrl-live');
     } else {
       wbWasOpen = false;
       wbCanDraw = false;
+      const wbbOff = $('btn-wb');
+      if (wbbOff) wbbOff.classList.remove('ctrl-live');
       if (wbCtx && wbCanvas) wbCtx.clearRect(0, 0, wbCanvas.width, wbCanvas.height);
       wbShow($('wb-toolbar'), false);
       wbShow($('wb-admin-panel'), false);
