@@ -155,6 +155,13 @@
       wbCanDraw = false;
       const wbbOff = $('btn-wb');
       if (wbbOff) wbbOff.classList.remove('ctrl-live');
+      // closing the board hides the panel again; when the whiteboard tab was the one
+      // on screen we return to the members section instead of leaving an empty pane
+      const wbPanel = $('content-wb');
+      if (wbPanel && !wbPanel.classList.contains('hidden') && typeof window.switchTab === 'function') {
+        window.switchTab('members');
+      }
+      wbShow(wbPanel, false);
       if (wbCtx && wbCanvas) wbCtx.clearRect(0, 0, wbCanvas.width, wbCanvas.height);
       wbShow($('wb-toolbar'), false);
       wbShow($('wb-admin-panel'), false);
