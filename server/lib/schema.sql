@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS pv_messages (
   created_at    TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pv_user ON pv_messages (user_id);
+CREATE INDEX IF NOT EXISTS idx_pv_user_seen ON pv_messages (user_id, from_manager, seen);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pv_client ON pv_messages (user_id, from_manager, client_msg_id);
 
 CREATE TABLE IF NOT EXISTS announcements (

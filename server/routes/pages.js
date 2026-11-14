@@ -13,12 +13,16 @@ const { toFaDigits } = require('./../lib/helpers');
 
 function pageLocals(req, res, extra) {
   const base = baseUrl(req);
+  const me = sessions.currentUser(req);
   const locals = {
     title: 'Black Meet',
     base,
     public: publicUrl(req),
-    me: sessions.currentUser(req),
+    me,
     csrf: sessions.csrfToken(req, res),
+    // the page already knows who is signed in, so the realtime token can ship inside the
+    // HTML instead of costing an extra api/socket-token round trip before every connection
+    socketToken: me ? makeSocketToken(me.id, 0) : '',
     asset(p) { return assetUrl(p, req); },
     url(p) { return base + '/' + p.replace(/^\/+/, ''); },
     // inline SVG icon from icons/sprite.svg — icon(name, cls, fill, extraAttrs)

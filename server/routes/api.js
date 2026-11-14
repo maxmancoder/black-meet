@@ -1095,6 +1095,19 @@ router.all('/messages/conversations', (req, res) => {
   const isMgr = !!me.is_manager;
   if (!isMgr && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
 
+  // A thread only ever needs the tail: an unbounded history made the payload grow forever
+  // (slow open on a phone link) while the UI only scrolls the recent part anyway.
+  const THREAD_LIMIT = 400;
+  function threadMessages(userId) {
+    return dbm.all(
+      `SELECT id, from_manager, body, created_at FROM (
+         SELECT id, from_manager, body, created_at FROM pv_messages
+          WHERE user_id=? ORDER BY id DESC LIMIT ${THREAD_LIMIT}
+       ) ORDER BY id ASC`,
+      [userId]
+    );
+  }
+
   // every bubble shows who wrote it: pv rows only carry `from_manager`, so the two
   // possible senders (the main manager and the other side of the thread) are resolved
   // once here and stamped onto each row
@@ -1131,10 +1144,7 @@ router.all('/messages/conversations', (req, res) => {
         }] : [];
         return ok(res, { ok: true, conversations, admin_chat: true });
       }
-      const messages = dbm.all(
-        'SELECT id, from_manager, body, created_at FROM pv_messages WHERE user_id=? ORDER BY id ASC',
-        [me.id]
-      );
+      const messages = threadMessages(me.id);
       dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
       // the "other side" of a premium's single thread is himself when he replies
       return ok(res, { ok: true, messages: withSender(messages, managerUser(), me), admin_chat: true });
@@ -1148,10 +1158,7 @@ router.all('/messages/conversations', (req, res) => {
       );
       return ok(res, { ok: true, conversations });
     }
-    const messages = dbm.all(
-      'SELECT id, from_manager, body, created_at FROM pv_messages WHERE user_id=? ORDER BY id ASC',
-      [uid]
-    );
+    const messages = threadMessages(uid);
     dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
     const other = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
     return ok(res, { ok: true, messages: withSender(messages, me, other) });
@@ -1207,6 +1214,22 @@ router.post('/messages/read-all', (req, res) => {
   if (me.is_manager) dbm.run('UPDATE pv_messages SET seen=1 WHERE from_manager=0');
   else dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
   return ok(res, { ok: true, count: 0 });
+});
+
+// tiny seen-ack used while a thread is open: loading the whole conversation again just to
+// clear its unread flag doubled the traffic of every incoming message
+router.post('/messages/seen', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (!checkCsrf(req, res)) return;
+  if (me.is_manager) {
+    const uid = Number(req.body.user_id || 0);
+    if (uid) dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
+  } else {
+    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
+  }
+  return ok(res, { ok: true });
 });
 
 // ------------------------------------------------------------------

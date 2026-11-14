@@ -33,11 +33,21 @@ function createApp() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // static assets (before session middleware: no DB hit for asset fetches)
-  app.use('/black-meet/assets', express.static(path.join(rootDir, 'assets')));
-  app.use('/black-meet/fonts', express.static(path.join(rootDir, 'fonts')));
-  app.use('/black-meet/shared', express.static(path.join(rootDir, 'shared')));
-  app.use('/black-meet/icons', express.static(path.join(rootDir, 'icons')));
+  // Static assets (before session middleware: no DB hit for asset fetches).
+  // asset()/assetUrl() append ?v=<mtime> to every URL, so a versioned request can be cached
+  // FOREVER: without this every page load re-validated ~14 files (one round trip each), which
+  // on a slow link made navigation feel broken. Unversioned requests keep the default
+  // revalidation, so nothing goes stale.
+  const immutableAssets = (req, res, next) => {
+    if (req.query && req.query.v) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    next();
+  };
+  app.use('/black-meet/assets', immutableAssets, express.static(path.join(rootDir, 'assets')));
+  app.use('/black-meet/fonts', immutableAssets, express.static(path.join(rootDir, 'fonts')));
+  app.use('/black-meet/shared', immutableAssets, express.static(path.join(rootDir, 'shared')));
+  app.use('/black-meet/icons', immutableAssets, express.static(path.join(rootDir, 'icons')));
   // ONLY avatars are public. `uploads/call/` holds the files shared inside a call and must
   // never be served statically — it is only reachable through the login-gated route below
   // (mounting all of uploads/ used to expose every shared file to anyone with the URL).

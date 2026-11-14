@@ -39,16 +39,82 @@
     if (el) el.textContent = isOnline(view.user_id) ? 'آنلاین' : 'آفلاین';
   }
 
+  // ---- instant paint from cache (a slow link must not leave the page blank) ----
+  const CACHE_CONVS = 'bm_convs_v1';
+  const CACHE_THREAD = 'bm_thread_v1';
+  const CACHE_PUB = 'bm_pub_v1';
+  const CACHE_LIMIT = 120;
+  function cacheGet(key) {
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function cacheSet(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* full / blocked */ }
+  }
+  function trim(arr) {
+    const a = Array.isArray(arr) ? arr : [];
+    return a.length > CACHE_LIMIT ? a.slice(a.length - CACHE_LIMIT) : a;
+  }
+
+  let lastConvsAt = 0;
+
   function loadConvs(cb) {
     fetch('api/messages/conversations')
       .then(r => r.json())
       .then(d => {
         if (!d.ok) return;
         convs = d.conversations || [];
+        lastConvsAt = Date.now();
         renderConvs();
+        cacheSet(CACHE_CONVS, { convs, at: lastConvsAt });
         if (cb) cb();
       })
       .catch(() => {});
+  }
+
+  // paint the previous list straight away, then refresh it in the background
+  function restoreCachedConvs() {
+    const c = cacheGet(CACHE_CONVS);
+    if (!c || !Array.isArray(c.convs) || !c.convs.length) return false;
+    convs = c.convs;
+    renderConvs();
+    return true;
+  }
+
+  function markAllReadLocal() {
+    convs.forEach(c => { c.unread = 0; });
+    document.querySelectorAll('#conv-list .unread-dot').forEach(d => d.remove());
+  }
+
+  // the server clears the flag when a thread is fetched; mirror that in the list without
+  // re-downloading every conversation (that extra round trip made opening a chat feel slow)
+  function clearUnreadLocal(userId) {
+    const c = convs.find(x => Number(x.user_id) === Number(userId));
+    if (c) c.unread = 0;
+    const box = document.getElementById('conv-list');
+    if (!box) return;
+    box.querySelectorAll('[data-uid]').forEach(row => {
+      if (Number(row.dataset.uid) === Number(userId)) {
+        const dot = row.querySelector('.unread-dot');
+        if (dot) dot.remove();
+      }
+    });
+  }
+
+  // cheap seen-ack: no payload back, so it can fire on every incoming message
+  function markSeen(userId) {
+    fetch('api/messages/seen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: CSRF, user_id: String(userId || '') }),
+    }).catch(() => {});
+  }
+
+  function sendViaHttp(userId, body) {
+    return fetch('api/messages/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: CSRF, user_id: String(userId), body }),
+    }).then(r => r.json());
   }
 
   // mobile: show the chat pane instead of the conversation list
@@ -181,9 +247,22 @@
     setHeader(view);
     refreshHeaderStatus();
     setMobileChat(true);
+    // show the last copy of this thread immediately, then replace it with the fresh rows
+    const cached = cacheGet(CACHE_THREAD);
+    const box = document.getElementById('chat-area');
+    if (cached && Number(cached.uid) === Number(c.user_id) && !!cached.mgr === !!window.__IS_MANAGER && Array.isArray(cached.messages)) {
+      renderChat(cached.messages, 'user');
+    } else if (box) {
+      box.innerHTML = '';
+    }
     fetch('api/messages/conversations?user_id=' + c.user_id)
       .then(r => r.json())
-      .then(d => { if (d.ok) renderChat(d.messages, 'user'); loadConvs(); })
+      .then(d => {
+        if (!d.ok) return;
+        renderChat(d.messages, 'user');
+        cacheSet(CACHE_THREAD, { uid: Number(c.user_id), mgr: !!window.__IS_MANAGER, messages: trim(d.messages) });
+        clearUnreadLocal(c.user_id);
+      })
       .catch(() => {});
   }
 
@@ -191,9 +270,20 @@
     view = { type: 'public', name: 'اعلان عمومی' };
     setHeader(view);
     setMobileChat(true);
+    const cached = cacheGet(CACHE_PUB);
+    if (cached && Array.isArray(cached.messages) && cached.messages.length) {
+      renderChat(cached.messages, 'public');
+    } else {
+      document.getElementById('chat-area').innerHTML = '';
+    }
     fetch('api/announcements')
       .then(r => r.json())
-      .then(d => { if (d.ok) renderChat((d.announcements || []).map(a => ({ id: a.id, body: a.body, from_manager: 1, username: a.username, display_name: a.display_name })), 'public'); })
+      .then(d => {
+        if (!d.ok) return;
+        const rows = (d.announcements || []).map(a => ({ id: a.id, body: a.body, from_manager: 1, username: a.username, display_name: a.display_name }));
+        renderChat(rows, 'public');
+        cacheSet(CACHE_PUB, { messages: trim(rows) });
+      })
       .catch(() => {});
   }
 
@@ -210,7 +300,9 @@
       if (open) {
         appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, isIncoming(fromMgr));
         updateConvRow(fromId, { unread: 0 });
-        if (bumpsMe) fetch('api/messages/conversations?user_id=' + fromId); // mark seen server-side
+        // just acknowledge the thread as read — re-downloading the whole conversation for
+        // that doubled the traffic of every single incoming message
+        if (bumpsMe) markSeen(fromId);
       } else if (bumpsMe) {
         const c = convs.find(x => Number(x.user_id) === fromId);
         if (!c) loadConvs();
@@ -239,7 +331,8 @@
     BMLive.on(EV.PRESENCE_ONLINE, d => { onlineUsers.add(Number(d.userId)); refreshHeaderStatus(); });
     BMLive.on(EV.PRESENCE_OFFLINE, d => { onlineUsers.delete(Number(d.userId)); refreshHeaderStatus(); });
     BMLive.on('live:connected', () => {
-      loadConvs();
+      // bootstrap already loaded the list a moment ago — a second render would just flicker
+      if (Date.now() - lastConvsAt > 1500) loadConvs();
       // ask server who is online right now
       const s = BMLive.socket();
       if (s && s.connected) s.emit('presence:list', resp => {
@@ -265,41 +358,38 @@
     const inp = document.getElementById('msg-input');
     const body = inp.value.trim();
     if (!body) return;
+    inp.value = '';
     if (view.type === 'public') {
       // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
       const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME }, true);
-      inp.value = '';
       fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body }) })
         .then(r => r.json()).then(d => {
           if (!d.ok) { el.remove(); showToast(d.msg || 'خطا'); }
         }).catch(() => { el.remove(); showToast('خطا'); });
       return;
     }
+
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
     const ownMgr = !!window.__IS_MANAGER;
-    appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, isIncoming(ownMgr));
-    inp.value = '';
+    const el = appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, isIncoming(ownMgr));
+    const target = view;
+    const failed = (msg) => { el.remove(); inp.value = body; showToast(msg || 'ارسال پیام ناموفق بود'); };
 
-    if (!ownMgr) {
-      // premium chats over HTTP (persisted as from_manager=0 under his own thread)
-      fetch('api/messages/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ csrf: CSRF, user_id: String(view.user_id), body }),
-      })
-        .then(r => r.json())
-        .then(d => { if (!d.ok) showToast(d.msg || 'ارسال پیام ناموفق بود'); })
-        .catch(() => showToast('خطای شبکه'));
+    // ONE round trip: the page already holds a live socket, so both sides send over it.
+    // (A premium used to POST over HTTP while the socket sat idle on the same page.)
+    const s = window.BMLive && BMLive.socket();
+    if (s && s.connected) {
+      const clientMsgId = 'c' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      s.emit(EV.PV_SEND, { toUserId: target.user_id, body, clientMsgId }, resp => {
+        if (!resp || !resp.ok) failed('ارسال پیام ناموفق بود');
+      });
       return;
     }
 
-    // manager: realtime PV send with client id (idempotent)
-    const clientMsgId = 'c' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
-    const s = window.BMLive && BMLive.socket();
-    if (!s || !s.connected) { showToast('اتصال زنده قطع است — بعداً دوباره تلاش کنید'); return; }
-    s.emit(EV.PV_SEND, { toUserId: view.user_id, body, clientMsgId }, resp => {
-      if (!resp || !resp.ok) showToast('ارسال پیام ناموفق بود');
-    });
+    // socket down: HTTP still persists the row and pushes it live to the other side
+    sendViaHttp(target.user_id, body)
+      .then(d => { if (!d.ok) failed(d.msg); })
+      .catch(() => failed('خطای شبکه'));
   };
 
   window.openProfileModal = function () {
@@ -312,10 +402,18 @@
   };
   window.closeProfileModal = function () { document.getElementById('profile-modal').classList.add('hidden'); };
 
-  // entering the messages page clears the home badge (server-side seen flags),
-  // then the conversation list is loaded with fresh unread counts
+  // entering the messages page clears the home badge (server-side seen flags) and loads the
+  // conversation list. Both run in PARALLEL now: the badge clear used to serialize a whole
+  // round trip in front of the list on every visit.
   function bootstrap() {
+    restoreCachedConvs();
+    fetch('api/messages/read-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: CSRF }),
+    }).then(() => markAllReadLocal()).catch(() => {});
     loadConvs(function () {
+      markAllReadLocal();
       // /messages?chat=admin — jump straight into the admin chat
       if (new URLSearchParams(location.search).get('chat') === 'admin') {
         const row = convs.find(c => c.admin_chat);
@@ -323,9 +421,5 @@
       }
     });
   }
-  fetch('api/messages/read-all', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ csrf: CSRF }),
-  }).then(() => bootstrap()).catch(() => bootstrap());
+  bootstrap();
 })();

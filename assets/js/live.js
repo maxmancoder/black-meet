@@ -49,9 +49,37 @@
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   }
 
+  // The page ships its own token in the HTML (head.ejs), so the socket can connect on the
+  // first round trip instead of spending a whole request on api/socket-token first. The
+  // sessionStorage copy only covers a reconnect where that inline token is already spent.
+  function cachedToken() {
+    try {
+      var raw = sessionStorage.getItem('bm_sock_token');
+      if (!raw) return '';
+      var o = JSON.parse(raw);
+      if (o && o.token && o.exp > Date.now()) return o.token;
+    } catch (e) { /* private mode / bad json */ }
+    return '';
+  }
+  function storeToken(token, userId) {
+    try {
+      sessionStorage.setItem('bm_sock_token', JSON.stringify({
+        token: token, uid: Number(userId) || 0, exp: Date.now() + 10 * 3600 * 1000,
+      }));
+    } catch (e) { /* storage blocked */ }
+  }
+  function dropToken() {
+    try { sessionStorage.removeItem('bm_sock_token'); } catch (e) { /* noop */ }
+  }
+
   function connect() {
     if (window.__BM_LIVE_URL === null) return;      // page opted out entirely
     var url = window.__BM_LIVE_URL || undefined;    // '' → same origin (proxied)
+
+    var inline = window.__BM_SOCKET_TOKEN;
+    window.__BM_SOCKET_TOKEN = '';                  // one-shot
+    var token = inline || cachedToken();
+    if (token) { openSocket(url, token); return; }
 
     // fetch a per-user token, then connect with it (handshake auth is mandatory)
     fetch((window.BASE || '') + '/api/socket-token')
@@ -64,6 +92,7 @@
           setTimeout(connect, 3000);
           return;
         }
+        storeToken(d.token, d.user_id);
         openSocket(url, d.token);
       })
       .catch(function () {
@@ -107,6 +136,7 @@
       if (String(err && err.message).indexOf('UNAUTHORIZED') >= 0 && !authed) {
         authed = true;
         stopHeartbeat();
+        dropToken();                                  // never retry the rejected token
         if (socket) socket.close();
         setTimeout(function () { authed = false; connect(); }, 500);
       } else {

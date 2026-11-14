@@ -10,6 +10,9 @@ for (const k of Object.keys(internalRaw)) {
   internal[k] = (...a) => Promise.resolve(internalRaw[k](...a));
 }
 const { verifySocketToken } = require('./lib/helpers');
+const { sqlNow } = require('./lib/helpers');
+const ranks = require('./lib/ranks');
+const bus = require('./lib/bus');
 const callfiles = require('./lib/callfiles');
 const { appConfig } = require('./lib/config');
 
@@ -154,10 +157,14 @@ function attach(httpServer) {
     // manager flag is SERVER-derived (DB) at connect time — it gates PV_SEND,
     // pvToManagers and pvConversationUpdated. Never trust a client payload for it.
     try {
-      const u = dbm.get('SELECT is_manager FROM users WHERE id=?', [uid]);
+      const u = dbm.get('SELECT is_manager, rank FROM users WHERE id=?', [uid]);
       socket.data.isManager = !!(u && u.is_manager);
+      // premium AND regular admins may chat with the manager console; that flag lets them
+      // push a message over the socket they already have instead of a whole HTTP round trip.
+      socket.data.canMessages = !!(u && ranks.canUseMessages(u));
     } catch (err) {
       socket.data.isManager = false;
+      socket.data.canMessages = false;
     }
     addGlobalSocket(uid, socket.id);
 
@@ -994,9 +1001,52 @@ r.sockets.forEach((s, sid) => {
       const body = String(msg.body || '').trim().slice(0, 2000);
       const clientMsgId = String(msg.clientMsgId || '').slice(0, 64);
       if (!Number.isInteger(toId) || body === '' || clientMsgId === '') { if (typeof cb === 'function') cb({ ok: false, error: 'BAD_REQUEST' }); return; }
-      // only the manager console pushes manager-side messages over the socket
-      // (premium chats via POST /messages/conversations, persisted as from_manager=0)
-      if (!socket.data.isManager) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
+      // A non-manager (premium / regular admin) chats with the manager console: the row is
+      // stored under THEIR user_id with from_manager=0 (exactly what POST /messages/conversations
+      // did), but over the socket they already have — one round trip less per message.
+      if (!socket.data.isManager) {
+        if (!socket.data.canMessages) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
+        const me = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
+        if (!me) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
+        const ts = sqlNow();
+        let id = null;
+        const existing = dbm.get(
+          'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=0 AND client_msg_id=?',
+          [uid, clientMsgId]
+        );
+        if (existing) {
+          id = Number(existing.id);
+        } else {
+          try {
+            const r = dbm.run(
+              'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, created_at) VALUES (?,0,?,?,?)',
+              [uid, body, clientMsgId, ts]
+            );
+            id = Number(r.lastInsertRowid);
+          } catch (e) {
+            const again = dbm.get(
+              'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=0 AND client_msg_id=?',
+              [uid, clientMsgId]
+            );
+            if (!again) {
+              const err = { ok: false, error: 'SAVE_FAILED', clientMsgId };
+              socket.emit(EV.ERR, err);
+              if (typeof cb === 'function') cb(err);
+              return;
+            }
+            id = Number(again.id);
+          }
+        }
+        const payload = {
+          id, fromUserId: uid, fromName: me.display_name || '', body, clientMsgId,
+          fromManager: 0, ts,
+        };
+        socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id });
+        bus.pvToManagers(payload);
+        bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 0, ts });
+        if (typeof cb === 'function') cb({ ok: true, id });
+        return;
+      }
       internal.pvPersist(toId, true, uid, body, clientMsgId).then((res) => {
         if (!res.ok) {
           const e = { ok: false, error: res.error || 'SAVE_FAILED', clientMsgId };
