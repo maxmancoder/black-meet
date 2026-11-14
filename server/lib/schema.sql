@@ -124,22 +124,28 @@ CREATE TABLE IF NOT EXISTS meeting_blocks (
 CREATE INDEX IF NOT EXISTS idx_blocks_user ON meeting_blocks (user_id);
 
 CREATE TABLE IF NOT EXISTS pv_messages (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id       INTEGER NOT NULL,
-  from_manager  INTEGER NOT NULL DEFAULT 0,
-  body          TEXT    NOT NULL,
-  seen          INTEGER NOT NULL DEFAULT 0,
-  client_msg_id TEXT,
-  created_at    TEXT    NOT NULL
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL,
+  from_manager    INTEGER NOT NULL DEFAULT 0,
+  body            TEXT    NOT NULL,
+  seen            INTEGER NOT NULL DEFAULT 0,
+  client_msg_id   TEXT,
+  sender_username TEXT    NOT NULL DEFAULT '',
+  sender_email    TEXT    NOT NULL DEFAULT '',
+  created_at      TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pv_user ON pv_messages (user_id);
 CREATE INDEX IF NOT EXISTS idx_pv_user_seen ON pv_messages (user_id, from_manager, seen);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pv_client ON pv_messages (user_id, from_manager, client_msg_id);
 
 CREATE TABLE IF NOT EXISTS announcements (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  body       TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  body                TEXT    NOT NULL,
+  sender_id           INTEGER NOT NULL DEFAULT 0,
+  sender_username     TEXT    NOT NULL DEFAULT '',
+  sender_email        TEXT    NOT NULL DEFAULT '',
+  sender_display_name TEXT    NOT NULL DEFAULT '',
+  created_at          TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS migrations (

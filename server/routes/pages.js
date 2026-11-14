@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const express = require('express');
 const dbm = require('./../lib/db');
 const {
@@ -227,8 +227,8 @@ router.get('/profile', (req, res) => {
   }));
 });
 
-// index of the meetings this user created (the same rows /home shows as "recent",
-// just not limited to six). It answers with real database rows only — no analytics.
+// index of meetings: manager and premium (ادمین پریمیوم) see ALL meetings; regular users and
+// plain admins see only their own. Updates are pushed live via MEETING_* socket events.
 router.get('/meetings', (req, res) => {
   if (!requireLogin(req, res)) return;
   const me = sessions.currentUser(req);
@@ -249,19 +249,26 @@ router.get('/meetings', (req, res) => {
     canCreate = false; createBlockMsg = 'سقف تماس امروز پر شده است';
   }
 
-  const meetings = dbm.all(
-    `SELECT m.id, m.room_id, m.title, m.created_at, m.active,
+  const canSeeAllMeetings = !!(me.is_manager || ranks.rankOf(me) === 'premium');
+  const canManageAllMeetings = canSeeAllMeetings;
+  const baseSql = `SELECT m.id, m.room_id, m.title, m.created_at, m.active, m.creator_id,
+            u.display_name AS creator_name, u.username AS creator_username,
             (SELECT COUNT(*) FROM meeting_participants p WHERE p.meeting_id=m.id AND p.status<>'removed') AS members
-     FROM meetings m WHERE m.creator_id=? ORDER BY m.created_at DESC LIMIT 200`,
-    [me.id]
-  ).map((m) => Object.assign({}, m, {
+     FROM meetings m LEFT JOIN users u ON u.id = m.creator_id`;
+  const rows = canSeeAllMeetings
+    ? dbm.all(baseSql + ' ORDER BY m.created_at DESC LIMIT 500')
+    : dbm.all(baseSql + ' WHERE m.creator_id=? ORDER BY m.created_at DESC LIMIT 200', [me.id]);
+  const meetings = rows.map((m) => Object.assign({}, m, {
     members: Number(m.members) || 0,
     active: Number(m.active) ? 1 : 0,
+    creator_id: Number(m.creator_id) || 0,
   }));
 
   res.render('meetings', pageLocals(req, res, {
     title: 'همهٔ تماس‌ها - Black Meet',
     meetings,
+    canSeeAllMeetings,
+    canManageAllMeetings,
     activeCount: meetings.filter((m) => m.active).length,
     endedCount: meetings.filter((m) => !m.active).length,
     totalCount: meetings.length,
@@ -324,9 +331,12 @@ router.get('/messages', (req, res) => {
     res.redirect(baseUrl(req) + '/home');
     return;
   }
+  // plain admins (rank admin) must not access the public announcements thread on this page
+  const canSeePublic = !!(me.is_manager || ranks.rankOf(me) === 'premium');
   res.render('messages', pageLocals(req, res, {
     title: 'پیام‌ها - Black Meet',
     isManager: !!me.is_manager,
+    canSeePublic,
     rankLabel: ranks.rankLabel(me),
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
@@ -499,3 +509,4 @@ function now64() {
 }
 
 module.exports = router;
+

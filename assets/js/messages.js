@@ -181,12 +181,14 @@
     const q = (document.getElementById('conv-search').value || '').trim().toLowerCase();
     const box = document.getElementById('conv-list');
     box.innerHTML = '';
-    const pub = document.createElement('div');
-    pub.className = 'dash-conv' + (view && view.type === 'public' ? ' is-active' : '');
-    pub.innerHTML = '<div class="dash-conv-av dash-conv-av-pub">' + bmIcon('campaign') + '</div>' +
-      '<div class="dash-conv-meta"><h4 class="dash-conv-name">پیام عمومی</h4><p class="dash-conv-sub">اعلان‌ها</p></div>';
-    pub.onclick = openPublic;
-    box.appendChild(pub);
+    if (window.__CAN_SEE_PUBLIC !== false) {
+      const pub = document.createElement('div');
+      pub.className = 'dash-conv' + (view && view.type === 'public' ? ' is-active' : '');
+      pub.innerHTML = '<div class="dash-conv-av dash-conv-av-pub">' + bmIcon('campaign') + '</div>' +
+        '<div class="dash-conv-meta"><h4 class="dash-conv-name">پیام عمومی</h4><p class="dash-conv-sub">اعلان‌ها</p></div>';
+      pub.onclick = openPublic;
+      box.appendChild(pub);
+    }
 
     convs.filter(c => !q || ((c.display_name || '') + ' ' + (c.username || '') + ' ' + roleOf(c).label).toLowerCase().includes(q)).forEach(c => {
       const el = document.createElement('div');
@@ -291,6 +293,7 @@
   }
 
   function openPublic() {
+    if (window.__CAN_SEE_PUBLIC === false) return;
     view = { type: 'public', name: 'اعلان عمومی' };
     setHeader(view);
     setMobileChat(true);
@@ -384,6 +387,7 @@
     if (!body) return;
     inp.value = '';
     if (view.type === 'public') {
+      if (window.__CAN_SEE_PUBLIC === false) return showToast('دسترسی ندارید');
       // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
       const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME }, true);
       fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body }) })

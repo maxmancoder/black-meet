@@ -3,6 +3,7 @@
 // Sockets call these directly; no HTTP hop needed in the merged process.
 const dbm = require('./db');
 const { sqlNow } = require('./helpers');
+const bus = require('./bus');
 
 function meetingByRoom(roomId) {
   return dbm.get('SELECT id, room_id, title, creator_id, active FROM meetings WHERE room_id=?', [String(roomId)]);
@@ -106,9 +107,13 @@ function pvPersist(toUserId, fromManager, fromUserId, body, clientMsgId) {
   clientMsgId = String(clientMsgId || '').slice(0, 64);
   body = String(body || '').trim();
   if (!toUserId || body === '' || clientMsgId === '') return { ok: false, error: 'BAD_REQUEST' };
+  let sender = null;
   if (!fromManager) {
     const u = userById(fromUserId);
     if (!u || !u.is_manager) return { ok: false, error: 'NOT_AUTHORIZED' };
+    sender = u;
+  } else {
+    sender = userById(fromUserId);
   }
   const f = fromManager ? 1 : 0;
   const existing = dbm.get(
@@ -117,10 +122,11 @@ function pvPersist(toUserId, fromManager, fromUserId, body, clientMsgId) {
   );
   if (existing) return { ok: true, id: Number(existing.id), dedup: true };
   let id = null;
+  const ts = sqlNow();
   try {
     const r = dbm.run(
-      'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, created_at) VALUES (?,?,?,?,?)',
-      [toUserId, f, body, clientMsgId, sqlNow()]
+      'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, sender_username, sender_email, created_at) VALUES (?,?,?,?,?,?,?)',
+      [toUserId, f, body, clientMsgId, sender ? (sender.username || '') : '', sender ? (sender.email || '') : '', ts]
     );
     id = r.lastInsertRowid;
   } catch (e) {
@@ -131,14 +137,13 @@ function pvPersist(toUserId, fromManager, fromUserId, body, clientMsgId) {
     if (again) id = Number(again.id);
     else return { ok: false, error: 'DB_ERROR' };
   }
-  const from = fromManager ? userById(fromUserId) : null;
+  const from = sender;
   return {
     ok: true, id,
-    from_name: from ? from.display_name : 'کاربر',
-    ts: sqlNow(),
+    from_name: from ? from.display_name : 'مدیر',
+    ts,
   };
 }
-
 function pvUnread(userId) {
   const r = dbm.get(
     'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=0 AND seen=0',
@@ -215,11 +220,19 @@ function promoteNewAdmin(meetingId) {
   return { userId: Number(chosen), name: u ? u.display_name : '', messages: bestCount };
 }
 
-function closeMeeting(roomId) {
-  dbm.run('UPDATE meetings SET active=0 WHERE room_id=? AND active=1', [String(roomId)]);
+function closeMeeting(roomId, opts) {
+  opts = opts || {};
+  const rid = String(roomId);
+  const m = meetingByRoom(rid);
+  const info = dbm.run('UPDATE meetings SET active=0 WHERE room_id=? AND active=1', [rid]);
+  const changed = !!(info && Number(info.changes) > 0);
   // a shared call file lives only as long as the session: the room is gone, so are its files
-  try { require('./callfiles').purgeRoom(roomId); } catch (e) { /* never block the teardown */ }
-  return { ok: true };
+  try { require('./callfiles').purgeRoom(rid); } catch (e) { /* never block the teardown */ }
+  // socket-initiated closes (solo timeout, last user left) must update the meetings list in realtime
+  if (changed && opts.emitEnded !== false && m) {
+    try { bus.meetingEnded({ id: Number(m.id), room_id: rid, creator_id: Number(m.creator_id) }); } catch (e) { /* best-effort */ }
+  }
+  return { ok: true, changed, meeting: m ? { id: Number(m.id), room_id: rid, creator_id: Number(m.creator_id) } : null };
 }
 
 module.exports = {

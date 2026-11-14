@@ -41,7 +41,7 @@
         <span class="dash-crumb" aria-hidden="true">
             <span class="dash-crumb-home">خانه</span>
             <span class="dash-crumb-sep">/</span>
-            <span class="dash-crumb-cur"><%- isManager ? 'پیام‌ها' : 'ارتباط با ادمین' %></span>
+            <span class="dash-crumb-cur">پیام‌ها</span>
         </span>
 
         <div class="dash-header-spacer"></div>
@@ -65,8 +65,8 @@
                 <div class="msg-side-title-row">
                     <span class="dash-card-ico dash-card-ico-accent"><%- icon('forum') %></span>
                     <div>
-                        <h1 class="dash-card-title"><%- isManager ? 'پیام‌ها' : 'ارتباط با ادمین' %></h1>
-                        <p class="dash-card-sub"><%- isManager ? 'گفتگو با کاربران' : 'گفتگوی خصوصی با مدیر' %></p>
+                        <h1 class="dash-card-title">پیام‌ها</h1>
+                        <p class="dash-card-sub"><%- isManager ? 'گفتگو با کاربران' : 'گفتگو و پیام‌رسانی' %></p>
                     </div>
                 </div>
                 <div class="dash-field dash-field-sm msg-search <%- isManager ? '' : 'hidden' %>">
@@ -141,6 +141,7 @@ window.CSRF = <%- json(csrf) %>;
 window.BASE = <%- json(base) %>;
 window.__IS_MANAGER = <%- json(isManager) %>;
 window.__isManager = <%- json(isManager) %>;
+window.__CAN_SEE_PUBLIC = <%- json(canSeePublic) %>;
 window.MS_ID = <%- Number(me.id) %>;
 window.MS_USERNAME = <%- json(me.username) %>;
 </script>

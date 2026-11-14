@@ -100,6 +100,11 @@
     // ---- notifications ----
     NOTIF_NEW: 'notif:new',
 
+    // ---- meetings index (list page realtime) ----
+    MEETING_CREATED: 'meeting:created',
+    MEETING_ENDED: 'meeting:ended',
+    MEETING_DELETED: 'meeting:deleted',
+
     // ---- signup requests (approval-mode chat with the manager) ----
     SR_NEW_MESSAGE: 'sr:new-message',
     SR_NEW_REQUEST: 'sr:new-request',

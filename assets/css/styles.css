@@ -953,7 +953,8 @@ body.is-maximized #call-sidebar {
 }
 
 /* ===== Chrome must not be text-selectable: keys, links and sidebars ===== */
-button, a, nav, aside, label, th, .bm-infobox-title, .bm-bar-item {
+button, a, nav, aside, label, th, .bm-infobox-title, .bm-bar-item,
+.dash-crumb, .dash-crumb-home, .dash-crumb-sep, .dash-crumb-cur {
   -webkit-user-select: none;
   user-select: none;
 }

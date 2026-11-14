@@ -71,7 +71,7 @@
             <p class="dash-page-eyebrow"><%- icon('video_library') %><span>آرشیو تماس‌ها</span></p>
             <h1 class="dash-page-title">همهٔ تماس‌ها</h1>
             <p class="dash-page-sub">
-                هر تماسی که خودتان ساخته‌اید، از جدید به قدیم. تماس‌های در حال اجرا با نشان سبز مشخص شده‌اند.
+                <%- canSeeAllMeetings ? 'همهٔ تماس‌های ثبت‌شده، از جدید به قدیم. تماس‌های در حال اجرا با نشان سبز مشخص شده‌اند.' : 'هر تماسی که خودتان ساخته‌اید، از جدید به قدیم. تماس‌های در حال اجرا با نشان سبز مشخص شده‌اند.' %>
             </p>
         </section>
 
@@ -80,9 +80,9 @@
                 <div class="dash-recent-heading">
                     <span class="dash-card-ico"><%- icon('video_library') %></span>
                     <div>
-                        <h2 class="dash-card-title" id="meetings-list-title">فهرست تماس‌ها</h2>
+                        <h2 class="dash-card-title" id="meetings-list-title"><%- canSeeAllMeetings ? 'همهٔ تماس‌ها' : 'فهرست تماس‌ها' %></h2>
                         <p class="dash-card-sub" id="meetings-count">
-                            <%- totalCount ? toFaDigits(totalCount) + ' تماس' : 'هنوز تماسی نساخته‌اید' %>
+                            <%- totalCount ? toFaDigits(totalCount) + ' تماس' : (canSeeAllMeetings ? 'هنوز تماسی ثبت نشده است' : 'هنوز تماسی نساخته‌اید') %>
                         </p>
                     </div>
                 </div>
@@ -156,16 +156,19 @@
                 <% if (meetings.length === 0) { %>
                 <div class="dash-empty" id="recent-empty">
                     <span class="dash-empty-ico"><%- icon('calendar_add_on') %></span>
-                    <p class="dash-empty-title">هنوز تماسی نساخته‌اید</p>
-                    <p class="dash-empty-sub">اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.</p>
+                    <p class="dash-empty-title"><%- canSeeAllMeetings ? 'هنوز تماسی ثبت نشده است' : 'هنوز تماسی نساخته‌اید' %></p>
+                    <p class="dash-empty-sub"><%- canSeeAllMeetings ? 'وقتی تماسی ایجاد شود، اینجا نمایش داده می‌شود.' : 'اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.' %></p>
                     <% if (canCreate) { %>
                     <a class="dash-btn dash-btn-soft" href="<%- url('create') %>" data-no-loader>
                         <%- icon('video_call') %><span>ایجاد تماس</span>
                     </a>
                     <% } %>
                 </div>
-                <% } else { meetings.forEach(function (m) { %>
+                <% } else { meetings.forEach(function (m) { var canManage = canManageAllMeetings || Number(m.creator_id) === Number(me.id); %>
                 <article class="dash-mcard<%- m.active ? ' is-live' : '' %>" data-recent-card
+                         data-meeting-id="<%- Number(m.id) %>"
+                         data-room="<%- esc(String(m.room_id || '')) %>"
+                         data-creator="<%- Number(m.creator_id) %>"
                          data-active="<%- m.active ? 1 : 0 %>"
                          data-created="<%- esc(String(m.created_at || '').slice(0, 7)) %>"
                          data-title="<%- esc(String(m.title || '').toLowerCase()) %>">
@@ -185,6 +188,9 @@
                         <span class="dash-dot-sep" aria-hidden="true"></span>
                         <span><%- esc(timeAgo(m.created_at)) %></span>
                     </p>
+                    <% if (canSeeAllMeetings && m.creator_name) { %>
+                    <p class="dash-mcard-meta dash-mcard-creator"><%- icon('person') %><span>سازنده: <%- esc(m.creator_name) %></span></p>
+                    <% } %>
                     <div class="dash-mcard-foot">
                         <span class="dash-mcard-room" dir="ltr"><%- esc(String(m.room_id || '').slice(0, 8)) %>…</span>
                         <span class="dash-mcard-actions">
@@ -198,12 +204,21 @@
                                title="ورود به تماس" aria-label="ورود به تماس">
                                 <%- icon('login') %>
                             </a>
+                            <% if (canManage) { %>
+                            <button type="button" class="dash-mini dash-mini-danger" data-no-loader
+                                    onclick="endMeeting(<%- Number(m.id) %>, this)"
+                                    title="قطع تماس" aria-label="قطع تماس">
+                                <%- icon('call_end') %>
+                            </button>
                             <% } %>
+                            <% } %>
+                            <% if (isManager || Number(m.creator_id) === Number(me.id)) { %>
                             <button type="button" class="dash-mini dash-mini-danger" data-no-loader
                                     onclick="deleteRecent(<%- Number(m.id) %>, this)"
                                     title="حذف دائمی تماس" aria-label="حذف دائمی تماس">
                                 <%- icon('close') %>
                             </button>
+                            <% } %>
                         </span>
                     </div>
                 </article>
@@ -218,8 +233,8 @@
             <template id="recent-empty-tpl">
                 <div class="dash-empty" id="recent-empty">
                     <span class="dash-empty-ico"><%- icon('calendar_add_on') %></span>
-                    <p class="dash-empty-title">هنوز تماسی نساخته‌اید</p>
-                    <p class="dash-empty-sub">اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.</p>
+                    <p class="dash-empty-title"><%- canSeeAllMeetings ? 'هنوز تماسی ثبت نشده است' : 'هنوز تماسی نساخته‌اید' %></p>
+                    <p class="dash-empty-sub"><%- canSeeAllMeetings ? 'وقتی تماسی ایجاد شود، اینجا نمایش داده می‌شود.' : 'اولین تماس خودتان را بسازید و لینکش را با دوستانتان به اشتراک بگذارید.' %></p>
                     <a class="dash-btn dash-btn-soft" href="<%- url('create') %>" data-no-loader>
                         <%- icon('video_call') %><span>ایجاد تماس</span>
                     </a>
@@ -242,8 +257,11 @@
 <script>
 window.CSRF = <%- json(csrf) %>;
 window.BASE = <%- json(base) %>;
+window.PUBLIC_URL = <%- json(public) %>;
 window.__isManager = <%- json(isManager) %>;
 window.MS_ID = <%- Number(me.id) %>;
+window.CAN_SEE_ALL_MEETINGS = <%- json(!!canSeeAllMeetings) %>;
+window.CAN_MANAGE_ALL_MEETINGS = <%- json(!!canManageAllMeetings) %>;
 window.MEETING_CREATE_MODE = <%- json(typeof meetingCreateMode !== 'undefined' ? meetingCreateMode : 'all') %>;
 window.CAN_CHANGE_MEETING_MODE = <%- json(typeof canChangeMeetingMode !== 'undefined' ? canChangeMeetingMode : false) %>;
 </script>

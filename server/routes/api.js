@@ -324,6 +324,19 @@ router.post('/meetings/create', (req, res) => {
     [r.lastInsertRowid, me.id, me.display_name, me.username, 'approved', 'admin', sqlNow()]
   );
 
+  const created = {
+    id: Number(r.lastInsertRowid),
+    room_id: roomId,
+    title,
+    created_at: sqlNow(),
+    active: 1,
+    creator_id: Number(me.id),
+    creator_name: me.display_name || '',
+    creator_username: me.username || '',
+    members: 1,
+  };
+  bus.meetingCreated(created);
+
   return ok(res, {
     ok: true,
     room_id: roomId,
@@ -451,6 +464,34 @@ function resolveTarget(req, res) {
   return part;
 }
 
+// end a live meeting without deleting it (creator, manager, or premium rank for all-meetings view)
+router.post('/meetings/end', (req, res) => {
+  if (!checkMethod(req, res, 'POST')) return;
+  if (!requireLoginApi(req, res)) return;
+  if (!checkCsrf(req, res)) return;
+  const mid = Number(req.body.meeting_id || 0);
+  if (mid === 0) return bad(res, { ok: false, msg: 'داده ناقص' });
+  const me = sessions.currentUser(req);
+  const m = dbm.get('SELECT id, creator_id, active, room_id FROM meetings WHERE id=?', [mid]);
+  if (!m) return bad(res, { ok: false, msg: 'جلسه یافت نشد' });
+  const canManageAny = me.is_manager || ranks.rankOf(me) === 'premium';
+  if (Number(m.creator_id) !== Number(me.id) && !canManageAny) {
+    return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  }
+  let endedChanged = false;
+  if (m.active) {
+    if (m.room_id) {
+      const cr = internal.closeMeeting(String(m.room_id), { emitEnded: false });
+      endedChanged = !!(cr && cr.changed);
+    } else {
+      const info = dbm.run('UPDATE meetings SET active=0 WHERE id=?', [mid]);
+      endedChanged = Number(info.changes) > 0;
+    }
+  }
+  if (endedChanged || m.active) bus.meetingEnded({ id: mid, room_id: m.room_id, creator_id: Number(m.creator_id) });
+  return ok(res, { ok: true, id: mid });
+});
+
 // remove one of MY recent meetings from the home list (creator or manager only)
 router.post('/meetings/delete', (req, res) => {
   if (!checkMethod(req, res, 'POST')) return;
@@ -459,21 +500,21 @@ router.post('/meetings/delete', (req, res) => {
   const mid = Number(req.body.meeting_id || 0);
   if (mid === 0) return bad(res, { ok: false, msg: 'داده ناقص' });
   const me = sessions.currentUser(req);
-  const m = dbm.get('SELECT id, creator_id, active FROM meetings WHERE id=?', [mid]);
+  const m = dbm.get('SELECT id, creator_id, active, room_id FROM meetings WHERE id=?', [mid]);
   if (!m) return bad(res, { ok: false, msg: 'جلسه یافت نشد' });
   if (Number(m.creator_id) !== Number(me.id) && !me.is_manager) {
     return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
   }
   if (m.active) {
     // close the live room first so sockets are dropped before the rows disappear
-    const row = dbm.get('SELECT room_id FROM meetings WHERE id=?', [mid]);
-    if (row && row.room_id) internal.closeMeeting(String(row.room_id));
+    if (m.room_id) internal.closeMeeting(String(m.room_id), { emitEnded: false });
   }
   dbm.run('DELETE FROM messages WHERE meeting_id=?', [mid]);
   dbm.run('DELETE FROM emoji_events WHERE meeting_id=?', [mid]);
   dbm.run('DELETE FROM meeting_participants WHERE meeting_id=?', [mid]);
   dbm.run('DELETE FROM verification_codes WHERE identifier=?', ['room:' + mid]);
   dbm.run('DELETE FROM meetings WHERE id=?', [mid]);
+  bus.meetingDeleted({ id: mid, creator_id: Number(m.creator_id) });
   return ok(res, { ok: true, id: mid });
 });
 
@@ -1005,13 +1046,17 @@ router.all('/announcements', (req, res) => {
   if (!requireLoginApi(req, res)) return;
 
   if (req.method === 'GET') {
-    const rows = dbm.all('SELECT id, body, created_at FROM announcements ORDER BY id DESC');
-    // announcements are always posted by a manager/premium — stamp the author so the
-    // bubble can show a name above the text
-    const author = dbm.get('SELECT username, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+    const rows = dbm.all('SELECT id, body, sender_username, sender_email, sender_display_name, created_at FROM announcements ORDER BY id DESC');
+    const fallback = dbm.get('SELECT username, email, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
     rows.forEach(r => {
-      r.username = author ? author.username : '';
-      r.display_name = author ? author.display_name : '';
+      if (!r.sender_username && !r.sender_display_name) {
+        r.sender_username = fallback ? (fallback.username || '') : '';
+        r.sender_email = fallback ? (fallback.email || '') : '';
+        r.sender_display_name = fallback ? (fallback.display_name || '') : '';
+      }
+      r.username = r.sender_username || '';
+      r.display_name = r.sender_display_name || r.sender_username || '';
+      r.email = r.sender_email || '';
     });
     return ok(res, { ok: true, announcements: rows });
   }
@@ -1023,9 +1068,13 @@ router.all('/announcements', (req, res) => {
     const body = String(req.body.body || '').trim();
     if (body === '') return bad(res, { ok: false, msg: 'متن خالی است' });
 
-    const r = dbm.run('INSERT INTO announcements (body, created_at) VALUES (?,?)', [body, sqlNow()]);
+    const ts = sqlNow();
+    const r = dbm.run(
+      'INSERT INTO announcements (body, sender_id, sender_username, sender_email, sender_display_name, created_at) VALUES (?,?,?,?,?,?)',
+      [body, Number(me.id), me.username || '', me.email || '', me.display_name || '', ts]
+    );
     // fromUserId lets the sender's own tabs skip the echo (no double bubble)
-    const notif = { id: r.lastInsertRowid, body, created_at: sqlNow(), fromUserId: Number(me.id) };
+    const notif = { id: r.lastInsertRowid, body, created_at: ts, fromUserId: Number(me.id), username: me.username || '', display_name: me.display_name || '' };
     bus.notifyNew(notif);
     return ok(res, { ok: true });
   }
@@ -1041,9 +1090,9 @@ function findUserByIdentifier(identifier) {
   identifier = String(identifier || '').trim();
   if (identifier === '') return null;
   if (EMAIL_RE.test(identifier)) {
-    return dbm.get('SELECT id, username, display_name, avatar FROM users WHERE email=?', [identifier]);
+    return dbm.get('SELECT id, username, email, display_name, avatar FROM users WHERE email=?', [identifier]);
   }
-  return dbm.get('SELECT id, username, display_name, avatar FROM users WHERE phone=?', [identifier]);
+  return dbm.get('SELECT id, username, email, display_name, avatar FROM users WHERE phone=?', [identifier]);
 }
 
 router.all('/messages/user', (req, res) => {
@@ -1066,7 +1115,7 @@ router.all('/messages/user', (req, res) => {
       });
     }
     const messages = dbm.all(
-      'SELECT id, from_manager, body, created_at FROM pv_messages WHERE user_id=? ORDER BY id ASC',
+      'SELECT id, from_manager, body, sender_username, sender_email, created_at FROM pv_messages WHERE user_id=? ORDER BY id ASC',
       [u.id]
     );
     return ok(res, { ok: true, user: u, messages });
@@ -1090,7 +1139,8 @@ router.all('/messages/user', (req, res) => {
     return ok(res, { ok: true, pending: true });
   }
 
-  dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, created_at) VALUES (?,0,?,?)', [u.id, body, sqlNow()]);
+  dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?)',
+    [u.id, body, u.username || '', u.email || '', sqlNow()]);
   dbm.run('UPDATE users SET last_activity=? WHERE id=?', [sqlNow(), u.id]);
   bus.pvConversationUpdated({ userId: Number(u.id), lastBody: body, fromManager: 0, ts: sqlNow() });
   bus.pvToManagers({ id: null, fromUserId: Number(u.id), fromName: u.display_name, body, fromManager: 0, ts: sqlNow() });
@@ -1108,23 +1158,23 @@ router.all('/messages/conversations', (req, res) => {
   const THREAD_LIMIT = 400;
   function threadMessages(userId) {
     return dbm.all(
-      `SELECT id, from_manager, body, created_at FROM (
-         SELECT id, from_manager, body, created_at FROM pv_messages
+      `SELECT id, from_manager, body, sender_username, sender_email, created_at FROM (
+         SELECT id, from_manager, body, sender_username, sender_email, created_at FROM pv_messages
           WHERE user_id=? ORDER BY id DESC LIMIT ${THREAD_LIMIT}
        ) ORDER BY id ASC`,
       [userId]
     );
   }
 
-  // every bubble shows who wrote it: pv rows only carry `from_manager`, so the two
-  // possible senders (the main manager and the other side of the thread) are resolved
-  // once here and stamped onto each row
+  // every bubble shows who wrote it: prefer the sender identity stored on the row
+  // (username/email persisted so messages survive restarts), fall back to resolved users
   function withSender(rows, mgrUser, otherUser) {
     return (rows || []).map(m => {
       const u = m.from_manager ? mgrUser : otherUser;
       return Object.assign({}, m, {
-        username: u ? u.username : '',
-        display_name: u ? u.display_name : '',
+        username: (m.sender_username || (u ? u.username : '') || ''),
+        display_name: (u ? u.display_name : '') || m.sender_username || '',
+        sender_email: (m.sender_email || (u ? u.email : '') || ''),
       });
     });
   }
@@ -1181,8 +1231,8 @@ router.all('/messages/conversations', (req, res) => {
 
   if (!isMgr) {
     // premium replies inside his own thread (stored under his user_id)
-    const r = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, created_at) VALUES (?,0,?,?)',
-      [me.id, body, sqlNow()]);
+    const r = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?)',
+      [me.id, body, me.username || '', me.email || '', sqlNow()]);
     const payload = { id: r.lastInsertRowid, fromUserId: Number(me.id), fromName: me.display_name, body, fromManager: 0, ts: sqlNow() };
     bus.pvToManagers(payload);
     bus.pvConversationUpdated({ userId: Number(me.id), lastBody: body, fromManager: 0, ts: payload.ts });
@@ -1190,7 +1240,8 @@ router.all('/messages/conversations', (req, res) => {
   }
 
   const ts = sqlNow();
-  const r2 = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, created_at) VALUES (?,1,?,?)', [uid, body, ts]);
+  const r2 = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,1,?,?,?,?)',
+    [uid, body, me.username || '', me.email || '', ts]);
   // push live to the recipient (HTTP fallback path; socket PV_SEND does the same)
   bus.pvNew(uid, { id: r2.lastInsertRowid, fromUserId: Number(me.id), fromName: me.display_name, body, fromManager: 1, ts });
   bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts });

@@ -84,6 +84,50 @@ function db() {
   if (mcols.indexOf('open_join') === -1) {
     _db.exec('ALTER TABLE meetings ADD COLUMN open_join INTEGER NOT NULL DEFAULT 0');
   }
+  // persist sender identity on messages so attribution survives user changes/restarts
+  const pvcols = _db.prepare('PRAGMA table_info(pv_messages)').all().map((r) => r.name);
+  if (pvcols.indexOf('sender_username') === -1) {
+    _db.exec("ALTER TABLE pv_messages ADD COLUMN sender_username TEXT NOT NULL DEFAULT ''");
+  }
+  if (pvcols.indexOf('sender_email') === -1) {
+    _db.exec("ALTER TABLE pv_messages ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''");
+  }
+  const acols = _db.prepare('PRAGMA table_info(announcements)').all().map((r) => r.name);
+  if (acols.indexOf('sender_id') === -1) {
+    _db.exec('ALTER TABLE announcements ADD COLUMN sender_id INTEGER NOT NULL DEFAULT 0');
+  }
+  if (acols.indexOf('sender_username') === -1) {
+    _db.exec("ALTER TABLE announcements ADD COLUMN sender_username TEXT NOT NULL DEFAULT ''");
+  }
+  if (acols.indexOf('sender_email') === -1) {
+    _db.exec("ALTER TABLE announcements ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''");
+  }
+  if (acols.indexOf('sender_display_name') === -1) {
+    _db.exec("ALTER TABLE announcements ADD COLUMN sender_display_name TEXT NOT NULL DEFAULT ''");
+  }
+  // backfill sender identity for rows created before these columns existed
+  try {
+    _db.exec(`
+      UPDATE pv_messages SET
+        sender_username = COALESCE((SELECT u.username FROM users u WHERE u.id = pv_messages.user_id), ''),
+        sender_email    = COALESCE((SELECT u.email    FROM users u WHERE u.id = pv_messages.user_id), '')
+      WHERE from_manager = 0 AND (sender_username = '' AND sender_email = '');
+    `);
+    _db.exec(`
+      UPDATE pv_messages SET
+        sender_username = COALESCE((SELECT u.username FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), ''),
+        sender_email    = COALESCE((SELECT u.email    FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), '')
+      WHERE from_manager = 1 AND (sender_username = '' AND sender_email = '');
+    `);
+    _db.exec(`
+      UPDATE announcements SET
+        sender_id = COALESCE((SELECT u.id FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), 0),
+        sender_username = COALESCE((SELECT u.username FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), ''),
+        sender_email    = COALESCE((SELECT u.email    FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), ''),
+        sender_display_name = COALESCE((SELECT u.display_name FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), '')
+      WHERE sender_username = '' AND sender_email = '' AND sender_display_name = '';
+    `);
+  } catch (e) { /* best-effort backfill */ }
   startBackupLoop();
   return _db;
 }

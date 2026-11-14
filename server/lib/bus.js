@@ -45,4 +45,18 @@ function srToManagers(event, data) {
   allSockets().forEach((s) => { if (s.data.isManager) s.emit(event, data || {}); });
 }
 
-module.exports = { setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, srToManagers, roomEvent };
+// meetings index realtime: broadcast to all authenticated sockets; clients filter by view
+function meetingCreated(data) {
+  allSockets().forEach((s) => { if (s.data.userId) s.emit(EV.MEETING_CREATED, data || {}); });
+}
+function meetingEnded(data) {
+  allSockets().forEach((s) => { if (s.data.userId) s.emit(EV.MEETING_ENDED, data || {}); });
+}
+function meetingDeleted(data) {
+  allSockets().forEach((s) => { if (s.data.userId) s.emit(EV.MEETING_DELETED, data || {}); });
+}
+
+module.exports = {
+  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, srToManagers, roomEvent,
+  meetingCreated, meetingEnded, meetingDeleted,
+};

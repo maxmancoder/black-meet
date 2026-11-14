@@ -1006,7 +1006,7 @@ r.sockets.forEach((s, sid) => {
       // did), but over the socket they already have — one round trip less per message.
       if (!socket.data.isManager) {
         if (!socket.data.canMessages) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
-        const me = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
+        const me = dbm.get('SELECT id, username, email, display_name FROM users WHERE id=?', [uid]);
         if (!me) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
         const ts = sqlNow();
         let id = null;
@@ -1019,8 +1019,8 @@ r.sockets.forEach((s, sid) => {
         } else {
           try {
             const r = dbm.run(
-              'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, created_at) VALUES (?,0,?,?,?)',
-              [uid, body, clientMsgId, ts]
+              'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?,?)',
+              [uid, body, clientMsgId, me.username || '', me.email || '', ts]
             );
             id = Number(r.lastInsertRowid);
           } catch (e) {
@@ -1039,7 +1039,7 @@ r.sockets.forEach((s, sid) => {
         }
         const payload = {
           id, fromUserId: uid, fromName: me.display_name || '', body, clientMsgId,
-          fromManager: 0, ts,
+          fromManager: 0, ts, username: me.username || '', email: me.email || '',
         };
         socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id });
         bus.pvToManagers(payload);
