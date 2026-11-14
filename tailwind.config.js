@@ -70,9 +70,9 @@ module.exports = {
       spacing: { "grid-margin":"24px","grid-gutter":"16px","xs":"4px","sm":"8px","md":"16px","lg":"24px","xl":"40px","base":"4px" },
       fontFamily: {
         "body-md":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "body-lg":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"],
-        "body-sm":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "headline-md":["Digi Ghaf Bold","Vazirmatn","Entezar","Tahoma","Arial","sans-serif"],
-        "headline-lg":["Digi Ghaf Bold","Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "display-md":["Digi Ghaf Bold","Vazirmatn","Entezar","Tahoma","Arial","sans-serif"],
-        "display-lg":["Digi Ghaf Bold","Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "label-md":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "label-sm":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"]
+        "body-sm":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "headline-md":["Vazirmatn","Tahoma","Arial","sans-serif"],
+        "headline-lg":["Vazirmatn","Tahoma","Arial","sans-serif"], "display-md":["Vazirmatn","Tahoma","Arial","sans-serif"],
+        "display-lg":["Vazirmatn","Tahoma","Arial","sans-serif"], "label-md":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"], "label-sm":["Vazirmatn","Entezar","Tahoma","Arial","sans-serif"]
       },
       fontSize: {
         "body-md":["16px",{"lineHeight":"24px","fontWeight":"400"}],

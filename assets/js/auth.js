@@ -229,8 +229,31 @@
     const first = cells[0];
     if (first) setTimeout(() => first.focus(), 80);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupOtpBoxes);
-  else setupOtpBoxes();
+
+  // Enter key triggers the confirm/submit action in each auth view
+  function setupEnterSubmit() {
+    const bind = (ids, fn) => {
+      (Array.isArray(ids) ? ids : [ids]).forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          fn();
+        });
+      });
+    };
+    bind('lp-phone', window.loginPhone);
+    bind(['le-email', 'le-pass'], window.loginEmail);
+    bind(['su-name', 'su-user', 'su-email', 'su-phone', 'su-pass'], window.signup);
+  }
+
+  function initAuthUI() {
+    setupOtpBoxes();
+    setupEnterSubmit();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAuthUI);
+  else initAuthUI();
 
   window.loginEmail = function () {
     const email = document.getElementById('le-email').value.trim();

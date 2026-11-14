@@ -78,10 +78,10 @@ function canManageUsers(u) {
   return canViewMembers(u);
 }
 
-// can open the /messages console (manager sees all threads, premium only his admin chat)
+// can open the /messages console (manager sees all threads, admin/premium only their admin chat)
 function canUseMessages(u) {
   const r = rankOf(u);
-  return r === 'manager' || r === 'premium';
+  return r === 'manager' || r === 'premium' || r === 'admin';
 }
 
 // site-wide meeting creation policy (settings.meetingCreateMode):

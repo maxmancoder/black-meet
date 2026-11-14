@@ -66,4 +66,15 @@
       })
       .catch(() => { showToast('خطا در ارتباط'); btn.disabled = false; });
   };
+
+  // Enter in the title field triggers the same confirm action as the create button
+  const titleInput = document.getElementById('meeting-title');
+  if (titleInput) {
+    titleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        window.createMeeting();
+      }
+    });
+  }
 })();

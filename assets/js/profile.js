@@ -64,7 +64,19 @@ window.saveProfile = function () {
     }
   };
 
-  // the server allows one change per day — reflect it instead of letting the user try
+  // Enter in the display-name editor saves (same as the confirm button)
+  const dnInput = document.getElementById('display-name');
+  if (dnInput) {
+    dnInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const panel = document.getElementById('dn-panel');
+      if (!panel || !panel.classList.contains('is-open') || dnInput.disabled) return;
+      e.preventDefault();
+      window.saveProfile();
+    });
+  }
+
+  // the server allows one change per day - reflect it instead of letting the user try
   function refreshDisplayNameState() {
     fetch('api/profile/display-name-status', { credentials: 'same-origin' })
       .then(r => r.json())

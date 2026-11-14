@@ -89,6 +89,17 @@
   window.closeHelp = function () { document.getElementById('help-modal').classList.add('hidden'); };
   document.getElementById('help-btn').addEventListener('click', () => document.getElementById('help-modal').classList.remove('hidden'));
 
+  // Enter on identifier field triggers the same action as the confirm button
+  const idInput = document.getElementById('identifier');
+  if (idInput) {
+    idInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        window.openThread();
+      }
+    });
+  }
+
   // deep link: /forgot-password?id=<phone|email> — used by the "شروع چت با مدیر" button
   const qs = new URLSearchParams(location.search);
   const preId = (qs.get('id') || qs.get('identifier') || '').trim();
