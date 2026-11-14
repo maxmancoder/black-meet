@@ -2,6 +2,21 @@
 (function () {
   const BASE = window.BASE;
   let currentId = '';
+  // one send at a time: hammering the send key / Enter must never queue duplicates
+  let sending = false;
+
+  function sendBtn() {
+    return document.querySelector('.auth-inputrow .auth-send');
+  }
+  function setSending(on) {
+    sending = on;
+    const b = sendBtn();
+    if (b) {
+      b.disabled = on;
+      b.classList.toggle('is-busy', on);
+      b.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+  }
 
   function showToast(msg) {
     const t = document.getElementById('toast');
@@ -69,21 +84,24 @@
   window.addEventListener('focus', pollUserThread);
 
   window.sendPv = function () {
+    if (sending) return;
     const inp = document.getElementById('pv-input');
     const body = inp.value.trim();
     if (!body || !currentId) return;
+    setSending(true);
     fetch('api/messages/user', {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ csrf: window.CSRF, identifier: currentId, body })
     })
       .then(r => r.json())
       .then(d => {
-        if (!d.ok) return showToast(d.msg || 'خطا');
+        if (!d.ok) { showToast(d.msg || 'خطا'); return; }
         inp.value = '';
         return fetch('api/messages/user?identifier=' + encodeURIComponent(currentId)).then(r => r.json());
       })
       .then(d => { if (d && d.ok) render(d.messages || []); })
-      .catch(() => showToast('خطای ارتباط'));
+      .catch(() => showToast('خطای ارتباط'))
+      .then(() => { setSending(false); });
   };
 
   window.closeHelp = function () { document.getElementById('help-modal').classList.add('hidden'); };

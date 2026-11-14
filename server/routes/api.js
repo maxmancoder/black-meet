@@ -790,9 +790,16 @@ router.all('/admin/members', (req, res) => {
     const email = String(req.body.email || '').trim();
     const phone = String(req.body.phone || '').trim();
     const password = String(req.body.password || '');
+    // display name is optional in the payload (older callers) — when present it is written
+    // as-is and, unlike the profile page, an admin edit does NOT consume the user's
+    // once-a-day change allowance.
+    const hasDisplay = Object.prototype.hasOwnProperty.call(req.body, 'display_name');
+    const displayName = String(req.body.display_name || '').trim();
     let rankVal = String(req.body.rank || row.rank || 'user');
 
     if (username === '' || email === '' || phone === '') return bad(res, { ok: false, msg: 'تمام فیلدها الزامی هستند' });
+    if (hasDisplay && displayName === '') return bad(res, { ok: false, msg: 'نام نمایشی نمی‌تواند خالی باشد' });
+    if (hasDisplay && displayName.length > 40) return bad(res, { ok: false, msg: 'نام نمایشی حداکثر ۴۰ حرف است' });
     if (!EMAIL_RE.test(email)) return bad(res, { ok: false, msg: 'ایمیل نامعتبر است' });
     if (!PHONE_RE.test(phone)) return bad(res, { ok: false, msg: 'شماره تلفن نامعتبر است' });
     if (password !== '' && password.length < 6) return bad(res, { ok: false, msg: 'رمز عبور باید حداقل ۶ کاراکتر باشد' });
@@ -808,6 +815,7 @@ router.all('/admin/members', (req, res) => {
 
     const sets = ['username=?', 'email=?', 'phone=?'];
     const params = [username, email, phone];
+    if (hasDisplay) { sets.push('display_name=?'); params.push(displayName); }
     if (password !== '') { sets.push('password_hash=?'); params.push(pwd.hashPassword(password)); }
     if (!row.is_manager) { sets.push('rank=?'); params.push(rankVal); }
     params.push(uid);
@@ -1130,7 +1138,7 @@ router.all('/messages/conversations', (req, res) => {
     if (!isMgr) {
       // premium: exactly one thread — the chat with the main manager
       const mgr = dbm.get(
-        'SELECT id, username, display_name, avatar, avatar_color, email, last_activity FROM users WHERE is_manager=1 ORDER BY id LIMIT 1'
+        'SELECT id, username, display_name, avatar, avatar_color, email, last_activity, rank, is_manager FROM users WHERE is_manager=1 ORDER BY id LIMIT 1'
       );
       if (uid === 0) {
         const unread = dbm.get(
@@ -1141,6 +1149,7 @@ router.all('/messages/conversations', (req, res) => {
           user_id: Number(mgr.id), username: mgr.username, display_name: mgr.display_name,
           avatar: mgr.avatar, avatar_color: mgr.avatar_color, email: mgr.email,
           last_activity: mgr.last_activity, unread: Number(unread && unread.c || 0), admin_chat: 1,
+          rank: mgr.rank || 'user', is_manager: Number(mgr.is_manager) || 0,
         }] : [];
         return ok(res, { ok: true, conversations, admin_chat: true });
       }
@@ -1153,6 +1162,7 @@ router.all('/messages/conversations', (req, res) => {
     if (uid === 0) {
       const conversations = dbm.all(
         `SELECT DISTINCT m.user_id AS user_id, u.username, u.display_name, u.avatar, u.email, u.last_activity,
+                u.rank, u.is_manager,
                 (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.seen=0) AS unread
          FROM pv_messages m JOIN users u ON u.id=m.user_id ORDER BY m.user_id`
       );

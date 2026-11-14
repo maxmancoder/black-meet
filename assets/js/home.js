@@ -225,17 +225,28 @@
     }
   }
 
+  // The bell sits near the LEFT edge in this RTL header, so right-aligning the panel to it
+  // pushed the panel to the far-left of the viewport ("از کادر بیرون زده"). Anchor its start
+  // (left) edge under the bell instead, then clamp both axes to the real viewport.
   function positionNotifPopup() {
     var p = byId('notif-popup');
     var bell = byId('bell-btn');
     if (!p || !bell) return;
     var r = bell.getBoundingClientRect();
+    var vw = document.documentElement.clientWidth || window.innerWidth;
+    var vh = window.innerHeight;
+    var margin = 10;
     var w = p.offsetWidth || 346;
     p.style.position = 'fixed';
-    p.style.top = Math.round(r.bottom + 10) + 'px';
-    var gap = Math.round(window.innerWidth - r.right);
-    p.style.right = Math.min(Math.max(8, gap), Math.max(8, window.innerWidth - w - 8)) + 'px';
-    p.style.left = 'auto';
+    p.style.right = 'auto';
+    var left = Math.round(r.left);
+    if (left + w > vw - margin) left = vw - margin - w;
+    if (left < margin) left = margin;
+    var top = Math.round(r.bottom + 10);
+    var h = p.offsetHeight || 0;
+    if (h && top + h > vh - margin) top = Math.max(margin, vh - margin - h);
+    p.style.left = left + 'px';
+    p.style.top = top + 'px';
   }
 
   window.toggleNotifications = function () {

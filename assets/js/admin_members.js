@@ -345,6 +345,7 @@
     editUserId = userId;
     $('edit-target').textContent = (u.display_name || u.username || ('کاربر #' + userId));
     $('ed-username').value = u.username || '';
+    $('ed-display-name').value = u.display_name || '';
     $('ed-email').value = u.email || '';
     $('ed-phone').value = u.phone || '';
     $('ed-password').value = '';
@@ -459,6 +460,7 @@
       user_id: String(userId),
       action: 'update',
       username: $('ed-username').value.trim(),
+      display_name: $('ed-display-name').value.trim(),
       email: $('ed-email').value.trim(),
       phone: $('ed-phone').value.trim(),
       password: $('ed-password').value,

@@ -33,14 +33,37 @@
   // ---- presence (realtime online/offline instead of last_activity) ----
   const onlineUsers = new Set();
   function isOnline(userId) { return onlineUsers.has(Number(userId)); }
+
+  // ---- role of the person on the other side -------------------------------------
+  // the rows carry `rank` / `is_manager`; the label mirrors server/lib/ranks.js and the
+  // site manager always gets his yellow star so admins can spot him instantly
+  function roleOf(c) {
+    if (!c) return { key: 'user', label: 'کاربر عادی' };
+    if (Number(c.is_manager)) return { key: 'manager', label: 'مدیر اصلی' };
+    if (c.rank === 'premium') return { key: 'premium', label: 'ادمین پریمیوم' };
+    if (c.rank === 'admin') return { key: 'admin', label: 'ادمین' };
+    return { key: 'user', label: 'کاربر عادی' };
+  }
+  function mgrStar(c) {
+    if (!c || !Number(c.is_manager)) return '';
+    return '<span class="dash-star-mgr" title="مدیر سایت" aria-label="مدیر سایت">★</span>';
+  }
+  function roleChip(c) {
+    const r = roleOf(c);
+    return '<span class="dash-role dash-role-' + r.key + '">' + esc(r.label) + '</span>';
+  }
+  function presenceText(c) {
+    if (!c || c.type === 'public') return 'پیام همگانی';
+    return roleOf(c).label + ' · ' + (isOnline(c.user_id) ? 'آنلاین' : 'آفلاین');
+  }
   function refreshHeaderStatus() {
     if (!view || view.type !== 'user') return;
     const el = document.getElementById('ph-status');
-    if (el) el.textContent = isOnline(view.user_id) ? 'آنلاین' : 'آفلاین';
+    if (el) el.textContent = presenceText(view);
   }
 
   // ---- instant paint from cache (a slow link must not leave the page blank) ----
-  const CACHE_CONVS = 'bm_convs_v1';
+  const CACHE_CONVS = 'bm_convs_v2';
   const CACHE_THREAD = 'bm_thread_v1';
   const CACHE_PUB = 'bm_pub_v1';
   const CACHE_LIMIT = 120;
@@ -165,13 +188,14 @@
     pub.onclick = openPublic;
     box.appendChild(pub);
 
-    convs.filter(c => !q || (c.display_name + ' ' + c.username).toLowerCase().includes(q)).forEach(c => {
+    convs.filter(c => !q || ((c.display_name || '') + ' ' + (c.username || '') + ' ' + roleOf(c).label).toLowerCase().includes(q)).forEach(c => {
       const el = document.createElement('div');
       el.dataset.uid = c.user_id;
       el.className = 'dash-conv' + (view && view.type === 'user' && view.user_id === c.user_id ? ' is-active' : '');
       el.innerHTML = '<div class="dash-conv-av">' + avatarInner(c.avatar, '#4f46e5', c.display_name) +
         (Number(c.unread) > 0 ? '<span class="unread-dot dash-unread"></span>' : '') + '</div>' +
-        '<div class="dash-conv-meta"><h4 class="dash-conv-name">' + esc(c.display_name) + '</h4><p class="dash-conv-sub" dir="ltr">@' + esc(c.username) + '</p></div>';
+        '<div class="dash-conv-meta"><div class="dash-conv-nameline"><h4 class="dash-conv-name">' + esc(c.display_name || c.username || '') + '</h4>' + mgrStar(c) + roleChip(c) + '</div>' +
+        '<p class="dash-conv-sub"><span class="dash-conv-user" dir="ltr">@' + esc(c.username || '') + '</span></p></div>';
       el.onclick = () => openUser(c);
       box.appendChild(el);
     });
@@ -198,8 +222,8 @@
     h.classList.add('flex');
     const name = c.display_name || c.name || '';
     document.getElementById('ph-avatar').innerHTML = avatarInner(c.avatar, '#4f46e5', name);
-    document.getElementById('ph-name').textContent = name;
-    document.getElementById('ph-status').textContent = c.type === 'public' ? 'پیام همگانی' : (isOnline(c.user_id) ? 'آنلاین' : 'آفلاین');
+    document.getElementById('ph-name').innerHTML = esc(name) + mgrStar(c);
+    document.getElementById('ph-status').textContent = presenceText(c);
     markActive();
   }
 
@@ -243,7 +267,7 @@
   }
 
   function openUser(c) {
-    view = { type: 'user', user_id: Number(c.user_id), name: c.display_name, username: c.username, avatar: c.avatar, email: c.email };
+    view = { type: 'user', user_id: Number(c.user_id), name: c.display_name, username: c.username, avatar: c.avatar, email: c.email, rank: c.rank, is_manager: c.is_manager };
     setHeader(view);
     refreshHeaderStatus();
     setMobileChat(true);

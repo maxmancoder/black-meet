@@ -36,8 +36,22 @@
         disp.classList.remove('hidden');
       }
       startTimer();
+      focusOtpFirst();
     }
   };
+
+  // entering the code step must not make the visitor tap the first box: focus it as soon
+  // as the view is visible (a short retry covers the entrance animation / slow paint)
+  function focusOtpFirst() {
+    const go = () => {
+      const first = otpCells()[0];
+      if (!first) return false;
+      try { first.focus(); first.select(); } catch (e) { /* not visible yet */ }
+      return document.activeElement === first;
+    };
+    setTimeout(go, 60);
+    setTimeout(() => { if (document.activeElement !== otpCells()[0]) go(); }, 280);
+  }
 
   function startTimer() {
     clearInterval(timerInterval);

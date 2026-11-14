@@ -1560,6 +1560,32 @@
 .dash-conv-name { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--d-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash-conv.is-active .dash-conv-name { color: #fff; }
 .dash-conv-sub { margin: 0; font-size: 10px; color: var(--d-text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* role line: name + (yellow star for the site manager) over [role chip] @username */
+.dash-conv-nameline { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.dash-conv-nameline .dash-conv-name { min-width: 0; }
+.dash-conv-sub { display: flex; align-items: center; gap: 6px; }
+.dash-conv-user { color: var(--d-text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-role {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+.dash-role-manager { color: #fbbf24; background: rgba(251, 191, 36, .12); border-color: rgba(251, 191, 36, .3); }
+.dash-role-premium { color: #c4b5fd; background: rgba(139, 92, 246, .16); border-color: rgba(139, 92, 246, .32); }
+.dash-role-admin { color: #7dd3fc; background: rgba(56, 189, 248, .14); border-color: rgba(56, 189, 248, .3); }
+.dash-role-user { color: var(--d-text-mute); background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .09); }
+.dash-star-mgr {
+  flex-shrink: 0;
+  color: #fbbf24;
+  font-size: 12px;
+  line-height: 1;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, .5));
+}
+#ph-name .dash-star-mgr { font-size: 14px; margin-inline-start: 5px; }
 .dash-unread {
   position: absolute;
   inset-block-start: 1px;
@@ -1766,6 +1792,7 @@
 
 .bm-dash .rank-menu,
 .bm-dash #mode-menu,
+.bm-dash #create-mode-menu,
 .bm-dash #page-size-menu,
 .bm-dash #ed-rank-menu {
   background: linear-gradient(180deg, #191b2b, #0f101a);
