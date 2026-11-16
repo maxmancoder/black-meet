@@ -8,7 +8,9 @@
   const I = window.INIT;
   const EV = window.BMEv;
   const $ = (id) => document.getElementById(id);
-  const socket = () => window.BM_SOCKET;
+  // live.js opens a second socket and can replace window.BM_SOCKET at any moment;
+  // the room membership lives on the CALL socket, so always use the stable getter.
+  const socket = () => (typeof window.bmCallSocket === 'function' ? window.bmCallSocket() : window.BM_SOCKET);
 
   let web = null;              // authoritative server state for the active box
   let expanded = false;        // full-stage mode (per client, cosmetic)
@@ -188,62 +190,288 @@
       $('web-file-name').textContent = f.name;
       $('web-file-size').textContent = faSize(f.size);
     }
+    // a fresh pick clears the previous run's bar / message
+    const bar = $('web-file-bar');
+    if (bar) bar.classList.add('hidden');
+    if ($('web-file-prog')) $('web-file-prog').style.width = '0%';
+    if ($('web-file-msg')) $('web-file-msg').textContent = '';
   }
-  function uploadWebFile() {
-    if (!pickedFile) { toast('اول یک فایل انتخاب کنید'); return; }
-    const s = socket();
-    if (!s || !s.connected) { toast('اتصال زنده برقرار نیست'); return; }
+
+  /* ---------------------------------------------------------------- upload */
+  // Why this is no longer one big request (the "خیلی کنده / اصلا آپلود نمی‌شه" report):
+  //  * a photo straight from a phone is 4-8 MB; it is downscaled here first, which alone
+  //    makes most uploads ~20x smaller;
+  //  * a single TCP stream on a lossy mobile uplink moves far less than the link allows and
+  //    one dropped connection at 90% used to lose the whole file — so big files go up as
+  //    ~1 MB parts, a few in parallel, and a failed part is retried on its own;
+  //  * the server now streams to disk instead of buffering the file in RAM (no blocking
+  //    write freezing the call);
+  //  * the upload no longer requires the live socket to be connected at that exact moment.
+  const UP_CHUNK = 1024 * 1024;          // 1 MiB per part
+  const UP_PARALLEL = 3;                 // parts in flight
+  const UP_SINGLE_MAX = 2 * 1024 * 1024; // under this, one request beats two round trips
+  const UP_RETRIES = 3;
+  let uploading = false;
+  let upState = null;                    // { total, t0, parts:[{loaded,size}], name }
+
+  function apiUrl(p) { return (window.BASE || '/black-meet') + p; }
+  function randHex(n) {
+    let s = '';
+    const A = '0123456789abcdef';
+    for (let i = 0; i < n; i++) s += A[Math.floor(Math.random() * 16)];
+    return s;
+  }
+  function upLoaded() {
+    if (!upState) return 0;
+    let n = 0;
+    upState.parts.forEach((p) => { n += Math.min(p.loaded || 0, p.size || 0); });
+    return n;
+  }
+  function upStats() {
+    const loaded = upLoaded();
+    const total = (upState && upState.total) || 0;
+    const ms = Math.max(1, Date.now() - ((upState && upState.t0) || Date.now()));
+    const bps = loaded / (ms / 1000);
+    const left = Math.max(0, total - loaded);
+    return { loaded, total, pct: total ? loaded / total : 0, bps, eta: bps > 0 ? left / bps : 0 };
+  }
+  function paintUpload(label) {
+    const st = upStats();
     const bar = $('web-file-bar');
     const prog = $('web-file-prog');
     const msg = $('web-file-msg');
-    const btn = $('web-submit');
     if (bar) bar.classList.remove('hidden');
-    if (prog) prog.style.width = '15%';
-    if (msg) msg.textContent = 'در حال ارسال…';
-    if (btn) btn.disabled = true;
+    if (prog) prog.style.width = Math.max(1, Math.round(st.pct * 100)) + '%';
+    if (!msg) return;
+    if (label) { msg.textContent = label; return; }
+    const pct = faNum(Math.round(st.pct * 100)) + '٪';
+    const speed = st.bps > 0 ? faSize(Math.round(st.bps)) + ' بر ثانیه' : '';
+    const eta = st.eta > 0 && st.eta < 3600 ? ' — ' + faNum(Math.max(1, Math.ceil(st.eta))) + ' ثانیه مانده' : '';
+    msg.textContent = 'در حال ارسال… ' + pct + (speed ? ' · ' + speed : '') + eta;
+  }
 
-    const room = (I.meeting && I.meeting.room) || (I.room || '');
-    const fd = new FormData();
-    fd.append('file', pickedFile);
-    fd.append('room', room);
-    // the API validates CSRF from the BODY (req.body.csrf), so it has to be in the form too
-    fd.append('csrf', window.CSRF || '');
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', (window.BASE || '/black-meet') + '/api/call/file');
-    xhr.setRequestHeader('X-CSRF-Token', window.CSRF || '');
-    xhr.upload.onprogress = (ev) => {
-      if (prog && ev.lengthComputable) prog.style.width = Math.round(15 + (ev.loaded / ev.total) * 60) + '%';
-    };
-    xhr.onload = () => {
-      if (prog) prog.style.width = '100%';
-      let d = {};
-      try { d = JSON.parse(xhr.responseText); } catch (e) {}
-      if (btn) btn.disabled = false;
-      if (xhr.status !== 200 || !d.ok || !d.file) {
-        if (msg) msg.textContent = (d && d.msg) || 'بارگذاری انجام نشد';
-        toast((d && d.msg) || 'بارگذاری فایل انجام نشد');
-        return;
+  // shrink a big photo in the browser: 4000×3000 JPEG → 1600px WebP (~300 KB)
+  function shrinkImage(file) {
+    return new Promise((resolve) => {
+      if (!file || !/^image\//i.test(file.type || '')) return resolve(file);
+      if (/svg|gif|avif/i.test(file.type || '')) return resolve(file); // animations / vectors
+      if (file.size < 350 * 1024) return resolve(file);
+      const MAX_EDGE = 1600;
+      const done = (f) => resolve(f);
+      const make = (img, w, h) => {
+        const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+        const cw = Math.max(1, Math.round(w * scale));
+        const ch = Math.max(1, Math.round(h * scale));
+        const cv = document.createElement('canvas');
+        cv.width = cw; cv.height = ch;
+        const cx = cv.getContext('2d');
+        if (!cx) return done(file);
+        cx.drawImage(img, 0, 0, cw, ch);
+        const base = String(file.name || 'image').replace(/\.[^.]+$/, '').slice(0, 80);
+        const finish = (blob, ext, type) => {
+          if (!blob || blob.size >= file.size) return done(file);
+          try {
+            done(new File([blob], base + '.' + ext, { type, lastModified: Date.now() }));
+          } catch (e) {
+            blob.name = base + '.' + ext; // very old browsers: FormData still accepts a Blob
+            done(blob);
+          }
+        };
+        if (cv.toBlob) {
+          cv.toBlob((b) => {
+            if (b && b.size) finish(b, 'webp', 'image/webp');
+            else cv.toBlob((b2) => finish(b2, 'jpg', 'image/jpeg'), 'image/jpeg', 0.85);
+          }, 'image/webp', 0.85);
+        } else {
+          finish(null);
+        }
+      };
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { make(img, img.naturalWidth || 1, img.naturalHeight || 1); URL.revokeObjectURL(url); };
+      img.onerror = () => { URL.revokeObjectURL(url); done(file); };
+      img.src = url;
+    });
+  }
+
+  function uploadSingle(file, room) {
+    return new Promise((resolve, reject) => {
+      upState = { total: file.size, t0: Date.now(), parts: [{ loaded: 0, size: file.size }], name: file.name };
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('room', room);
+      // the API validates CSRF from the body, so it has to be in the form too
+      fd.append('csrf', window.CSRF || '');
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', apiUrl('/api/call/file'));
+      xhr.setRequestHeader('X-CSRF-Token', window.CSRF || '');
+      xhr.setRequestHeader('X-BM-Room', room);
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) { upState.parts[0].loaded = ev.loaded; paintUpload(); }
+      };
+      xhr.onload = () => {
+        let d = {};
+        try { d = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status === 200 && d && d.ok && d.file) return resolve(d.file);
+        reject(new Error((d && d.msg) || 'بارگذاری انجام نشد'));
+      };
+      xhr.onerror = () => reject(new Error('ارتباط برقرار نشد'));
+      xhr.onabort = () => reject(new Error('ارسال فایل لغو شد'));
+      xhr.send(fd);
+    });
+  }
+
+  function sendPart(file, room, uploadId, index, total) {
+    return new Promise((resolve, reject) => {
+      const start = index * UP_CHUNK;
+      const blob = file.slice(start, Math.min(file.size, start + UP_CHUNK));
+      const fd = new FormData();
+      fd.append('part', blob, 'part');
+      fd.append('room', room);
+      fd.append('uploadId', uploadId);
+      fd.append('index', String(index));
+      fd.append('total', String(total));
+      fd.append('csrf', window.CSRF || '');
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', apiUrl('/api/call/file/part'));
+      xhr.setRequestHeader('X-CSRF-Token', window.CSRF || '');
+      xhr.setRequestHeader('X-BM-Room', room);
+      xhr.setRequestHeader('X-BM-Upload-Id', uploadId);
+      xhr.setRequestHeader('X-BM-Index', String(index));
+      xhr.setRequestHeader('X-BM-Total', String(total));
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) { upState.parts[index].loaded = ev.loaded; paintUpload(); }
+      };
+      xhr.onload = () => {
+        let d = {};
+        try { d = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status === 200 && d && d.ok) return resolve(true);
+        reject(new Error((d && d.msg) || 'ارسال بخش فایل ناموفق بود'));
+      };
+      xhr.onerror = () => reject(new Error('ارتباط برقرار نشد'));
+      xhr.onabort = () => reject(new Error('ارسال فایل لغو شد'));
+      xhr.send(fd);
+    });
+  }
+
+  async function sendPartRetry(file, room, uploadId, index, total) {
+    let last = null;
+    for (let attempt = 0; attempt < UP_RETRIES; attempt++) {
+      try {
+        return await sendPart(file, room, uploadId, index, total);
+      } catch (e) {
+        last = e;
+        // a stale CSRF token can never be fixed by retrying — report it at once
+        if (String(e.message || '').indexOf('نامعتبر') >= 0) throw e;
+        upState.parts[index].loaded = 0;
+        await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
       }
-      if (msg) msg.textContent = 'آپلود شد — در حال نمایش به همه…';
-      const sw = $('web-follow');
-      s.emit(EV.CALL_WEB_OPEN, {
-        // `kind` = which box, `mode` = that a call-file is shown as audio/video/file
-        kind: modalKind,
-        mode: modalKind === 'file' ? 'file' : modalKind,
-        url: d.file.url,
-        follow: !sw || sw.checked,
-      }, (res) => {
-        closeWebModal();
-        clearWebFile();
-        if (res && res.ok) toast('فایل برای همه‌ی اعضا نمایش داده شد');
-      });
+    }
+    throw last || new Error('ارسال بخش فایل ناموفق بود');
+  }
+
+  async function uploadChunks(file, room) {
+    const total = Math.ceil(file.size / UP_CHUNK);
+    const uploadId = randHex(32);
+    upState = { total: file.size, t0: Date.now(), name: file.name, parts: [] };
+    for (let i = 0; i < total; i++) {
+      upState.parts.push({ loaded: 0, size: Math.min(UP_CHUNK, file.size - i * UP_CHUNK) });
+    }
+    paintUpload();
+    let next = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= total) return;
+        await sendPartRetry(file, room, uploadId, i, total);
+      }
     };
-    xhr.onerror = () => {
-      if (btn) btn.disabled = false;
-      if (msg) msg.textContent = 'ارتباط برقرار نشد';
-      toast('ارتباط برقرار نشد');
-    };
-    xhr.send(fd);
+    const workers = [];
+    for (let w = 0; w < Math.min(UP_PARALLEL, total); w++) workers.push(worker());
+    await Promise.all(workers);
+    paintUpload('در حال آماده‌سازی فایل…');
+    const res = await fetch(apiUrl('/api/call/file/finish'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': window.CSRF || '',
+        'X-BM-Room': room,
+        'X-BM-Upload-Id': uploadId,
+        'X-BM-Total': String(total),
+      },
+      body: JSON.stringify({
+        csrf: window.CSRF || '', room, uploadId, total,
+        name: file.name || 'file', mime: file.type || 'application/octet-stream', size: file.size,
+      }),
+    });
+    let d = {};
+    try { d = await res.json(); } catch (e) {}
+    if (!res.ok || !d || !d.ok || !d.file) throw new Error((d && d.msg) || 'بارگذاری انجام نشد');
+    return d.file;
+  }
+
+  // the socket can be reconnecting when the upload ends — the box is opened as soon as it is back
+  function emitWhenLive(ev, data, cb, tries) {
+    const s = socket();
+    if (s && s.connected) { s.emit(ev, data, (res) => { if (cb) cb(res); }); return; }
+    const n = tries || 0;
+    if (n > 25) { if (cb) cb(null); return; }
+    if (n === 0) toast('اتصال زنده برقرار نیست؛ به‌محض اتصال نمایش داده می‌شود');
+    setTimeout(() => emitWhenLive(ev, data, cb, n + 1), 400);
+  }
+
+  function uploadWebFile() {
+    if (uploading) { toast('یک فایل در حال ارسال است'); return; }
+    if (!pickedFile) { toast('اول یک فایل انتخاب کنید'); return; }
+    const room = (I.meeting && I.meeting.room) || (I.room || '');
+    if (!room) { toast('جلسه پیدا نشد'); return; }
+    const btn = $('web-submit');
+    uploading = true;
+    if (btn) btn.disabled = true;
+    const bar = $('web-file-bar');
+    if (bar) bar.classList.remove('hidden');
+    if ($('web-file-msg')) $('web-file-msg').textContent = 'در حال آماده‌سازی…';
+
+    (async () => {
+      try {
+        let file = pickedFile;
+        if (modalKind === 'file') {
+          const shrunk = await shrinkImage(file);
+          if (shrunk && shrunk !== file) {
+            file = shrunk;
+            if ($('web-file-name')) $('web-file-name').textContent = file.name;
+            if ($('web-file-size')) $('web-file-size').textContent = faSize(file.size);
+          }
+        }
+        paintUpload();
+        const saved = file.size <= UP_SINGLE_MAX
+          ? await uploadSingle(file, room)
+          : await uploadChunks(file, room);
+        uploading = false;
+        if ($('web-file-prog')) $('web-file-prog').style.width = '100%';
+        if ($('web-file-msg')) $('web-file-msg').textContent = 'آپلود شد — در حال نمایش به همه…';
+        const sw = $('web-follow');
+        emitWhenLive(EV.CALL_WEB_OPEN, {
+          // `kind` = which box, `mode` = that a call-file is shown as audio/video/file
+          kind: modalKind,
+          mode: modalKind === 'file' ? 'file' : modalKind,
+          url: saved.url,
+          follow: !sw || sw.checked,
+        }, (res) => {
+          if (btn) btn.disabled = false;
+          closeWebModal();
+          clearWebFile();
+          if (res && res.ok) toast('فایل برای همه‌ی اعضا نمایش داده شد');
+          else toast('فایل آپلود شد ولی نمایش آن انجام نشد');
+        });
+      } catch (e) {
+        uploading = false;
+        if (btn) btn.disabled = false;
+        const m = (e && e.message) || 'بارگذاری انجام نشد';
+        if ($('web-file-msg')) $('web-file-msg').textContent = m;
+        toast(m);
+      }
+    })();
   }
   window.pickWebFile = pickWebFile;
 

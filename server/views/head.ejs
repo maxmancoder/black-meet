@@ -14,10 +14,12 @@
 <link rel="stylesheet" href="<%- asset('assets/css/styles.css') %>"/>
 <link rel="stylesheet" href="<%- asset('assets/css/tailwind.css') %>"/>
 <link rel="stylesheet" href="<%- url('theme.css') %>"/>
-<script>window.__BM_SKIP_BUTTON_LOADER = (window.__BM_SKIP_BUTTON_LOADER || []);window.__BM_LIVE_URL = <%- (typeof me !== 'undefined' && me) ? "''" : 'null' %>;window.__BM_SOCKET_TOKEN = <%- (typeof socketToken !== 'undefined' && socketToken) ? json(socketToken) : "''" %>;window.BASE = <%- json(base) %>;window.BM_SPRITE = '<%- asset('icons/sprite.svg') %>';<% if (typeof pageName !== 'undefined' && pageName === 'call') { %>window.__BM_SKIP_BUTTON_LOADER.push('call');<% } %></script>
+<script>window.__BM_SKIP_BUTTON_LOADER = (window.__BM_SKIP_BUTTON_LOADER || []);window.__BM_LIVE_URL = <%- (typeof me !== 'undefined' && me) ? "''" : 'null' %>;window.__BM_SOCKET_TOKEN = <%- (typeof socketToken !== 'undefined' && socketToken) ? json(socketToken) : "''" %>;window.BASE = <%- json(base) %>;window.BM_SPRITE = '<%- asset('icons/sprite.svg') %>';window.BM_SITE_ICON = '<%- siteIconUrl() %>';window.__BM_IS_CALL_PAGE = /\/meeting(?:[/?]|$)/.test(location.pathname);if (window.__BM_IS_CALL_PAGE) window.__BM_SKIP_BUTTON_LOADER.push('call');</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="<%- asset('shared/socket-events.js') %>"></script>
 <script src="<%- asset('assets/js/icons.js') %>"></script>
+<script src="<%- asset('assets/js/linkify.js') %>"></script>
+<script src="<%- asset('assets/js/notify.js') %>"></script>
 <script src="<%- asset('assets/js/live.js') %>"></script>
 <script src="<%- asset('assets/js/interactions.js') %>"></script>
 <script src="<%- asset('assets/js/logout-confirm.js') %>"></script>

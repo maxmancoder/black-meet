@@ -252,7 +252,7 @@
     el.className = 'dash-bubble-row ' + (incoming ? 'is-them' : 'is-me');
     const label = senderName(m, incoming);
     el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' +
-      '<div class="dash-bubble">' + esc(m.body) + '</div>';
+      '<div class="dash-bubble">' + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>';
     box.appendChild(el);
     box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
@@ -324,6 +324,15 @@
       // and for a premium user when it comes FROM the admin
       const bumpsMe = window.__IS_MANAGER ? !fromMgr : fromMgr;
       const open = view && view.type === 'user' && Number(view.user_id) === fromId;
+      // another tab is in front: tell the user through the operating system
+      if (window.bmNotify) {
+        window.bmNotify({
+          title: (m.fromName || (fromMgr ? 'مدیر' : 'پیام خصوصی')),
+          body: m.body,
+          tag: 'pv:' + (m.id || m.clientMsgId || m.body || ''),
+          url: (window.BASE || '') + '/messages' + (fromMgr && !window.__IS_MANAGER ? '?chat=admin' : ''),
+        });
+      }
       if (open) {
         appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, isIncoming(fromMgr));
         updateConvRow(fromId, { unread: 0 });

@@ -91,6 +91,170 @@ function store(roomId, userId, file) {
   return { ok: true, file: meta };
 }
 
+// ---------- streaming / staged uploads ----------
+// The old path buffered the WHOLE file in RAM (multer memoryStorage) and then wrote it with
+// a synchronous fs.writeFileSync: two full copies of a 50 MB buffer plus a blocking write
+// that froze the event loop — i.e. every WebRTC packet of the call stalled while somebody
+// uploaded a file. `adopt()` takes a file multer streamed to a temp path (diskStorage) and
+// renames it into place: no big allocation, no blocking write. `adopt` is also what the
+// chunked path finishes with.
+function metaFor(id, mime, ext, size, name, userId, key) {
+  return {
+    id, name: safeName(name || 'file'), mime, ext,
+    size, viewable: isViewable(mime),
+    userId: Number(userId) || 0, room: key, at: new Date().toISOString(),
+  };
+}
+function writeMeta(key, metaObj) {
+  try {
+    fs.writeFileSync(path.join(dirFor(key), metaObj.id + '.json'), JSON.stringify(metaObj));
+  } catch (e) { /* the file itself is what matters */ }
+}
+
+// a single request that multer already streamed to disk (temp path) → final location
+function adopt(roomId, userId, file) {
+  const key = roomKey(roomId);
+  if (!key) { drop(file); return { ok: false, error: 'bad-room' }; }
+  if (!file || !file.path) return { ok: false, error: 'empty' };
+  let size = Number(file.size) || 0;
+  try { size = fs.statSync(file.path).size; } catch (e) {
+    return { ok: false, error: 'empty' };
+  }
+  if (!size) { drop(file); return { ok: false, error: 'empty' }; }
+  if (size > MAX_BYTES) { drop(file); return { ok: false, error: 'too-large', max: MAX_BYTES }; }
+  const mime = String(file.mimetype || 'application/octet-stream').toLowerCase().split(';')[0].trim();
+  const ext = EXT_BY_MIME[mime] || 'bin';
+  const id = crypto.randomBytes(16).toString('hex');
+  const dir = dirFor(key);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return { ok: false, error: 'store' }; }
+  const target = path.join(dir, id + '.' + ext);
+  try {
+    fs.renameSync(file.path, target);
+  } catch (e) {
+    // another volume (or a locked temp file): copy + unlink
+    try { fs.copyFileSync(file.path, target); fs.unlinkSync(file.path); } catch (e2) {
+      drop(file);
+      return { ok: false, error: 'store' };
+    }
+  }
+  const metaObj = metaFor(id, mime, ext, size, file.originalname, userId, key);
+  writeMeta(key, metaObj);
+  return { ok: true, file: metaObj };
+}
+
+function drop(file) {
+  try { if (file && file.path) fs.unlinkSync(file.path); } catch (e) { /* already gone */ }
+}
+
+// ---------- chunked upload ----------
+// A single TCP stream on a lossy Iranian uplink is far slower than the link itself, and one
+// dropped connection at 90% used to lose the whole file. The client now sends ~1 MB parts
+// (a few in parallel) and a part that fails is retried on its own.
+const MAX_PARTS = 600;
+
+function partKey(uploadId) {
+  const s = String(uploadId || '');
+  return /^[a-f0-9]{16,64}$/.test(s) ? s : '';
+}
+function partsDir(roomId, uploadId) {
+  const k = roomKey(roomId), u = partKey(uploadId);
+  if (!k || !u) return null;
+  return path.join(dirFor(k), '_parts', u);
+}
+function partName(i) { return String(i).padStart(4, '0') + '.part'; }
+
+function savePart(roomId, uploadId, index, total, buffer) {
+  const dir = partsDir(roomId, uploadId);
+  if (!dir) return { ok: false, error: 'bad-upload' };
+  const i = Number(index), t = Number(total);
+  if (!Number.isInteger(i) || i < 0 || i >= MAX_PARTS) return { ok: false, error: 'bad-index' };
+  if (!Number.isInteger(t) || t < 1 || t > MAX_PARTS) return { ok: false, error: 'bad-total' };
+  if (!buffer || !buffer.length) return { ok: false, error: 'empty' };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, partName(i)), buffer);
+  } catch (e) { return { ok: false, error: 'store' }; }
+  return { ok: true, index: i };
+}
+
+// assemble the parts into one file (streamed part by part — never the whole file in RAM)
+async function finishParts(roomId, userId, o) {
+  o = o || {};
+  const key = roomKey(roomId);
+  const dir = partsDir(roomId, o.uploadId);
+  if (!key || !dir) return { ok: false, error: 'bad-upload' };
+  const total = Number(o.total);
+  if (!Number.isInteger(total) || total < 1 || total > MAX_PARTS) return { ok: false, error: 'bad-total' };
+  const claimed = Number(o.size) || 0;
+  if (claimed > MAX_BYTES) return { ok: false, error: 'too-large', max: MAX_BYTES };
+
+  let bytes = 0;
+  for (let i = 0; i < total; i++) {
+    try {
+      const st = fs.statSync(path.join(dir, partName(i)));
+      bytes += st.size;
+    } catch (e) {
+      return { ok: false, error: 'missing-part', index: i };
+    }
+  }
+  if (!bytes) return { ok: false, error: 'empty' };
+  if (bytes > MAX_BYTES) return { ok: false, error: 'too-large', max: MAX_BYTES };
+
+  const mime = String(o.mime || 'application/octet-stream').toLowerCase().split(';')[0].trim();
+  const ext = EXT_BY_MIME[mime] || 'bin';
+  const id = crypto.randomBytes(16).toString('hex');
+  const target = path.join(dirFor(key), id + '.' + ext);
+
+  const out = fs.createWriteStream(target);
+  const finished = new Promise((res, rej) => { out.on('finish', res); out.on('error', rej); });
+  try {
+    for (let i = 0; i < total; i++) {
+      const src = path.join(dir, partName(i));
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((res, rej) => {
+        const rs = fs.createReadStream(src);
+        rs.on('error', rej);
+        rs.on('end', res);
+        rs.pipe(out, { end: false });
+      });
+    }
+    out.end();
+    await finished;
+  } catch (e) {
+    try { out.destroy(); } catch (e2) { /* noop */ }
+    try { fs.unlinkSync(target); } catch (e2) { /* noop */ }
+    return { ok: false, error: 'assemble' };
+  }
+  const metaObj = metaFor(id, mime, ext, bytes, o.name, userId, key);
+  writeMeta(key, metaObj);
+  removeParts(roomId, o.uploadId);
+  return { ok: true, file: metaObj };
+}
+
+function removeParts(roomId, uploadId) {
+  const dir = partsDir(roomId, uploadId);
+  if (!dir) return;
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* noop */ }
+  try {
+    const parent = path.join(dirFor(roomKey(roomId)), '_parts');
+    if (!fs.readdirSync(parent).length) fs.rmdirSync(parent);
+  } catch (e) { /* not empty / already gone */ }
+}
+
+// temp files multer wrote but nobody finished (server restarted mid-upload)
+function purgeIncoming() {
+  let base;
+  try { base = path.join(dbm.rootDir, 'uploads', 'call', '_incoming'); } catch (e) { return 0; }
+  let n = 0;
+  try {
+    fs.readdirSync(base).forEach((f) => {
+      try { fs.unlinkSync(path.join(base, f)); n++; } catch (e) { /* noop */ }
+    });
+  } catch (e) { return 0; }
+  if (n) console.log('[callfiles] dropped ' + n + ' unfinished upload(s)');
+  return n;
+}
+
 function meta(roomId, id) {
   const k = roomKey(roomId), f = idOf(k, id);
   if (!f) return null;
@@ -212,7 +376,8 @@ function purgeInactive() {
 }
 
 module.exports = {
-  store, meta, filePath, purgeRoom, purgeInactive,
+  store, adopt, meta, filePath, purgeRoom, purgeInactive, purgeIncoming,
+  savePart, finishParts, removeParts, MAX_PARTS,
   noteDownload, downloadStats, purgeDownloads,
   MAX_BYTES, isViewable, safeName, roomKey,
 };

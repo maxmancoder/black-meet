@@ -650,11 +650,6 @@ router.post('/admin/site-icon/reset', (req, res) => {
 // shared file inside a call (the "آپلود فایل" entry of the link menu)
 // ------------------------------------------------------------------
 
-const callUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: callfiles.MAX_BYTES, files: 1 },
-});
-
 // the caller must be a participant of THAT room, so nobody can dump files into someone
 // else's session or read a shared link's file from outside
 function callRoomAccess(req, res, roomId) {
@@ -667,33 +662,105 @@ function callRoomAccess(req, res, roomId) {
   return { me, meeting: m, participant: p };
 }
 
-router.post('/call/file', callUpload.single('file'), (req, res) => {
-  if (!requireLoginApi(req, res)) return;
-  if (!checkCsrf(req, res)) return;
-  const roomId = String(req.body.room || req.query.room || '').trim();
+// ------------------------------------------------------------------
+// Upload fast path
+// ------------------------------------------------------------------
+// The old route parsed the WHOLE multipart body with multer (memoryStorage) and only then
+// checked the session + CSRF token: an expired session or a stale token made the browser
+// upload the entire file first and fail at 100% — the "it never uploads" report. The guard
+// below runs BEFORE multer, reads the token/room from headers (the client sends them) and
+// rejects in milliseconds.
+function callUploadRoom(req) {
+  return String(req.get('x-bm-room') || req.query.room || (req.body && req.body.room) || '').trim();
+}
+function callUploadGuard(req, res, next) {
+  const me = sessions.currentUser(req);
+  if (!me) return bad(res, { ok: false, msg: 'ابتدا وارد شوید' }, 401);
+  const token = req.get('x-csrf-token') || (req.body && req.body.csrf) || req.query.csrf || '';
+  if (!sessions.csrfValid(req, token)) return bad(res, { ok: false, msg: 'درخواست نامعتبر' }, 403);
+  const roomId = callUploadRoom(req);
   const access = callRoomAccess(req, res, roomId);
   if (!access) return;
-  if (!req.file) return bad(res, { ok: false, msg: 'فایلی انتخاب نشده است' });
+  req._call = { me, meeting: access.meeting, room: roomId };
+  return next();
+}
 
-  const saved = callfiles.store(roomId, access.me.id, req.file);
+// multer streams straight to a temp file (no 50 MB buffer in RAM, no blocking write that
+// freezes the event loop — and with it the WebRTC signalling of the running call)
+const callTempDir = path.join(dbm.rootDir, 'uploads', 'call', '_incoming');
+const callDiskStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    try { fs.mkdirSync(callTempDir, { recursive: true }); cb(null, callTempDir); } catch (e) { cb(e); }
+  },
+  filename(req, file, cb) { cb(null, crypto.randomBytes(16).toString('hex') + '.part'); },
+});
+const callDiskUpload = multer({
+  storage: callDiskStorage,
+  limits: { fileSize: callfiles.MAX_BYTES, files: 1 },
+});
+// a chunk is deliberately small (the client sends ~1 MB parts), so memory is fine here
+const callPartUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 16 * 1024 * 1024, files: 1 },
+});
+
+function callFilePayload(f) {
+  return {
+    id: f.id, name: f.name, mime: f.mime, size: f.size, viewable: f.viewable,
+    room: f.room, url: '/black-meet/call-file/' + f.id,
+  };
+}
+
+router.post('/call/file', callUploadGuard, callDiskUpload.single('file'), (req, res) => {
+  const st = req._call;
+  if (!req.file) return bad(res, { ok: false, msg: 'فایلی انتخاب نشده است' });
+  const saved = callfiles.adopt(st.room, st.me.id, req.file);
   if (!saved.ok) {
     const msg = saved.error === 'too-large'
       ? 'حجم فایل بیش از ' + Math.round(callfiles.MAX_BYTES / (1024 * 1024)) + ' مگابایت است'
       : 'فایل قابل ذخیره نبود';
     return bad(res, { ok: false, msg });
   }
-  return ok(res, {
-    ok: true,
-    file: {
-      id: saved.file.id,
-      name: saved.file.name,
-      mime: saved.file.mime,
-      size: saved.file.size,
-      viewable: saved.file.viewable,
-      room: saved.file.room,
-      url: '/black-meet/call-file/' + saved.file.id,
-    },
-  });
+  return ok(res, { ok: true, file: callFilePayload(saved.file) });
+});
+
+// ---- chunked upload (big files) ----
+// POST /api/call/file/part  (multipart: part + room/uploadId/index/total, csrf in a header)
+router.post('/call/file/part', callUploadGuard, callPartUpload.single('part'), (req, res) => {
+  const st = req._call;
+  if (!req.file || !req.file.buffer || !req.file.buffer.length) {
+    return bad(res, { ok: false, msg: 'بخشی از فایل دریافت نشد' });
+  }
+  const uploadId = String(req.get('x-bm-upload-id') || req.body.uploadId || '');
+  const index = Number(req.get('x-bm-index') || req.body.index);
+  const total = Number(req.get('x-bm-total') || req.body.total);
+  const r = callfiles.savePart(st.room, uploadId, index, total, req.file.buffer);
+  if (!r.ok) return bad(res, { ok: false, msg: 'ذخیره بخش فایل انجام نشد' });
+  return ok(res, { ok: true, index: r.index, total });
+});
+
+// POST /api/call/file/finish → assembles the parts and answers the same payload as /call/file
+router.post('/call/file/finish', callUploadGuard, async (req, res) => {
+  const st = req._call;
+  const b = req.body || {};
+  try {
+    const r = await callfiles.finishParts(st.room, st.me.id, {
+      uploadId: String(req.get('x-bm-upload-id') || b.uploadId || ''),
+      total: Number(req.get('x-bm-total') || b.total),
+      name: b.name,
+      mime: b.mime,
+      size: b.size,
+    });
+    if (!r.ok) {
+      const msg = r.error === 'too-large'
+        ? 'حجم فایل بیش از ' + Math.round(callfiles.MAX_BYTES / (1024 * 1024)) + ' مگابایت است'
+        : (r.error === 'missing-part' ? 'همه بخش‌های فایل نرسیده‌اند؛ دوباره تلاش کنید' : 'فایل قابل ذخیره نبود');
+      return bad(res, { ok: false, msg, error: r.error });
+    }
+    return ok(res, { ok: true, file: callFilePayload(r.file) });
+  } catch (e) {
+    return bad(res, { ok: false, msg: 'فایل قابل ذخیره نبود' });
+  }
 });
 
 // a member may re-open the box it uploaded (also how a late joiner finds out its name)

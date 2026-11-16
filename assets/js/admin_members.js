@@ -500,7 +500,7 @@
     const pending = r.status === 'pending';
     const msgs = (r.messages || []).map(m =>
       '<div class="mem-brow ' + (m.from_manager ? 'is-me' : 'is-them') + '">' +
-      '<div class="mem-bubble">' + esc(m.body) + '</div></div>').join('');
+      '<div class="mem-bubble">' + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div></div>').join('');
 
     let chat = '';
     if (PERM.decide) {
@@ -613,7 +613,7 @@
           if (ph) ph.remove();
           const wrap = document.createElement('div');
           wrap.className = 'mem-brow is-me';
-          wrap.innerHTML = '<div class="mem-bubble">' + esc(body) + '</div>';
+          wrap.innerHTML = '<div class="mem-bubble">' + (window.bmLinkify ? window.bmLinkify(body) : esc(body)) + '</div>';
           thread.appendChild(wrap);
           thread.scrollTop = thread.scrollHeight;
           inp.value = '';

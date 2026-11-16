@@ -347,6 +347,13 @@ body {
   from { opacity: 0; transform: translate(-50%, 32px) scale(.92); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
+/* a chat bubble keeps the line breaks and renders links as links (bmLinkify) */
+.bm-chat-body { white-space: pre-wrap; word-break: break-word; }
+.bm-chat-body .bm-link {
+  color: inherit; text-decoration: underline; text-underline-offset: 2px;
+  word-break: break-all; unicode-bidi: isolate;
+}
+.bm-chat-body .bm-link:hover { opacity: .82; }
 
 /* Video tile active speaker */
 .tile-active { border-color: rgb(var(--bm-secondary)) !important; box-shadow: 0 0 0 2px rgb(var(--bm-secondary)); }
@@ -1170,4 +1177,41 @@ input, textarea, select, option, [contenteditable="true"], #chat-messages, #chat
 @media (max-width: 639px) {
   .bm-netbanner { top: 64px; padding: 0.7rem 0.85rem; }
   .bm-netbanner-sub { display: none; }
+}
+
+/* ---------- noise suppressor strength picker (call page) ---------- */
+.bm-ns-levels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.bm-ns-lv {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgb(var(--bm-outline-variant) / 0.35);
+  background: rgb(var(--bm-surface-container-lowest) / 0.6);
+  color: rgb(var(--bm-on-surface-variant));
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 9px 4px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.bm-ns-lv:hover {
+  border-color: rgb(var(--bm-primary) / 0.5);
+  color: rgb(var(--bm-on-surface));
+}
+.bm-ns-lv:active { transform: scale(0.96); }
+.bm-ns-lv.is-on {
+  background: linear-gradient(135deg, rgb(var(--bm-primary) / 0.26), rgb(var(--bm-secondary-container) / 0.2));
+  border-color: rgb(var(--bm-primary) / 0.75);
+  color: rgb(var(--bm-on-surface));
+  font-weight: 700;
+}
+.bm-ns-lv:focus-visible {
+  outline: 2px solid rgb(var(--bm-primary) / 0.7);
+  outline-offset: 1px;
 }

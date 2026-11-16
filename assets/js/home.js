@@ -225,14 +225,15 @@
     }
   }
 
-  // The bell sits near the LEFT edge in this RTL header, so right-aligning the panel to it
-  // pushed the panel to the far-left of the viewport ("از کادر بیرون زده"). Anchor its start
-  // (left) edge under the bell instead, then clamp both axes to the real viewport.
+  // The panel belongs UNDER the profile section of the header, so it is anchored to that
+  // key (not to the bell, which sits far to the left in this RTL header and used to push
+  // the panel out of the viewport). Both axes are then clamped to the real viewport.
   function positionNotifPopup() {
     var p = byId('notif-popup');
-    var bell = byId('bell-btn');
-    if (!p || !bell) return;
-    var r = bell.getBoundingClientRect();
+    var anchor = document.querySelector('.dash-header [data-user-menu-trigger]') ||
+      document.querySelector('.dash-header-user') || byId('bell-btn');
+    if (!p || !anchor) return;
+    var r = anchor.getBoundingClientRect();
     var vw = document.documentElement.clientWidth || window.innerWidth;
     var vh = window.innerHeight;
     var margin = 10;
@@ -296,7 +297,7 @@
       html +=
         '<div class="dash-nitem ' + (isNew ? 'is-new' : 'is-read') + '">' +
           '<div class="dash-nitem-row">' +
-            '<p class="dash-nitem-text">' + escapeHtml(a.body) + '</p>' +
+            '<p class="dash-nitem-text">' + (window.bmLinkify ? window.bmLinkify(a.body) : escapeHtml(a.body)) + '</p>' +
             (isNew
               ? '<span class="dash-nitem-new">جدید</span>'
               : '<span class="dash-nitem-ok" title="خوانده شده">' + (window.bmIcon ? bmIcon('check_circle') : '') + '</span>') +
@@ -330,7 +331,7 @@
         '<div class="dash-acard ' + (isNew ? '' : 'is-read') + '" data-announce-id="' + (Number(a.id) || 0) + '" role="button" tabindex="0">' +
           '<span class="dash-acard-ico">' + (window.bmIcon ? bmIcon('campaign') : '') + '</span>' +
           '<div class="dash-acard-body">' +
-            '<p class="dash-acard-text">' + escapeHtml(a.body) + '</p>' +
+            '<p class="dash-acard-text">' + (window.bmLinkify ? window.bmLinkify(a.body) : escapeHtml(a.body)) + '</p>' +
             '<div class="dash-acard-meta">' +
               (isNew ? '<span class="dash-acard-new">جدید</span>' : '') +
               '<span>' + escapeHtml(a.created_at || '') + '</span>' +
@@ -425,12 +426,29 @@
       if (!m) return;
       var bumpsMe = window.__isManager ? !m.fromManager : !!m.fromManager;
       if (bumpsMe && Number(m.fromUserId) !== Number(window.MS_ID || 0)) setMsgBadge(msgUnread + 1);
+      if (window.bmNotify) {
+        if (Number(m.fromUserId) === Number(window.MS_ID || 0)) return;
+        window.bmNotify({
+          title: (m.fromName || (m.fromManager ? 'مدیر' : 'پیام خصوصی')),
+          body: m.body,
+          tag: 'pv:' + (m.id || m.clientMsgId || m.body || ''),
+          url: (window.BASE || '') + '/messages' + (m.fromManager && !window.__isManager ? '?chat=admin' : ''),
+        });
+      }
     });
 
     BMLive.on(EV.NOTIF_NEW, function (a) {
       if (!a || !a.body) return;
       // announcements are broadcast to everyone: never echo the sender's own post
       if (Number(a.fromUserId) === Number(window.MS_ID || 0)) return;
+      if (window.bmNotify) {
+        window.bmNotify({
+          title: (a.fromName || 'پیام عمومی'),
+          body: a.body,
+          tag: 'pub:' + (a.id || a.body || ''),
+          url: (window.BASE || '') + '/home',
+        });
+      }
       var list = window._notifs || [];
       if (list.some(function (x) { return x.id === a.id || x.body === a.body; })) return;
       list.unshift(a);

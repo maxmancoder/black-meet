@@ -82,6 +82,16 @@ function createApp() {
     return res.send(icon.data);
   });
 
+  // notification service worker: needed on Android, where `new Notification()` throws and
+  // only `registration.showNotification()` works. Served from the app root so its scope
+  // covers /black-meet/ (it registers NO fetch handler, so it never intercepts a request).
+  app.get('/black-meet/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Service-Worker-Allowed', '/black-meet/');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(rootDir, 'assets', 'js', 'sw.js'));
+  });
+
   // same-origin proxy behind the call page's shared-website box (login required)
   app.get('/black-meet/site-proxy', (req, res, next) => {
     if (!req.session || !req.session.data || !req.session.data.user_id) {
@@ -137,7 +147,12 @@ function createApp() {
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     if (err && err.name === 'MulterError') {
-      return res.status(400).json({ ok: false, msg: 'بارگذاری فایل نامعتبر است' });
+      const tooBig = err.code === 'LIMIT_FILE_SIZE';
+      return res.status(400).json({
+        ok: false,
+        msg: tooBig ? 'حجم فایل بیش از حد مجاز است' : 'بارگذاری فایل نامعتبر است',
+        error: err.code,
+      });
     }
     console.error(err && (err.stack || err.message));
     if (res.headersSent) return next(err);

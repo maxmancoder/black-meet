@@ -231,50 +231,596 @@
       return { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
     }).catch(() => ({ width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }));
   }
-  // ---------- noise suppression (ON by default) ----------
-  // The browser's built-in NS removes fan/hiss/keyboard noise before encoding. It is a
-  // getUserMedia CONSTRAINT, so it has to be set when the mic is captured — and it can be
-  // toggled live by asking the browser for new settings (no re-permission needed).
+  // ---------- microphone noise suppression (ON by default, three strengths) ----------
+  // The browser's own `noiseSuppression` constraint only removes STATIONARY noise, and
+  // `autoGainControl: true` worked against us: in the quiet gaps it raised the input gain
+  // so far that the room (fan, street, keyboard) became LOUDER than the speaker. So the
+  // real filtering now happens in Web Audio, on the OUTGOING track:
+  //
+  //   mic -> highpass -> voice gate/expander -> lowpass -> peers
+  //
+  //   * highpass/lowpass keep only the speech band (rumble + hiss/air noise removed)
+  //   * the gate asks a PITCH question, not a level question: is the last 21 ms periodic
+  //     like a voice, or aperiodic like a room? A fan/AC/street/keyboard is aperiodic at
+  //     ANY level, so it is muted even when it is as loud as the speaker. A level-only
+  //     gate can never do that, and the room's own level is learned separately so the
+  //     threshold adapts to whatever microphone gain the caller has.
+  //   * there is no compressor: Chrome's compressor applies ~+10 dB of internal makeup to
+  //     quiet material, which is exactly what made the room louder than the voice.
+  //   * autoGainControl AND the browser noise suppressor are OFF: both pump the level.
+  //
+  // If Web Audio is unavailable the constraint path still applies (weaker, but sound).
+  const NS_LEVELS = {
+    // openDb: how far above the room's floor the gate opens; ratio: expander steepness
+    // floorDb also sets the noise cap: the room is held at floor*8 (-16/-34/-46 dB).
+    // makeupDb stays 0: the chain must never make the speaker LOUDER than the raw mic.
+    soft:   { hp: 95,  lp: 11000, minThrDb: -50, maxThrDb: -26, openDb: 6,  floorDb: -34, ratio: 3, makeupDb: 0 },
+    strong: { hp: 130, lp: 7600,  minThrDb: -46, maxThrDb: -19, openDb: 10, floorDb: -52, ratio: 5, makeupDb: 0 },
+    max:    { hp: 175, lp: 6200,  minThrDb: -42, maxThrDb: -16, openDb: 13, floorDb: -64, ratio: 8, makeupDb: 0 },
+  };
   let noiseSuppression = (localStorage.getItem('bm_noise_suppression') !== '0');
+  let noiseLevel = localStorage.getItem('bm_noise_level');
+  if (!NS_LEVELS[noiseLevel]) noiseLevel = 'strong';
   window.bmNoiseSuppressionOn = function () { return noiseSuppression; };
+  window.bmNoiseLevel = function () { return noiseLevel; };
+  function nsCfg() { return NS_LEVELS[noiseLevel] || NS_LEVELS.strong; }
+  function nsLabel() { return noiseLevel === 'soft' ? 'ملایم' : noiseLevel === 'max' ? 'حداکثر' : 'قوی'; }
+  function dbToGain(db) { return Math.pow(10, db / 20); }
 
   function audioConstraints() {
-    if (!noiseSuppression) {
-      // turning it off means asking for exactly that, otherwise the previous ON survives
-      return { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
-    }
+    // `noiseSuppression: true` (the browser/OS suppressor) is deliberately OFF whenever our
+    // own chain is active. Measured in Chrome: it chops the room up and down (the same fan
+    // alternates between -30 and -60 dBFS), so the adaptive gate cannot find a floor in it
+    // and the bursts it lets through arrive at full level - the room was audibly louder than
+    // the voice. One suppressor, and it is ours.
     return {
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        echoCancellation: noiseSuppression ? true : false,
+        noiseSuppression: false,
+        autoGainControl: false,
       },
     };
   }
 
+  // ---- the gate itself (AudioWorklet; ScriptProcessor as a fallback) ----
+  // Every 5 ms two independent opinions decide whether the microphone is picking up a
+  // VOICE or the ROOM:
+  //
+  //   1. harmonicity - a normalised autocorrelation over voice pitch lags (80…1000 Hz) of
+  //      the last ~21 ms of audio. A voice is periodic (score > 0.3); a fan, AC, street,
+  //      keyboard, crowd murmur or room rumble is not (white noise scores ~0.06). This is
+  //      what lets the gate mute a room that is just as LOUD as the speaker - something no
+  //      level-based gate can ever do.
+  //   2. syllables - a level that jumps around inside 0.3 s (dev/slow > 0.3) while sitting
+  //      far above the learned room (thr * 4) is speech even when the pitch detector cannot
+  //      lock: whispering, a breathy voice, a clipped input. Trusted only once the room has
+  //      been learned, so a breathing fan at the very start of a call cannot use it.
+  //
+  // The room's own level is learned ONLY from frames that are not speech (a 3 s ring, read
+  // back as its 60th percentile), so speech can never become the "floor", however loud the
+  // speaker is or however the microphone is gained. The threshold is floor * openDb.
+  //
+  // Decisions:
+  //   * voice            -> gain 1 (fully open), 120 ms hold after it ends
+  //   * 250 ms after it  -> gain 0.3 (-10 dB) so unvoiced consonants stay audible
+  //   * anything else    -> expander below the threshold, hard-capped at floor * 8
+  //                         (-16 dB soft / -34 dB strong / -46 dB max)
+  // The gain is ramped inside every block (no zipper noise) and is NEVER above 1: the
+  // chain can only attenuate, so the speaker can never end up louder than the raw mic.
+  //
+  // NOTE the core is a plain class: the worklet wraps it and the ScriptProcessor fallback
+  // instantiates the very same code, so the two can never drift apart.
+  const GATE_CORE_SRC = `
+class BmGateCore {
+  constructor(sr) {
+    this.sr = sr || 48000;
+    this.winLen = 0;
+    this.hist = null;
+    this.histPos = 0;
+    this.histFill = 0;
+    this.lin = null;
+    this.dec = null;
+    this.cum = null;
+    this.med = null;
+    this.blockSec = 0;
+    this.env = 0;
+    this.gain = 1;
+    this.target = 1;
+    this.hold = 0;
+    this.softHold = 0;
+    this.harm = 0;
+    this.devRatio = 0;
+    this.slow = 0;
+    this.dev = 0;
+    this.floorEst = 0;
+    this.ring = null;
+    this.ringLen = 0;
+    this.ringPos = 0;
+    this.ringUsed = 0;
+    this.tick = 0;
+    this.age = 0;
+    this.acc = 0;
+    this.hopLen = 0;
+    this.hopSec = 0;
+    this.blockAtk = 0;
+    this.blockRel = 0;
+    this.gAtk = 0;
+    this.gRel = 0;
+    this.holdLen = 1;
+    this.softLen = 1;
+    this.slowK = 0;
+    this.voicedCount = 0;
+  }
+  init(n) {
+    const bs = Math.max(1, n) / this.sr;
+    this.blockSec = bs;
+    this.winLen = Math.max(n * 2, Math.round(0.021 * this.sr));
+    this.hist = new Float32Array(this.winLen);
+    this.lin = new Float32Array(this.winLen);
+    const half = Math.ceil(this.winLen / 2);
+    this.dec = new Float32Array(half);
+    this.cum = new Float32Array(half + 1);
+    this.ringLen = Math.max(16, Math.round(3 / bs));
+    this.ring = new Float32Array(this.ringLen);
+    this.med = new Float32Array(this.ringLen);
+    this.hopLen = Math.max(n, Math.round(0.005 * this.sr));
+    this.hopSec = this.hopLen / this.sr;
+    this.blockAtk = 1 - Math.exp(-bs / 0.003);
+    this.blockRel = 1 - Math.exp(-bs / 0.080);
+    this.gAtk = 1 - Math.exp(-bs / 0.005);
+    this.gRel = 1 - Math.exp(-bs / 0.140);
+    this.holdLen = Math.max(1, Math.round(0.12 / this.hopSec));
+    this.softLen = Math.max(1, Math.round(0.25 / this.hopSec));
+    this.slowK = 1 - Math.exp(-this.hopSec / 0.30);
+  }
+  kth(k, m) {
+    const a = this.med;
+    let lo = 0, hi = m - 1;
+    while (lo < hi) {
+      const pivot = a[(lo + hi) >> 1];
+      let i = lo, j = hi;
+      while (i <= j) {
+        while (a[i] < pivot) i++;
+        while (a[j] > pivot) j--;
+        if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+      }
+      if (k <= j) hi = j;
+      else if (k >= i) lo = i;
+      else break;
+    }
+    return a[k];
+  }
+  ringValue(pct) {
+    const m = this.ringUsed;
+    if (m <= 0) return 0;
+    for (let i = 0; i < m; i++) this.med[i] = this.ring[i];
+    return this.kth(Math.min(m - 1, Math.floor(m * pct)), m);
+  }
+  thrFor(p) {
+    if (!(this.floorEst > 0)) return p.minThr;
+    let thr = this.floorEst * p.openK;
+    if (thr < p.minThr) thr = p.minThr;
+    if (thr > p.maxThr) thr = p.maxThr;
+    return thr;
+  }
+  // Normalised autocorrelation peak over voice pitch lags (80…1000 Hz). 2:1 decimation
+  // keeps this under ~50k multiply-adds per analysis; cumulative energy makes the
+  // normalisation free.
+  pitchScore() {
+    const half = this.winLen >> 1;
+    const d = this.dec;
+    const lin = this.lin;
+    for (let i = 0; i < half; i++) d[i] = (lin[2 * i] + lin[2 * i + 1]) * 0.5;
+    let mean = 0;
+    for (let i = 0; i < half; i++) mean += d[i];
+    mean /= half;
+    const c = this.cum;
+    c[0] = 0;
+    for (let i = 0; i < half; i++) {
+      const v = d[i] - mean;
+      d[i] = v;
+      c[i + 1] = c[i] + v * v;
+    }
+    if (!(c[half] > 1e-7)) return 0;
+    const sr2 = this.sr / 2;
+    const lo = Math.max(2, Math.floor(sr2 / 1000));
+    const hi = Math.min(half - 24, Math.ceil(sr2 / 80));
+    let best = 0;
+    for (let L = lo; L <= hi; L += 2) {
+      const w = half - L;
+      if (w < 24) break;
+      let num = 0;
+      for (let i = 0; i < w; i++) num += d[i] * d[i + L];
+      const den = Math.sqrt(c[w] * (c[half] - c[L])) + 1e-12;
+      const r = num / den;
+      if (r > best) best = r;
+    }
+    return best > 1 ? 1 : best;
+  }
+  decide(p) {
+    const W = this.winLen;
+    const hist = this.hist;
+    const lin = this.lin;
+    let o = this.histPos;
+    for (let i = 0; i < W; i++) { lin[i] = hist[o]; o++; if (o >= W) o = 0; }
+    let s = 0;
+    for (let i = 0; i < W; i++) { const v = lin[i]; s += v * v; }
+    const winRms = Math.sqrt(s / W);
+    const dt = this.hopSec;
+    this.age += dt;
+    // short-term level movement: syllables move, fans and AC do not
+    if (!(this.slow > 0)) this.slow = Math.max(winRms, 1e-9);
+    this.slow += (winRms - this.slow) * this.slowK;
+    this.dev += (Math.abs(winRms - this.slow) - this.dev) * this.slowK;
+    const devRatio = this.dev / Math.max(this.slow, 1e-9);
+    this.devRatio = devRatio;
+    const score = winRms > 1e-5 ? this.pitchScore() : 0;
+    this.harm = score;
+    const thr = this.thrFor(p);
+    const speechish = score > 0.30 ||
+      (this.floorEst > 0 && winRms > thr * 4 && devRatio > 0.30);
+    if (speechish) {
+      this.hold = this.holdLen;
+      this.softHold = this.softLen;
+      this.voicedCount++;
+    } else {
+      if (this.hold > 0) this.hold--;
+      if (this.softHold > 0) this.softHold--;
+    }
+    // learn the room from NON-speech frames only - speech never becomes the floor
+    if (!speechish && this.hold <= 0) {
+      this.ring[this.ringPos] = winRms;
+      this.ringPos = (this.ringPos + 1) % this.ringLen;
+      if (this.ringUsed < this.ringLen) this.ringUsed++;
+    }
+    this.tick++;
+    if (this.tick >= 8) {
+      this.tick = 0;
+      const lvl = this.ringValue(0.6);
+      if (lvl > 0) this.floorEst = this.floorEst > 0 ? this.floorEst + (lvl - this.floorEst) * 0.25 : lvl;
+    }
+    let target;
+    if (speechish || this.hold > 0) {
+      target = 1;
+    } else if (this.softHold > 0) {
+      target = 0.3;
+    } else {
+      const ref = thr > 1e-9 ? thr : 1e-9;
+      target = Math.pow(this.env / ref, p.ratio);
+      const cap = p.floor * 8;
+      if (target > cap) target = cap;
+      if (target < p.floor) target = p.floor;
+    }
+    this.target = target;
+  }
+  step(frame, n, p) {
+    if (!this.hist || this.winLen < n * 2) this.init(n || 128);
+    const W = this.winLen;
+    const hist = this.hist;
+    for (let i = 0; i < n; i++) hist[(this.histPos + i) % W] = frame[i] || 0;
+    this.histPos = (this.histPos + n) % W;
+    if (this.histFill < W) this.histFill = Math.min(W, this.histFill + n);
+    let s = 0;
+    for (let i = 0; i < n; i++) { const v = frame[i] || 0; s += v * v; }
+    const rms = Math.sqrt(s / Math.max(1, n));
+    const ka = rms > this.env ? this.blockAtk : this.blockRel;
+    this.env += (rms - this.env) * ka;
+    this.acc += n;
+    if (this.acc >= this.hopLen && this.histFill >= (W >> 1)) {
+      this.acc = 0;
+      this.decide(p);
+    }
+    const kg = this.target > this.gain ? this.gAtk : this.gRel;
+    const g0 = this.gain;
+    this.gain += (this.target - this.gain) * kg;
+    return [g0, this.gain];
+  }
+}
+`;
+  const GATE_WORKLET_SRC = GATE_CORE_SRC + `
+class BmNoiseGate extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'threshold', defaultValue: 0.005, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'maxThreshold', defaultValue: 0.063, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'floor', defaultValue: 0.0025, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'openK', defaultValue: 3.16, minValue: 0.1, maxValue: 100, automationRate: 'k-rate' },
+      { name: 'ratio', defaultValue: 5, minValue: 1, maxValue: 30, automationRate: 'k-rate' }
+    ];
+  }
+  constructor() {
+    super();
+    this.core = new BmGateCore(sampleRate);
+  }
+  process(inputs, outputs, params) {
+    const out = outputs[0];
+    const inp = inputs[0];
+    const n = out && out[0] ? out[0].length : 0;
+    if (!n) return true;
+    if (!inp || !inp.length) {
+      for (let c = 0; c < out.length; c++) out[c].fill(0);
+      return true;
+    }
+    const p = {
+      minThr: params.threshold[0],
+      maxThr: params.maxThreshold[0],
+      floor: params.floor[0],
+      openK: params.openK[0],
+      ratio: params.ratio[0]
+    };
+    const g = this.core.step(inp[0], n, p);
+    const step = (g[1] - g[0]) / n;
+    for (let c = 0; c < out.length; c++) {
+      const src = inp[c] || inp[0];
+      const dst = out[c];
+      let gg = g[0];
+      for (let i = 0; i < n; i++) { dst[i] = (src[i] || 0) * gg; gg += step; }
+    }
+    return true;
+  }
+}
+registerProcessor('bm-noise-gate', BmNoiseGate);
+`;
+
+  // one implementation for the worklet and for the ScriptProcessor fallback
+  let gateCoreCls = null;
+  function gateCoreClass() {
+    if (gateCoreCls) return gateCoreCls;
+    gateCoreCls = new Function(GATE_CORE_SRC + '\nreturn BmGateCore;')();
+    return gateCoreCls;
+  }
+
+  let gateUrl = null;
+  let micChain = null; // { srcTrack, track, ctx, src, hp, lp, gate, makeup, dest }
+  let micResumeArmed = false;
+  let nsHintShown = false;
+
+  function gateModuleUrl() {
+    if (!gateUrl) {
+      gateUrl = URL.createObjectURL(new Blob([GATE_WORKLET_SRC], { type: 'application/javascript' }));
+    }
+    return gateUrl;
+  }
+
+  function gateTune(node, ctx, cfg) {
+    const minThr = dbToGain(cfg.minThrDb);
+    const maxThr = dbToGain(cfg.maxThrDb);
+    const flr = dbToGain(cfg.floorDb);
+    const openK = Math.pow(10, cfg.openDb / 20);
+    try {
+      if (node.parameters && node.parameters.get && node.parameters.get('threshold')) {
+        const t = ctx ? ctx.currentTime : 0;
+        node.parameters.get('threshold').setValueAtTime(minThr, t);
+        node.parameters.get('maxThreshold').setValueAtTime(maxThr, t);
+        node.parameters.get('floor').setValueAtTime(flr, t);
+        node.parameters.get('openK').setValueAtTime(openK, t);
+        node.parameters.get('ratio').setValueAtTime(cfg.ratio, t);
+      } else if (node._bmTune) {
+        node._bmTune.threshold = minThr;
+        node._bmTune.maxThreshold = maxThr;
+        node._bmTune.floor = flr;
+        node._bmTune.openK = openK;
+        node._bmTune.ratio = cfg.ratio;
+      }
+    } catch (e) {}
+  }
+
+  // old browsers / no worklet: the SAME core, driven from a ScriptProcessorNode.
+  // `_bmTune` keeps the worklet AudioParam names so gateTune() can retune either node.
+  function scriptGate(ctx) {
+    const block = 1024;
+    const sp = ctx.createScriptProcessor(block, 1, 1);
+    const cfg = nsCfg();
+    const st = {
+      threshold: dbToGain(cfg.minThrDb),
+      maxThreshold: dbToGain(cfg.maxThrDb),
+      floor: dbToGain(cfg.floorDb),
+      openK: Math.pow(10, cfg.openDb / 20),
+      ratio: cfg.ratio,
+    };
+    const Core = gateCoreClass();
+    const core = new Core(ctx.sampleRate || 48000);
+    core.init(block);
+    sp.onaudioprocess = function (ev) {
+      const inp = ev.inputBuffer.getChannelData(0);
+      const out = ev.outputBuffer.getChannelData(0);
+      const n = out.length;
+      const p = {
+        minThr: st.threshold,
+        maxThr: st.maxThreshold,
+        floor: st.floor,
+        openK: st.openK,
+        ratio: st.ratio,
+      };
+      const g = core.step(inp, n, p);
+      const step = (g[1] - g[0]) / n;
+      let gg = g[0];
+      for (let i = 0; i < n; i++) { out[i] = inp[i] * gg; gg += step; }
+    };
+    sp._bmTune = st;
+    return sp;
+  }
+
+  function gateNode(ctx) {
+    if (ctx.audioWorklet && ctx.audioWorklet.addModule) {
+      return ctx.audioWorklet.addModule(gateModuleUrl())
+        .then(() => new AudioWorkletNode(ctx, 'bm-noise-gate', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'speakers',
+        }))
+        .catch(() => scriptGate(ctx));
+    }
+    return Promise.resolve(scriptGate(ctx));
+  }
+
+  function destroyMicChain() {
+    const c = micChain;
+    micChain = null;
+    if (!c) return;
+    try { c.src && c.src.disconnect(); } catch (e) {}
+    try { c.hp && c.hp.disconnect(); } catch (e) {}
+    try { c.gate && c.gate.disconnect(); } catch (e) {}
+    try { c.lp && c.lp.disconnect(); } catch (e) {}
+    try { c.makeup && c.makeup.disconnect(); } catch (e) {}
+    try { c.track && c.track.stop(); } catch (e) {}
+    try { c.ctx && c.ctx.state !== 'closed' && c.ctx.close(); } catch (e) {}
+  }
+
+  function buildMicChain(rawTrack) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    let ctx;
+    try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) {
+      try { ctx = new AC(); } catch (e2) { return null; }
+    }
+    const cfg = nsCfg();
+    let src, hp, lp, makeup, dest;
+    try {
+      src = ctx.createMediaStreamSource(new MediaStream([rawTrack]));
+      hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = cfg.hp; hp.Q.value = 0.707;
+      lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = cfg.lp; lp.Q.value = 0.707;
+      makeup = ctx.createGain();
+      makeup.gain.value = dbToGain(cfg.makeupDb);
+      dest = ctx.createMediaStreamDestination();
+      src.connect(hp);
+      // the gate is spliced between the two filters once the module is ready
+      hp.connect(lp);
+      lp.connect(makeup);
+      makeup.connect(dest);
+    } catch (e) {
+      try { ctx.close(); } catch (e2) {}
+      return null;
+    }
+    // NOTE: there is deliberately NO DynamicsCompressorNode in the chain. Chrome's
+    // compressor applies a large internal makeup gain to QUIET material (~+10 dB at
+    // -30 dBFS), so the room ended up louder than the speaker and the gate's silence
+    // floor was lifted right back up. The gate only ever attenuates, which is exactly
+    // what we want.
+    const chain = {
+      srcTrack: rawTrack, ctx, src, hp, lp, gate: null, makeup, dest,
+      track: dest.stream.getAudioTracks()[0] || null,
+    };
+    micChain = chain;
+    try { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); } catch (e) {}
+    // A context that starts SUSPENDED is normal until the visitor has clicked on the page.
+    // We keep sending the raw mic (silence would look like a dead microphone), so tell the
+    // user once - otherwise the room noise stays audible and the switch looks broken.
+    setTimeout(() => {
+      if (chain !== micChain || !chain.ctx || chain.ctx.state === 'running') return;
+      armMicCtxResume();
+      if (!nsHintShown) {
+        nsHintShown = true;
+        showToast('برای فعال‌شدن نویزگیر، یک‌بار روی صفحه لمس کنید');
+      }
+    }, 2500);
+    // the gate is the part that actually removes the room; the module loads async and is
+    // spliced between the high-pass and the low-pass once it is ready
+    gateNode(ctx).then((node) => {
+      if (!node || chain !== micChain) return false;
+      try {
+        chain.hp.disconnect();
+        chain.hp.connect(node);
+        node.connect(chain.lp);
+        chain.gate = node;
+        gateTune(node, chain.ctx, nsCfg());
+        return true;
+      } catch (e) { return false; }
+    }).catch(() => {});
+    return chain;
+  }
+
+  function micChainFor(rawTrack) {
+    if (!rawTrack || rawTrack.readyState !== 'live') return null;
+    if (micChain && micChain.srcTrack === rawTrack && micChain.track && micChain.track.readyState === 'live') return micChain;
+    destroyMicChain();
+    return buildMicChain(rawTrack);
+  }
+
+  function retuneMicChain() {
+    const c = micChain;
+    if (!c) return;
+    const cfg = nsCfg();
+    const t = c.ctx ? c.ctx.currentTime : 0;
+    try { c.hp.frequency.setValueAtTime(cfg.hp, t); } catch (e) { try { c.hp.frequency.value = cfg.hp; } catch (e2) {} }
+    try { c.lp.frequency.setValueAtTime(cfg.lp, t); } catch (e) { try { c.lp.frequency.value = cfg.lp; } catch (e2) {} }
+    try { c.makeup.gain.setValueAtTime(dbToGain(cfg.makeupDb), t); } catch (e) { try { c.makeup.gain.value = dbToGain(cfg.makeupDb); } catch (e2) {} }
+    if (c.gate) gateTune(c.gate, c.ctx, cfg);
+  }
+
+  // An AudioContext created without a gesture stays SUSPENDED, and a suspended context
+  // outputs pure silence - that would look like "my mic died". Until it is allowed to
+  // run we keep sending the raw mic and swap in the filtered track on the first gesture.
+  function armMicCtxResume() {
+    if (micResumeArmed) return;
+    micResumeArmed = true;
+    const kick = () => {
+      const c = micChain;
+      if (!c || !c.ctx || c.ctx.state !== 'suspended') return;
+      c.ctx.resume().then(() => {
+        if (c === micChain && micOn) setOutgoingAudio(outgoingAudioTrack());
+      }).catch(() => {});
+    };
+    ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
+      document.addEventListener(ev, kick, { capture: true, passive: true });
+    });
+  }
+
   // apply the current setting to the live microphone track
   function applyNoiseSuppression() {
-    if (!localStream) return Promise.resolve(false);
-    const track = localStream.getAudioTracks()[0];
-    if (!track || typeof track.applyConstraints !== 'function') return Promise.resolve(false);
+    const track = localStream ? localStream.getAudioTracks()[0] : null;
+    const finish = () => {
+      if (!noiseSuppression) destroyMicChain();
+      // the outgoing track must follow the switch immediately
+      if (micOn) setOutgoingAudio(outgoingAudioTrack());
+      window.bmUpdateNoiseUI && window.bmUpdateNoiseUI();
+      return true;
+    };
+    if (!track || typeof track.applyConstraints !== 'function') return Promise.resolve(finish());
     const want = {
       echoCancellation: noiseSuppression ? true : false,
-      noiseSuppression: noiseSuppression ? true : false,
-      autoGainControl: noiseSuppression ? true : false,
+      // the browser suppressor stays OFF: our chain is the suppressor (see audioConstraints)
+      noiseSuppression: false,
+      autoGainControl: false,
     };
     return track.applyConstraints({ advanced: [want] })
-      .then(() => { window.bmUpdateNoiseUI && window.bmUpdateNoiseUI(); return true; })
-      .catch(() => false);
+      .catch(() => {})
+      .then(finish);
   }
   window.bmSetNoiseSuppression = function (on) {
     noiseSuppression = !!on;
     try { localStorage.setItem('bm_noise_suppression', noiseSuppression ? '1' : '0'); } catch (e) {}
     return applyNoiseSuppression().then(() => {
-      showToast(noiseSuppression ? 'نویزگیر روشن شد' : 'نویزگیر خاموش شد');
+      showToast(noiseSuppression ? 'نویزگیر روشن شد (' + nsLabel() + ')' : 'نویزگیر خاموش شد');
       return noiseSuppression;
     });
   };
+  window.bmSetNoiseLevel = function (level) {
+    if (!NS_LEVELS[level]) return noiseLevel;
+    noiseLevel = level;
+    noiseSuppression = true;
+    try { localStorage.setItem('bm_noise_level', level); } catch (e) {}
+    try { localStorage.setItem('bm_noise_suppression', '1'); } catch (e) {}
+    const track = localStream && localStream.getAudioTracks()[0];
+    if (track && typeof track.applyConstraints === 'function') {
+      track.applyConstraints({ advanced: [{ echoCancellation: true, noiseSuppression: false, autoGainControl: false }] }).catch(() => {});
+    }
+    retuneMicChain();
+    if (micOn) setOutgoingAudio(outgoingAudioTrack());
+    window.bmUpdateNoiseUI && window.bmUpdateNoiseUI();
+    showToast('قدرت نویزگیر: ' + nsLabel());
+    return level;
+  };
   window.toggleNoiseSuppression = function () { return window.bmSetNoiseSuppression(!noiseSuppression); };
+  // test/debug handles
+  window.__bmMicChain = function () { return micChain; };
+  window.__bmLocalStream = function () { return localStream; };
+  window.__bmOutgoingAudio = function () { return outgoingAudioTrack(); };
 
   // A capture failure must say WHAT failed. Silence here was indistinguishable
   // from a network problem: the call page just looked empty.
@@ -308,8 +854,20 @@
       .then((s) => {
         const t = s.getAudioTracks()[0];
         if (!t) throw new Error('no audio track');
+        // a previous capture (rejoin) must not stay first in the stream: getAudioTracks()[0]
+        // is what everything reads, and a stale dead track there would break the chain
+        localStream.getAudioTracks().forEach((old) => {
+          if (old === t) return;
+          try { localStream.removeTrack(old); old.stop(); } catch (e) {}
+        });
         localStream.addTrack(t);
         micOn = true;
+        // build the filter chain NOW, not when the first peer appears: the very first
+        // RTP packet must already carry the filtered (gated) track, never the raw room
+        if (noiseSuppression) {
+          const chain = micChainFor(t);
+          if (chain) { try { if (chain.ctx.state === 'suspended') chain.ctx.resume().catch(() => {}); } catch (e) {} }
+        }
       })
       .catch((err) => {
         micOn = false;
@@ -361,14 +919,8 @@
   }
 
   function addLocalTracks(st) {
-    const pc = st.pc;
-    if (localStream) {
-      localStream.getTracks().forEach(t => {
-        if (t.kind === 'video') return; // video sender is managed by ensureVideoSender
-        const exists = pc.getSenders().some(s => s.track && s.track.kind === t.kind);
-        if (!exists) pc.addTrack(t, localStream);
-      });
-    }
+    // audio AND video senders are managed on their own: the audio one may be the
+    // filtered track (or the silence keepalive), never the raw microphone
     ensureVideoSender(st);
     // an audio sender must ALWAYS exist: even with no mic permission we send silence,
     // so the m-line stays negotiated and the connection keeps its consent alive
@@ -433,7 +985,16 @@
     if (shareAudio && screenAudioTrack) return screenAudioTrack;
     if (micOn && localStream) {
       const t = localStream.getAudioTracks()[0];
-      if (t && t.readyState === 'live') return t;
+      if (t && t.readyState === 'live') {
+        if (noiseSuppression && t.enabled) {
+          const chain = micChainFor(t);
+          // a suspended AudioContext outputs SILENCE: routing through it then would look
+          // like a dead microphone, so send the raw mic until it is allowed to run
+          if (chain && chain.track && chain.ctx.state === 'running') return chain.track;
+          armMicCtxResume();
+        }
+        return t;
+      }
     }
     return getSilentTrack();
   }
@@ -975,6 +1536,10 @@
       timeout: 20000
     });
     window.BM_SOCKET = socket;
+    // A STABLE getter for the call socket. live.js also opens a socket on this page and
+    // can overwrite window.BM_SOCKET (its token fetch is async on a fresh visit), so the
+    // shared box must never read that mutable global at emit time.
+    window.bmCallSocket = () => socket;
     // whiteboard events ride on the same socket
     if (window.bmWbSocketBind) window.bmWbSocketBind(socket);
 
@@ -1177,7 +1742,20 @@
     socket.on(EV.CHAT_NEW_MESSAGE, d => {
       memberNames.set(d.userId, d.name);
       appendMessage(d.userId, d.name, d.body, d.userId === I.me.id);
-      if (d.userId !== I.me.id) showChatToast(d.name, d.body);
+      if (d.userId !== I.me.id) {
+        showChatToast(d.name, d.body);
+        // The user may be on another tab/window: raise an OS notification (with the
+        // Android-style chime) carrying the sender and the message text. bmNotify is a
+        // no-op while this tab is the visible one.
+        if (window.bmNotify) {
+          window.bmNotify({
+            title: (d.name || 'پیام جدید') + ' — پیام تماس',
+            body: d.body,
+            tag: 'call:' + (d.id || d.clientMsgId || d.body || ''),
+            url: location.href,
+          });
+        }
+      }
     });
     socket.on(EV.CHAT_ACK, d => {
       if (!d.ok) showToast('ارسال پیام ناموفق: ' + (d.error || ''));
@@ -1350,7 +1928,7 @@
         ${av}
         <span class="font-label-sm text-on-surface-variant">${escapeHtml(self ? 'شما' : (name || 'بدون نام'))}</span>
       </div>
-      <div class="${self ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-high text-on-surface'} p-3 rounded-2xl ${self ? 'rounded-tl-sm' : 'rounded-tr-sm'} text-body-sm max-w-[85%] border border-white/5">${escapeHtml(body)}</div>`;
+      <div class="bm-chat-body ${self ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-high text-on-surface'} p-3 rounded-2xl ${self ? 'rounded-tl-sm' : 'rounded-tr-sm'} text-body-sm max-w-[85%] border border-white/5">${window.bmLinkify ? window.bmLinkify(body) : escapeHtml(body)}</div>`;
     box.appendChild(wrap);
     box.scrollTop = box.scrollHeight;
   }
@@ -2150,7 +2728,24 @@
       if (svg) { svg.setAttribute('fill', noiseSuppression ? 'currentColor' : 'none'); svg.classList.toggle('text-primary', noiseSuppression); svg.classList.toggle('text-on-surface-variant', !noiseSuppression); }
     }
     const b = $('btn-noise');
-    if (b) b.title = noiseSuppression ? 'نویزگیر روشن است' : 'نویزگیر خاموش است';
+    if (b) b.title = noiseSuppression ? ('نویزگیر روشن است (' + nsLabel() + ')') : 'نویزگیر خاموش است';
+    // strength chips
+    document.querySelectorAll('.bm-ns-lv').forEach((chip) => {
+      const on = chip.getAttribute('data-ns-level') === noiseLevel;
+      chip.classList.toggle('is-on', on && noiseSuppression);
+      chip.setAttribute('aria-pressed', on && noiseSuppression ? 'true' : 'false');
+      chip.disabled = false;
+    });
+    const hint = $('ns-hint');
+    if (hint) {
+      hint.textContent = !noiseSuppression
+        ? 'نویزگیر خاموش است؛ صدای محیط هم ارسال می‌شود.'
+        : noiseLevel === 'soft'
+          ? 'حذف ملایم صدای محیط؛ صدا طبیعی‌تر می‌ماند.'
+          : noiseLevel === 'max'
+            ? 'قوی‌ترین حالت؛ صدای محیط کاملاً قطع می‌شود.'
+            : 'صدای محیط کاملاً حذف می‌شود؛ فقط صدای شما ارسال می‌شود.';
+    }
   };
   window.toggleNoiseMenu = function (e) {
     if (e) e.stopPropagation();

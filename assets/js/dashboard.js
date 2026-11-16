@@ -115,16 +115,32 @@
     var r = trigger.getBoundingClientRect();
     var w = userMenu.offsetWidth || 258;
     var h = userMenu.offsetHeight || 260;
-    var rightGap = window.innerWidth - r.right;
-    rightGap = Math.min(Math.max(8, rightGap), Math.max(8, window.innerWidth - w - 8));
+    var margin = 8;
+    var vw = window.innerWidth;
+    var maxGap = Math.max(margin, vw - w - margin);
+    // The account key in the header is the LAST item, i.e. the physical LEFT edge in this
+    // RTL layout, so a menu hung to its left would run off the screen (it used to sit 18px
+    // left of the key). For that key the menu is placed 20px past its LEFT edge - it really
+    // shifts ~20px to the right. Every other trigger (the sidebar block, the drawer) keeps
+    // the classic "hang under the trigger, clamped to the viewport" placement.
+    var shift = trigger.classList && trigger.classList.contains('dash-header-user') ? 20 : 0;
+    var rightGap = vw - r.right - shift;
+    var left = 'auto', right = 'auto';
+    if (rightGap >= margin && rightGap <= maxGap) {
+      right = rightGap;
+    } else if (shift) {
+      left = Math.min(Math.max(margin, r.left + shift), maxGap);
+    } else {
+      right = Math.min(Math.max(margin, rightGap), maxGap);
+    }
     var top = r.bottom + 8;
     if (top + h > window.innerHeight - 8) {
       var above = r.top - h - 8;
       top = above >= 8 ? above : Math.max(8, window.innerHeight - h - 8);
     }
     userMenu.style.top = Math.round(top) + 'px';
-    userMenu.style.right = Math.round(rightGap) + 'px';
-    userMenu.style.left = 'auto';
+    userMenu.style.right = right === 'auto' ? 'auto' : Math.round(right) + 'px';
+    userMenu.style.left = left === 'auto' ? 'auto' : Math.round(left) + 'px';
     userMenu.style.visibility = '';
   }
 

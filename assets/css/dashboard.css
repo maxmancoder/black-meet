@@ -1663,7 +1663,26 @@
   font-size: 12.5px;
   line-height: 1.9;
   word-break: break-word;
+  /* keep the line breaks somebody typed */
+  white-space: pre-wrap;
 }
+/* a link inside a bubble is a real, clickable link (bmLinkify) */
+.dash-bubble .bm-link,
+.mem-bubble .bm-link,
+.auth-bubble .bm-link,
+.bm-chat-body .bm-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  word-break: break-all;
+  unicode-bidi: isolate;
+}
+.dash-bubble-row.is-them .dash-bubble .bm-link { color: var(--d-accent-2, #8b7dff); }
+.dash-bubble .bm-link:hover,
+.mem-bubble .bm-link:hover,
+.auth-bubble .bm-link:hover,
+.bm-chat-body .bm-link:hover { opacity: .82; }
 .dash-bubble-row.is-them .dash-bubble { border-start-start-radius: 5px; }
 .dash-bubble-row.is-me .dash-bubble {
   border-start-end-radius: 5px;
@@ -2104,6 +2123,8 @@
   border: 1px solid var(--d-line);
   font-size: 11.5px;
   line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .auth-bubble-row.is-them .auth-bubble { background: rgba(255, 255, 255, .05); color: var(--d-text-dim); border-start-start-radius: 5px; }
 .auth-bubble-row.is-me .auth-bubble { background: linear-gradient(180deg, #6d4dff, #5334e6); color: #fff; border-color: rgba(255, 255, 255, .12); border-start-end-radius: 5px; }
@@ -2384,7 +2405,7 @@
 .mem-brow { display: flex; }
 .mem-brow.is-them { justify-content: flex-start; }
 .mem-brow.is-me { justify-content: flex-end; }
-.mem-bubble { max-width: 86%; padding: 8px 11px; border-radius: 13px; border: 1px solid var(--d-line); font-size: 11.5px; line-height: 1.8; }
+.mem-bubble { max-width: 86%; padding: 8px 11px; border-radius: 13px; border: 1px solid var(--d-line); font-size: 11.5px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
 .mem-brow.is-them .mem-bubble { background: rgba(255, 255, 255, .05); color: var(--d-text-dim); border-start-start-radius: 5px; }
 .mem-brow.is-me .mem-bubble { background: linear-gradient(180deg, #6d4dff, #5334e6); color: #fff; border-color: rgba(255, 255, 255, .12); border-start-end-radius: 5px; }
 .mem-replyrow { display: flex; align-items: center; gap: 7px; }

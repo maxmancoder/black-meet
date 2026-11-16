@@ -59,7 +59,7 @@
     messages.forEach(m => {
       const el = document.createElement('div');
       el.className = 'auth-bubble-row ' + (m.from_manager ? 'is-them' : 'is-me');
-      el.innerHTML = '<div class="auth-bubble">' + esc(m.body) + '</div>';
+      el.innerHTML = '<div class="auth-bubble">' + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>';
       box.appendChild(el);
     });
     box.scrollTop = box.scrollHeight;

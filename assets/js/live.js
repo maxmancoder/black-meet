@@ -114,7 +114,12 @@
       timeout: 15000,
       forceNew: true
     });
-    window.BM_SOCKET = socket;
+    // On the call page call.js owns window.BM_SOCKET: its socket is the one that joined
+    // the meeting room. This live socket is only for global notifications, so keep it in
+    // its own global instead of replacing the call socket mid-page (that silently broke
+    // every shared-box event, which used to read window.BM_SOCKET at emit time).
+    window.BM_LIVE_SOCKET = socket;
+    if (!window.__BM_IS_CALL_PAGE) window.BM_SOCKET = socket;
 
     socket.on('connect', function () {
       emitLocal('live:connected', true);

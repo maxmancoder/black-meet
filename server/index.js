@@ -90,6 +90,7 @@ async function main() {
 
   // shared call files belong to a live session only — drop whatever a previous run left
   require('./lib/callfiles').purgeInactive();
+  require('./lib/callfiles').purgeIncoming();
 
   ensureAdmin();
   const ustats = usersdb.stats();

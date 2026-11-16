@@ -285,7 +285,7 @@
         <label class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/25 cursor-pointer hover:border-primary/50 transition-colors">
             <span class="min-w-0">
                 <span class="block font-body-sm text-body-sm text-on-surface">نویزگیر میکروفون</span>
-                <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4 mt-0.5">صدای فن، همهمه و کیبورد حذف می‌شود</span>
+                <span class="block font-label-sm text-on-surface-variant text-[11px] leading-4 mt-0.5">صدای محیط، فن، همهمه و کیبورد حذف می‌شود</span>
             </span>
             <span class="relative inline-flex items-center shrink-0">
                 <input type="checkbox" id="noise-suppression" class="peer sr-only" checked onchange="bmSetNoiseSuppression(this.checked)"/>
@@ -293,6 +293,15 @@
                 <span class="absolute right-0.5 w-5 h-5 rounded-full bg-on-surface-variant transition-all peer-checked:right-[22px] peer-checked:bg-on-primary"></span>
             </span>
         </label>
+        <div class="mt-2 px-1">
+            <div class="font-label-sm text-on-surface-variant text-[11px] mb-1.5">قدرت نویزگیر</div>
+            <div class="bm-ns-levels" role="group" aria-label="قدرت نویزگیر">
+                <button type="button" class="bm-ns-lv" data-ns-level="soft" onclick="bmSetNoiseLevel('soft')">ملایم</button>
+                <button type="button" class="bm-ns-lv" data-ns-level="strong" onclick="bmSetNoiseLevel('strong')">قوی</button>
+                <button type="button" class="bm-ns-lv" data-ns-level="max" onclick="bmSetNoiseLevel('max')">حداکثر</button>
+            </div>
+            <p class="font-label-sm text-on-surface-variant text-[10.5px] leading-4 mt-2 mb-0" id="ns-hint">صدای محیط کاملاً حذف می‌شود؛ فقط صدای شما ارسال می‌شود.</p>
+        </div>
     </div>
 </div>
 
