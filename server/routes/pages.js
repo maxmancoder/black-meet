@@ -8,6 +8,7 @@ const sessions = require('./../lib/sessions');
 const themesLib = require('./../lib/themes');
 const ranks = require('./../lib/ranks');
 const settings = require('./../lib/settings');
+const restrictions = require('./../lib/restrictions');
 const callfiles = require('./../lib/callfiles');
 const { toFaDigits } = require('./../lib/helpers');
 
@@ -409,6 +410,9 @@ router.get('/members', (req, res) => {
     canRequests,
     canDecide,
     canChangeMode: ranks.canChangeSignupMode(me),
+    canLimits: !!me.is_manager,
+    limits: restrictions.all(),
+    limitDefs: restrictions.DEFINITIONS,
     rankLabel: ranks.rankLabel(me),
     initials: initials(me.display_name),
   }));
@@ -484,6 +488,7 @@ router.get('/meeting', (req, res) => {
     token: makeSocketToken(me.id, meeting.id),
     socketUrl: '',
     iceServers: turnConfig(),
+    limits: restrictions.forUser(me),
     base: baseUrl(req),
     participants: safeParticipants,
     messages,

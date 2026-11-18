@@ -107,11 +107,11 @@
   window.switchSection = function (name) {
     currentSection = name;
     closeMenus();
-    ['members', 'requests'].forEach(s => {
+    ['members', 'requests', 'limits'].forEach(s => {
       const sec = $('section-' + s);
       if (sec) sec.classList.toggle('hidden', s !== name);
     });
-    ['members', 'requests'].forEach(s => {
+    ['members', 'requests', 'limits'].forEach(s => {
       const nav = $('nav-' + s);
       if (!nav) return;
       const active = s === name;
@@ -119,6 +119,7 @@
       nav.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     if (name === 'requests') { renderRequests(); refreshBadge(); }
+    if (name === 'limits') { renderLimits(); renderLimitUsers(); }
   };
 
   // ------------------------------------------------------------------
@@ -329,6 +330,7 @@
         const u = allUsers.find(x => x.id === userId);
         if (u) u.is_limited = d.is_limited ? 1 : 0;
         render();
+        if (currentSection === 'limits') renderLimitUsers();
         showToast(d.is_limited ? 'کاربر محدود شد' : 'محدودیت برداشته شد', 3000);
       })
       .catch(() => { showToast('خطای شبکه'); restore(); });
@@ -654,8 +656,122 @@
   }
 
   // ------------------------------------------------------------------
+  // per-rank restrictions (مدیریت اعضا → محدودیت کاربران)
+  // ------------------------------------------------------------------
+  let limitState = null;
+  const clone = o => JSON.parse(JSON.stringify(o || {}));
+  const ico = (n, fill) => (typeof window.bmIcon === 'function' ? window.bmIcon(n, '', !!fill) : '');
+
+  function renderLimits() {
+    if (!PERM.limits) return;
+    if (!limitState) limitState = clone(window.LIMITS);
+    const host = $('limit-ranks');
+    if (!host) return;
+    const defs = window.LIMIT_DEFS || [];
+    const order = ['manager', 'premium', 'admin', 'user'];
+    host.innerHTML = order.map((rank) => {
+      const rows = defs.map((d) => {
+        const cell = (limitState[rank] || {})[d.key] || { on: false, value: 0 };
+        const isNum = d.type === 'number';
+        const locked = rank === 'manager' && !isNum; // the main manager is never locked out
+        const state = !cell.on ? ' is-off' : '';
+        return '<div class="lim-row' + state + '" data-lim-row="' + d.key + '">' +
+          '<div class="lim-row-main"><span class="lim-row-label">' + esc(d.label) + '</span>' +
+          (d.hint ? '<span class="lim-row-hint">' + esc(d.hint) + '</span>' : '') + '</div>' +
+          (isNum
+            ? '<input class="lim-num" type="number" inputmode="numeric" min="' + d.min + '" max="' + d.max + '"' +
+              ' data-lim-rank="' + rank + '" data-lim-key="' + d.key + '" value="' + Number(cell.value || 0) + '"' +
+              (cell.on ? '' : ' disabled') + ' aria-label="' + esc(d.label) + '"/>'
+            : '') +
+          '<label class="bm-switch lim-switch" title="' + (locked ? 'مدیر اصلی همیشه دسترسی کامل دارد' : 'خاموش = اعمال نشود') + '">' +
+          '<input type="checkbox" data-lim-rank="' + rank + '" data-lim-key="' + d.key + '"' +
+          (cell.on ? ' checked' : '') + (locked ? ' disabled' : '') + '/><span class="bm-switch-slider"></span></label>' +
+          '</div>';
+      }).join('');
+      return '<article class="lim-rank-card" data-rank="' + rank + '">' +
+        '<header class="lim-rank-head"><span class="lim-rank-ico">' + ico(rank === 'manager' ? 'shield_person' : 'group', true) + '</span>' +
+        '<div><h3>' + esc(RANK_LABELS[rank]) + '</h3><p>' + (rank === 'manager' ? 'دسترسی کامل همیشگی' : 'محدودیت‌های مخصوص همین نوع کاربر') + '</p></div></header>' +
+        '<div class="lim-rows">' + rows + '</div></article>';
+    }).join('');
+  }
+
+  function bindLimitEvents() {
+    const host = $('limit-ranks');
+    if (!host || host.dataset.bound === '1') return;
+    host.dataset.bound = '1';
+    host.addEventListener('change', (ev) => {
+      const t = ev.target;
+      const rank = t && t.dataset && t.dataset.limRank;
+      const key = t && t.dataset && t.dataset.limKey;
+      if (!rank || !key || !limitState) return;
+      if (!limitState[rank]) limitState[rank] = {};
+      const cell = limitState[rank][key] = limitState[rank][key] || { on: false, value: 0 };
+      if (t.type === 'checkbox') {
+        cell.on = !!t.checked;
+        const num = host.querySelector('input[type="number"][data-lim-rank="' + rank + '"][data-lim-key="' + key + '"]');
+        if (num) num.disabled = !cell.on;
+        const row = t.closest('.lim-row');
+        if (row) row.classList.toggle('is-off', !cell.on);
+      } else {
+        cell.value = Number(t.value) || 0;
+        cell.on = true;
+        const box = host.querySelector('input[type="checkbox"][data-lim-rank="' + rank + '"][data-lim-key="' + key + '"]');
+        if (box && !box.checked) { box.checked = true; const row = box.closest('.lim-row'); if (row) row.classList.remove('is-off'); }
+      }
+      const st = $('lim-save-state');
+      if (st) st.textContent = 'تغییرات ذخیره نشده';
+    });
+  }
+
+  window.saveRestrictions = function () {
+    if (!limitState) return;
+    const btn = $('lim-save');
+    if (btn) btn.disabled = true;
+    post('api/admin/members', { action: 'save_restrictions', limits: JSON.stringify(limitState) })
+      .then((d) => {
+        if (d && d.ok) {
+          limitState = clone(d.limits);
+          window.LIMITS = d.limits;
+          const st = $('lim-save-state');
+          if (st) st.textContent = 'ذخیره شد ✓';
+          showToast('محدودیت‌ها ذخیره شد');
+        } else {
+          showToast((d && d.msg) || 'ذخیره محدودیت‌ها ناموفق بود');
+        }
+      })
+      .catch(() => showToast('ارتباط برقرار نشد'))
+      .finally(() => { if (btn) btn.disabled = false; });
+  };
+
+  function renderLimitUsers() {
+    const host = $('limit-users');
+    if (!host || !PERM.limits) return;
+    const inp = $('limit-search');
+    const q = String((inp && inp.value) || '').trim().toLowerCase();
+    const rows = allUsers.filter((u) => !q || [u.display_name, u.username, u.email, u.phone]
+      .some((v) => String(v || '').toLowerCase().indexOf(q) !== -1));
+    host.innerHTML = rows.length ? rows.map((u) =>
+      '<article class="lim-user-card">' + avatarHtml(u) +
+      '<div class="lim-user-main"><strong>' + esc(u.display_name || u.username || 'کاربر') + '</strong>' +
+      '<span class="lim-user-sub" dir="ltr">@' + esc(u.username || '') + '</span>' +
+      '<div class="lim-user-badges">' + rankBadge(u) + limitedBadge(u) + '</div></div>' +
+      (u.is_manager ? '' : '<button type="button" data-no-soft onclick="toggleLimit(' + u.id + ')" class="' +
+        (u.is_limited ? 'mem-act mem-act-ok' : 'mem-act mem-act-danger') + '">' +
+        (u.is_limited ? 'رفع محدودیت' : 'محدود کردن') + '</button>') +
+      '</article>').join('')
+      : '<p class="lim-empty">کاربری با این مشخصات پیدا نشد.</p>';
+  }
+
+  // ------------------------------------------------------------------
   // boot
   // ------------------------------------------------------------------
+  if (PERM.limits) {
+    bindLimitEvents();
+    renderLimits();
+    renderLimitUsers();
+    const ls = $('limit-search');
+    if (ls) ls.addEventListener('input', renderLimitUsers);
+  }
   const ms = $('member-search');
   if (ms) ms.addEventListener('input', render);
   const ps = $('page-size');

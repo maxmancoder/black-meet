@@ -608,7 +608,9 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
   // old browsers / no worklet: the SAME core, driven from a ScriptProcessorNode.
   // `_bmTune` keeps the worklet AudioParam names so gateTune() can retune either node.
   function scriptGate(ctx) {
-    const block = 1024;
+    // 1024 frames was ~21ms of extra buffering on the no-worklet path — audible as the
+    // "voice arrives a beat late" complaint. 512 keeps the CPU cost sane while halving it.
+    const block = 512;
     const sp = ctx.createScriptProcessor(block, 1, 1);
     const cfg = nsCfg();
     const st = {
@@ -950,7 +952,9 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
-      if (!silentCtx) silentCtx = new AC();
+      if (!silentCtx) {
+        try { silentCtx = new AC({ latencyHint: 'interactive' }); } catch (e) { silentCtx = new AC(); }
+      }
       const dest = silentCtx.createMediaStreamDestination();
       let src = null;
       if (silentCtx.createConstantSource) {
@@ -1207,7 +1211,14 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
   // parallel used to produce half-finished SDP exchanges that never healed on their own.
   async function negotiate(st, uid) {
     const pc = st.pc;
-    if (!socket || !socket.connected) return;
+    if (!socket || !socket.connected) {
+      // An ICE restart during a socket outage used to create a local offer that was never
+      // emitted — the retry button looked successful but nothing reached the peer. Keep
+      // a flag instead and send the offer as soon as the socket is back.
+      st.pendingOffer = true;
+      return;
+    }
+    st.pendingOffer = false;
     // a glare is already in flight (or the state is not answerable right now) — the
     // spec re-fires negotiationneeded once we are stable again if it is still needed
     if (st.makingOffer || pc.signalingState !== 'stable') return;
@@ -1271,6 +1282,7 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
       pendingCandidates: [],
       restartTries: 0,
       restartTimer: null,
+      pendingOffer: false,
       iceRestartAt: 0,
     };
     const pc = st.pc;
@@ -1306,14 +1318,16 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     pc.onnegotiationneeded = () => { negotiate(st, peer.userId); };
     // ICE restart: it only works in the 'stable' state, so a request that arrives
     // too early is retried instead of being dropped (that was the "refresh fixes it" bug)
-    const askRestart = () => {
-      if (st.restartTimer) return;
+    const askRestart = (force) => {
+      // A click on «تلاش دوباره» must never be swallowed by a watchdog backoff timer.
+      if (st.restartTimer && !force) return;
+      if (force) { clearTimeout(st.restartTimer); st.restartTimer = null; st.iceRestartAt = 0; }
       const attempt = () => {
         st.restartTimer = null;
         if (pc.connectionState === 'closed') return;
-        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+        if (!force && (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed')) return;
         // never restart in a storm: one restart every few seconds at most
-        if (Date.now() - (st.iceRestartAt || 0) < 4000) {
+        if (!force && Date.now() - (st.iceRestartAt || 0) < 4000) {
           st.restartTimer = setTimeout(attempt, 4000);
           if (st.restartTimer && st.restartTimer.unref) st.restartTimer.unref();
           return;
@@ -1550,15 +1564,16 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
       setConn('زنده', 'bg-secondary');
       joinedRoom = false;
       doJoin();
-      // the network flapped: the peer connections are probably dead. Ask every peer
-      // for a fresh ICE session instead of waiting for a page refresh.
-      pcMap.forEach((st) => {
-        try {
-          if (st.pc.connectionState === 'connected' || st.pc.connectionState === 'connecting') {
-            if (st.askRestart) st.askRestart();
-          }
-        } catch (e) {}
-      });
+      // The network flapped. Previously only HEALTHY peers were restarted, so the dead
+      // ones (the reason the banner appeared) were left for the 15s watchdog — and an
+      // offer created while the socket was down was silently dropped. Repair the dead
+      // peers and send every deferred offer now that signalling works again.
+      setTimeout(() => {
+        recoverPeers();
+        pcMap.forEach((st, uid) => {
+          if (st.pendingOffer) { st.pendingOffer = false; setTimeout(() => negotiate(st, uid), 150); }
+        });
+      }, 600);
     });
     socket.on('disconnect', () => {
       setConn('قطع', 'bg-error');
@@ -2109,25 +2124,66 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     if (el) el.classList.add('hidden');
   };
   // a fresh ICE session for every peer + a new grace window (what F5 used to do)
+  let retryConnectArmed = false;
   window.bmRetryIce = function () {
     netBad.clear();
     updateNetBanner();
+    showToast('در حال تلاش دوباره برای برقراری اتصال…');
+
+    // The usual "connection dropped mid-call" is the SIGNALLING socket going away.
+    // Restarting ICE then can only create an offer that is never emitted (negotiate()
+    // refuses while disconnected) — the banner came back 12s later and nothing healed.
+    // Reconnect first; the normal connect handler re-joins, then we repair every peer.
+    if (!socket || !socket.connected) {
+      if (!retryConnectArmed) {
+        retryConnectArmed = true;
+        const onBack = () => {
+          if (!retryConnectArmed) return;
+          retryConnectArmed = false;
+          setTimeout(() => {
+            recoverPeers();
+            pcMap.forEach((st, uid) => {
+              if (st.pendingOffer) { st.pendingOffer = false; setTimeout(() => negotiate(st, uid), 150); }
+            });
+          }, 700);
+        };
+        if (socket) socket.once('connect', onBack);
+        try { if (socket) socket.connect(); } catch (e) {}
+        setTimeout(() => { if (socket && socket.connected) onBack(); }, 9000);
+      }
+      return;
+    }
+
     let n = 0;
     pcMap.forEach((st, uid) => {
       try {
         st.restartTries = 0;
         st.iceRestartAt = 0;
         armNetTimer(st, uid);
-        if (st.askRestart) st.askRestart();
+        // force bypasses any watchdog backoff timer that would swallow the click
+        if (st.askRestart) st.askRestart(true);
         else if (st.pc.signalingState === 'stable') negotiate(st, uid);
         n++;
       } catch (e) { /* one broken peer must not stop the rest */ }
     });
     if (n === 0) {
       // no peer objects at all: re-run the join so the server sends the roster again
-      if (socket && socket.connected) doJoin();
+      joinedRoom = false;
+      doJoin();
     }
-    showToast('در حال تلاش دوباره برای برقراری اتصال…');
+    // if the link is still dead 9s later, refresh the whole join/roster as a last resort
+    setTimeout(() => {
+      let healed = false;
+      pcMap.forEach((st) => {
+        try {
+          if (st.pc.connectionState === 'connected' || st.pc.iceConnectionState === 'connected') healed = true;
+        } catch (e) {}
+      });
+      if (!healed && socket && socket.connected) {
+        joinedRoom = false;
+        doJoin(() => setTimeout(recoverPeers, 500));
+      }
+    }, 9000);
   };
 
   // a peer that is not 'connected' after this long is reported (relay setup on a bad
@@ -3244,6 +3300,21 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     });
   };
 
+  function applyRankRestrictions() {
+    const rows = (window.INIT && window.INIT.limits && window.INIT.limits.rows) || {};
+    const blocked = key => !!(rows[key] && rows[key].on === false);
+    const hide = (id, key) => { if (blocked(key)) { const el = $(id); if (el) el.classList.add('hidden'); } };
+    hide('btn-wb', 'can_whiteboard');
+    hide('btn-web', 'can_use_web_box');
+    hide('btn-share', 'can_share_screen');
+    hide('btn-chat-panel', 'can_send_chat');
+    hide('btn-emoji', 'can_send_emoji');
+    if (blocked('can_send_chat')) {
+      const inp = $('chat-input');
+      if (inp) { inp.disabled = true; inp.placeholder = 'ارسال پیام برای نوع کاربر شما غیرفعال است'; }
+    }
+  }
+
   function init() {
     renderSelf();
     window.bmUpdateNoiseUI && window.bmUpdateNoiseUI();
@@ -3285,6 +3356,13 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     const mm = $('member-menu');
     if (mm) mm.addEventListener('click', e => e.stopPropagation());
     document.addEventListener('click', () => { const m = $('member-menu'); if (m) m.classList.add('hidden'); });
+
+    // Hide the controls this rank is not allowed to use. The server enforces the same
+    // switches on every socket event, so this is only the visible half of the rule.
+    applyRankRestrictions();
+    // always initialise the shared-box module (it also hides rank-restricted menu items);
+    // CALL_WELCOME re-calls it with the room's current box when one already exists.
+    if (window.bmWebInit) window.bmWebInit(null);
 
     // whiteboard canvas / pointer wiring (call.ejs ships the markup)
     if (window.bmWbInit) window.bmWbInit();

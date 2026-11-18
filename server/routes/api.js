@@ -24,6 +24,7 @@ const callfiles = require('./../lib/callfiles');
 const siteicon = require('./../lib/siteicon');
 const avatars = require('./../lib/avatars');
 const turnLib = require('./../lib/turn');
+const restrictions = require('./../lib/restrictions');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -297,6 +298,9 @@ router.post('/meetings/create', (req, res) => {
     if (me.is_limited) {
       return bad(res, { ok: false, msg: 'حساب شما محدود شده و اجازه ایجاد تماس ندارید' }, 403);
     }
+    if (!restrictions.allowed(me, 'can_create_meeting')) {
+      return bad(res, { ok: false, msg: 'ایجاد تماس برای کاربران نوع شما غیرفعال است' }, 403);
+    }
 
     const modeCheck = ranks.canCreateForMeetingMode(me, settings.meetingCreateMode());
     if (!modeCheck.ok) {
@@ -316,9 +320,19 @@ router.post('/meetings/create', (req, res) => {
   const roomId = generateRoomId();
   const defaultMedia = String(req.body.default_media) === '0' ? 0 : 1;
   // "join without approval": OFF unless the creator explicitly switches it on
-  const openJoin = String(req.body.open_join) === '1' ? 1 : 0;
+  const wantOpenJoin = String(req.body.open_join) === '1';
+  if (wantOpenJoin && !restrictions.allowed(me, 'can_open_join')) {
+    return bad(res, { ok: false, msg: 'ورود بدون تأیید ادمین برای کاربران نوع شما غیرفعال است' }, 403);
+  }
+  const openJoin = wantOpenJoin ? 1 : 0;
+  const now = sqlNow();
   const r = dbm.run('INSERT INTO meetings (room_id, title, creator_id, active, default_media, open_join, created_at) VALUES (?,?,?,1,?,?,?)',
-    [roomId, title, me.id, defaultMedia, openJoin, sqlNow()]);
+    [roomId, title, me.id, defaultMedia, openJoin, now]);
+  // Durable quota ledger: a later deletion of this meeting must not restore the day's count.
+  dbm.run(
+    'INSERT OR IGNORE INTO meeting_creates (user_id, meeting_id, room_id, created_at) VALUES (?,?,?,?)',
+    [me.id, r.lastInsertRowid, roomId, now]
+  );
   dbm.run(
     'INSERT INTO meeting_participants (meeting_id, user_id, display_name, username, status, role, joined_at) VALUES (?,?,?,?,?,?,?)',
     [r.lastInsertRowid, me.id, me.display_name, me.username, 'approved', 'admin', sqlNow()]
@@ -681,7 +695,19 @@ function callUploadGuard(req, res, next) {
   const roomId = callUploadRoom(req);
   const access = callRoomAccess(req, res, roomId);
   if (!access) return;
-  req._call = { me, meeting: access.meeting, room: roomId };
+  // Per-rank file restrictions: an OFF switch means unlimited. Check the header before
+  // multer starts reading a multi-megabyte body, so a forbidden upload fails instantly.
+  const row = dbm.get('SELECT rank, is_manager FROM users WHERE id=?', [Number(me.id)]) || me;
+  if (!restrictions.allowed(row, 'can_upload_call_file')) {
+    return bad(res, { ok: false, msg: 'آپلود فایل برای کاربران نوع شما غیرفعال است' }, 403);
+  }
+  const capMb = restrictions.limit(row, 'call_file_mb');
+  const maxBytes = capMb > 0 ? capMb * 1024 * 1024 : Infinity;
+  const contentLength = Number(req.get('content-length') || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return bad(res, { ok: false, msg: 'حجم فایل بیش از ' + capMb + ' مگابایت است' }, 413);
+  }
+  req._call = { me, meeting: access.meeting, room: roomId, maxBytes, capMb };
   return next();
 }
 
@@ -714,6 +740,10 @@ function callFilePayload(f) {
 router.post('/call/file', callUploadGuard, callDiskUpload.single('file'), (req, res) => {
   const st = req._call;
   if (!req.file) return bad(res, { ok: false, msg: 'فایلی انتخاب نشده است' });
+  if (Number.isFinite(st.maxBytes) && req.file.size > st.maxBytes) {
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    return bad(res, { ok: false, msg: 'حجم فایل بیش از ' + st.capMb + ' مگابایت است' });
+  }
   const saved = callfiles.adopt(st.room, st.me.id, req.file);
   if (!saved.ok) {
     const msg = saved.error === 'too-large'
@@ -744,6 +774,9 @@ router.post('/call/file/finish', callUploadGuard, async (req, res) => {
   const st = req._call;
   const b = req.body || {};
   try {
+    if (Number.isFinite(st.maxBytes) && Number(b.size) > st.maxBytes) {
+      return bad(res, { ok: false, msg: 'حجم فایل بیش از ' + st.capMb + ' مگابایت است' });
+    }
     const r = await callfiles.finishParts(st.room, st.me.id, {
       uploadId: String(req.get('x-bm-upload-id') || b.uploadId || ''),
       total: Number(req.get('x-bm-total') || b.total),
@@ -875,11 +908,26 @@ router.all('/admin/members', (req, res) => {
   if (!ranks.canManageUsers(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
 
   if (req.method === 'GET') {
-    return ok(res, { ok: true, users: usersForViewer(me) });
+    return ok(res, {
+      ok: true,
+      users: usersForViewer(me),
+      limits: restrictions.all(),
+      limitDefs: restrictions.DEFINITIONS,
+      canEditLimits: !!me.is_manager,
+    });
   }
 
   if (req.method !== 'POST') return bad(res, { ok: false }, 405);
   if (!checkCsrf(req, res)) return;
+
+  // Global per-rank restrictions: only the main manager can change the rules for everybody.
+  if (String(req.body.action || '') === 'save_restrictions') {
+    if (!me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+    let payload = {};
+    try { payload = JSON.parse(String(req.body.limits || '')); } catch (e) { return bad(res, { ok: false, msg: 'داده نامعتبر است' }); }
+    if (!restrictions.save(payload)) return bad(res, { ok: false, msg: 'داده نامعتبر است' });
+    return ok(res, { ok: true, limits: restrictions.all() });
+  }
 
   const action = String(req.body.action || '');
   const uid = Number(req.body.user_id || 0);
@@ -1134,6 +1182,8 @@ router.all('/announcements', (req, res) => {
     if (!checkCsrf(req, res)) return;
     const body = String(req.body.body || '').trim();
     if (body === '') return bad(res, { ok: false, msg: 'متن خالی است' });
+    const capCheck = restrictions.checkDaily(me, 'daily_announcements');
+    if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
 
     const ts = sqlNow();
     const r = dbm.run(
@@ -1192,6 +1242,11 @@ router.all('/messages/user', (req, res) => {
   const identifier = String(req.body.identifier || '').trim();
   const body = String(req.body.body || '').trim();
   if (body === '') return bad(res, { ok: false, msg: 'متن پیام خالی است' });
+  const sender = sessions.currentUser(req);
+  if (sender) {
+    const capCheck = restrictions.checkDaily(sender, 'daily_pv_messages');
+    if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
+  }
 
   const u = findUserByIdentifier(identifier);
   if (!u) {

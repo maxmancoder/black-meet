@@ -76,6 +76,18 @@ CREATE TABLE IF NOT EXISTS meetings (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_room_id ON meetings (room_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_creator ON meetings (creator_id);
 
+-- Durable ledger of meeting creations. The daily create quota is counted here, NOT from
+-- the meetings table: deleting an old meeting from «جلسات اخیر» must not free the quota.
+CREATE TABLE IF NOT EXISTS meeting_creates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  meeting_id INTEGER NOT NULL,
+  room_id    TEXT    NOT NULL,
+  created_at TEXT    NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_meeting_creates_meeting ON meeting_creates (meeting_id);
+CREATE INDEX IF NOT EXISTS idx_meeting_creates_user ON meeting_creates (user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS meeting_participants (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   meeting_id   INTEGER NOT NULL,

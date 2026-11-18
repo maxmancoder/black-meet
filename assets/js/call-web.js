@@ -1603,6 +1603,11 @@
   });
 
   window.bmWebInit = function (initialWeb) {
+    const rows = (window.INIT && window.INIT.limits && window.INIT.limits.rows) || {};
+    if (rows.can_upload_call_file && rows.can_upload_call_file.on === false) {
+      const item = $('web-menu-file');
+      if (item) item.classList.add('hidden');
+    }
     if (initialWeb) { web = initialWeb; renderWebBox(); }
   };
 })();

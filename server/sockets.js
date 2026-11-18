@@ -12,6 +12,7 @@ for (const k of Object.keys(internalRaw)) {
 const { verifySocketToken } = require('./lib/helpers');
 const { sqlNow } = require('./lib/helpers');
 const ranks = require('./lib/ranks');
+const restrictions = require('./lib/restrictions');
 const bus = require('./lib/bus');
 const callfiles = require('./lib/callfiles');
 const { appConfig } = require('./lib/config');
@@ -134,6 +135,18 @@ function verifyToken(token) {
   return null;
 }
 
+// Per-rank feature switch (OFF means "not restricted" = allowed). The row is read at
+// connection time so a stale client can never grant itself a disabled feature.
+function featureOn(socket, key) {
+  return restrictions.allowed(socket.data.userRow, key);
+}
+function featureDenied(socket, key, cb) {
+  const e = { ok: false, error: 'RESTRICTED', msg: 'این بخش برای کاربران نوع شما غیرفعال است' };
+  socket.emit(EV.ERR, { msg: e.msg });
+  if (typeof cb === 'function') cb(e);
+  return false;
+}
+
 let io = null;
 
 function attach(httpServer) {
@@ -157,7 +170,8 @@ function attach(httpServer) {
     // manager flag is SERVER-derived (DB) at connect time — it gates PV_SEND,
     // pvToManagers and pvConversationUpdated. Never trust a client payload for it.
     try {
-      const u = dbm.get('SELECT is_manager, rank FROM users WHERE id=?', [uid]);
+      const u = dbm.get('SELECT id, is_manager, rank FROM users WHERE id=?', [uid]);
+      socket.data.userRow = u || null;   // per-rank restrictions are checked from the DB row
       socket.data.isManager = !!(u && u.is_manager);
       // premium AND regular admins may chat with the manager console; that flag lets them
       // push a message over the socket they already have instead of a whole HTTP round trip.
@@ -207,6 +221,33 @@ function attach(httpServer) {
           if (typeof cb === 'function') cb(e);
           return;
         }
+        // Per-rank meeting restrictions apply according to the CREATOR's type, so a rule
+        // set for regular users never touches an admin's meeting (and vice versa).
+        // meetingState() only exposes `creatorId` (camelCase) and no created_at, so read
+        // the meeting row directly — binding `undefined` used to crash the whole server.
+        const mRow = dbm.get('SELECT creator_id, created_at FROM meetings WHERE id=?', [st.meeting.id]);
+        const creatorRow = dbm.get('SELECT id, rank, is_manager FROM users WHERE id=?', [(mRow && mRow.creator_id) || 0]);
+        const minutesCap = restrictions.limit(creatorRow, 'meeting_minutes');
+        if (minutesCap > 0) {
+          const started = Date.parse(String((mRow && mRow.created_at) || '').replace(' ', 'T'));
+          if (!isNaN(started) && Date.now() - started > minutesCap * 60000) {
+            const e = { ok: false, error: 'MEETING_EXPIRED', msg: 'زمان مجاز این تماس به پایان رسید' };
+            if (typeof cb === 'function') cb(e);
+            return;
+          }
+        }
+        const peopleCap = restrictions.limit(creatorRow, 'max_participants');
+        if (peopleCap > 0) {
+          const r0 = rooms.get(room);
+          const inside = new Set();
+          if (r0) r0.sockets.forEach((s) => { if (s.approved) inside.add(s.userId); });
+          if (!inside.has(uid) && inside.size >= peopleCap) {
+            const e = { ok: false, error: 'MEETING_FULL', msg: 'ظرفیت این تماس پر شده است' };
+            if (typeof cb === 'function') cb(e);
+            return;
+          }
+        }
+
         const meetingId = st.meeting.id;
         const role = st.isAdmin ? 'admin' : (st.you ? st.you.role : 'member');
         const approvedBefore = !!(st.you && st.you.status === 'approved') || st.isAdmin;
@@ -326,6 +367,7 @@ function attach(httpServer) {
         if (typeof cb === 'function') cb(e);
         return;
       }
+      if (!featureOn(socket, 'can_send_chat')) return featureDenied(socket, 'can_send_chat', cb);
       const sInfo = rooms.get(room) && rooms.get(room).sockets.get(socket.id);
       if (!sInfo || !sInfo.approved) {
         const e = { ok: false, error: 'NOT_A_MEMBER' };
@@ -350,6 +392,7 @@ function attach(httpServer) {
     socket.on(EV.CALL_EMOJI, (msg = {}) => {
       const room = socket.data.room;
       if (!room || typeof msg.emoji !== 'string' || msg.emoji.length > 8) return;
+      if (!featureOn(socket, 'can_send_emoji')) return;
       const r = rooms.get(room);
       socket.to(room).emit(EV.EMOJI, { userId: uid, name: (r && r.sockets.get(socket.id) || {}).name || '', emoji: msg.emoji });
     });
@@ -499,6 +542,9 @@ if (kind === 'audio') {
     }
 
     socket.on(EV.CALL_WEB_OPEN, (msg = {}, cb) => {
+      const fileBox = String(msg.kind || '') === 'file';
+      const gate = fileBox ? 'can_upload_call_file' : 'can_use_web_box';
+      if (!featureOn(socket, gate)) return featureDenied(socket, gate, cb);
       const r = webRoom();
       const s = r && r.sockets.get(socket.id);
       if (!r || !s) return;
@@ -624,6 +670,7 @@ if (kind === 'audio') {
     // member streams stroke segments that everyone replays. `r.wb` holds the canvas state
     // for the room and is what CALL_WELCOME ships to a late joiner.
     socket.on(EV.WB_OPEN, () => {
+      if (!featureOn(socket, 'can_whiteboard')) return featureDenied(socket, 'can_whiteboard');
       const r = requireRoomAdmin();
       if (!r || !r.wb) return;
       r.wb.open = true;
@@ -1001,6 +1048,8 @@ r.sockets.forEach((s, sid) => {
       const body = String(msg.body || '').trim().slice(0, 2000);
       const clientMsgId = String(msg.clientMsgId || '').slice(0, 64);
       if (!Number.isInteger(toId) || body === '' || clientMsgId === '') { if (typeof cb === 'function') cb({ ok: false, error: 'BAD_REQUEST' }); return; }
+      const pvCap = restrictions.checkDaily(socket.data.userRow, 'daily_pv_messages');
+      if (!pvCap.ok) { if (typeof cb === 'function') cb({ ok: false, error: 'LIMIT', msg: pvCap.msg }); return; }
       // A non-manager (premium / regular admin) chats with the manager console: the row is
       // stored under THEIR user_id with from_manager=0 (exactly what POST /messages/conversations
       // did), but over the socket they already have — one round trip less per message.

@@ -85,6 +85,12 @@
                 <% } %>
             </button>
             <% } %>
+            <% if (canLimits) { %>
+            <button type="button" id="nav-limits" class="dash-chip" data-no-loader data-section="limits"
+                    onclick="switchSection('limits')" aria-pressed="false">
+                <%- icon('tune', '', true) %><span>محدودیت کاربران</span>
+            </button>
+            <% } %>
         </nav>
 
         <!-- ================= SECTION: member list ================= -->
@@ -195,6 +201,37 @@
         </section>
         <% } %>
 
+        <!-- ================= SECTION: per-rank restrictions ================= -->
+        <% if (canLimits) { %>
+        <section id="section-limits" class="dash-card hidden" aria-labelledby="limits-title">
+            <div class="dash-card-head">
+                <span class="dash-card-ico dash-card-ico-accent"><%- icon('tune') %></span>
+                <div>
+                    <h2 class="dash-card-title" id="limits-title">محدودیت کاربران</h2>
+                    <p class="dash-card-sub">هر محدودیتی که خاموش باشد برای آن نوع کاربر اعمال نمیشود. تغییرات بلافاصله روی تمام کاربران همان نوع اعمال میشود.</p>
+                </div>
+            </div>
+
+            <div id="limit-ranks" class="lim-ranks" data-no-soft></div>
+
+            <div class="lim-save-row">
+                <button type="button" id="lim-save" data-no-soft onclick="saveRestrictions()"
+                        class="dash-btn dash-btn-solid"><%- icon('check') %><span>ذخیره محدودیت‌ها</span></button>
+                <span id="lim-save-state" class="lim-save-state"></span>
+            </div>
+
+            <div class="lim-users-head">
+                <h3 class="lim-subtitle"><%- icon('group') %><span>جستجوی اعضا</span></h3>
+                <div class="lim-search-wrap bm-search">
+                    <%- icon('search') %>
+                    <input id="limit-search" type="search" class="dash-input dash-input-plain"
+                           placeholder="نام، نام کاربری، ایمیل یا شماره…" autocomplete="off"/>
+                </div>
+            </div>
+            <div id="limit-users" class="lim-user-grid" data-no-soft></div>
+        </section>
+        <% } %>
+
         <p class="dash-foot-note">
             <%- icon('lock') %>
             <span>فقط مدیر اصلی می‌تواند درجه‌ها را تغییر دهد و حساب‌ها را تایید کند.</span>
@@ -283,7 +320,10 @@ window.ME_IS_MANAGER = <%- json(!!me.is_manager) %>;
 window.INIT_USERS = <%- json(users) %>;
 window.INIT_REQUESTS = <%- json(requests) %>;
 window.SIGNUP_MODE = <%- json(signupMode) %>;
-window.PERM = { members: <%- json(canMembers) %>, requests: <%- json(canRequests) %>, decide: <%- json(canDecide) %>, changeMode: <%- json(canChangeMode) %> };
+window.PERM = { members: <%- json(canMembers) %>, requests: <%- json(canRequests) %>, decide: <%- json(canDecide) %>, changeMode: <%- json(canChangeMode) %>, limits: <%- json(canLimits) %> };
+window.LIMITS = <%- json(limits) %>;
+window.LIMIT_DEFS = <%- json(limitDefs) %>;
+window.CAN_EDIT_LIMITS = <%- json(canLimits) %>;
 </script>
 <script src="<%- asset('assets/js/dashboard.js') %>"></script>
 <script src="<%- asset('assets/js/admin_members.js') %>"></script>

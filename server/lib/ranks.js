@@ -1,6 +1,7 @@
 'use strict';
 const dbm = require('./db');
 const { sqlNow } = require('./helpers');
+const restrictions = require('./restrictions');
 
 // rank levels for normal users (is_manager is the super "main manager", above all ranks)
 // user    -> regular member
@@ -27,16 +28,18 @@ function rankLabel(u) {
   return RANKS[rankOf(u)].label;
 }
 
-// number of meetings a user may create per day (0 = unlimited)
+// number of meetings a user may create per day (0 = the restriction is OFF = unlimited).
+// Editable per rank from «مدیریت اعضا» → «محدودیت کاربران».
 function dailyLimitOf(u) {
-  return RANKS[rankOf(u)].dailyLimit;
+  return restrictions.limit(u, 'daily_meetings');
 }
 
-// how many meetings this user already created TODAY (local calendar day, resets at midnight)
+// How many meetings this user already created TODAY. Counted from the durable ledger, not
+// from `meetings`: deleting a finished meeting from «جلسات اخیر» must NOT free the quota.
 function meetingsCreatedToday(userId) {
   const today = sqlNow().slice(0, 10); // 'YYYY-MM-DD' local
   const row = dbm.get(
-    'SELECT COUNT(*) AS c FROM meetings WHERE creator_id=? AND substr(created_at,1,10)=?',
+    'SELECT COUNT(*) AS c FROM meeting_creates WHERE user_id=? AND substr(created_at,1,10)=?',
     [Number(userId), today]
   );
   return Number(row && row.c || 0);
@@ -51,37 +54,32 @@ function dailyQuota(u) {
 
 // can see the member list and edit user info
 function canViewMembers(u) {
-  const r = rankOf(u);
-  return r === 'manager' || r === 'premium';
+  return restrictions.allowed(u, 'can_view_members');
 }
 
 // can see the "account creation requests" section
 function canViewRequests(u) {
-  const r = rankOf(u);
-  return r === 'manager' || r === 'admin' || r === 'premium';
+  return restrictions.allowed(u, 'can_view_requests');
 }
 
 // can approve/reject requests and reply to applicants
 function canDecideRequests(u) {
-  const r = rankOf(u);
-  return r === 'manager' || r === 'premium';
+  return restrictions.allowed(u, 'can_decide_requests');
 }
 
 // can change the signup mode setting
 function canChangeSignupMode(u) {
-  const r = rankOf(u);
-  return r === 'manager' || r === 'premium';
+  return restrictions.allowed(u, 'can_change_signup_mode');
 }
 
 // can edit another user's info / rank
 function canManageUsers(u) {
-  return canViewMembers(u);
+  return restrictions.allowed(u, 'can_manage_users');
 }
 
 // can open the /messages console (manager sees all threads, admin/premium only their admin chat)
 function canUseMessages(u) {
-  const r = rankOf(u);
-  return r === 'manager' || r === 'premium' || r === 'admin';
+  return restrictions.allowed(u, 'can_use_messages');
 }
 
 // site-wide meeting creation policy (settings.meetingCreateMode):
@@ -108,5 +106,5 @@ function canCreateForMeetingMode(u, mode) {
 module.exports = {
   RANKS, rankOf, rankLabel, dailyLimitOf, meetingsCreatedToday, dailyQuota,
   canViewMembers, canViewRequests, canDecideRequests, canChangeSignupMode, canManageUsers,
-  canUseMessages, normalizeRank, canCreateForMeetingMode,
+  canUseMessages, normalizeRank, canCreateForMeetingMode, restrictions,
 };

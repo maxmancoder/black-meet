@@ -128,6 +128,14 @@ function db() {
       WHERE sender_username = '' AND sender_email = '' AND sender_display_name = '';
     `);
   } catch (e) { /* best-effort backfill */ }
+  // A meeting created before the quota ledger existed must still count towards today's
+  // limit. INSERT OR IGNORE keeps the ledger exact on every later boot.
+  try {
+    _db.exec(`
+      INSERT OR IGNORE INTO meeting_creates (user_id, meeting_id, room_id, created_at)
+      SELECT creator_id, id, room_id, created_at FROM meetings
+    `);
+  } catch (e) { /* best-effort backfill */ }
   startBackupLoop();
   return _db;
 }
