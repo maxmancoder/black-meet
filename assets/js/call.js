@@ -1062,6 +1062,7 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
         if (!sender) return;
         const p = sender.replaceTrack(track || null);
         if (p && p.catch) p.catch(() => {});
+        tuneSendPriorities(st);
       } catch (e) { /* the pc is closed */ }
     });
   }
@@ -1500,6 +1501,9 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
         // no video sender ever existed (camera denied) — create one and renegotiate
         st.videoSender = st.pc.addTrack(track, new MediaStream([track]));
       }
+      // the camera track usually arrives after the sender was created; re-apply the
+      // priority now that the sender really has video to send.
+      tuneSendPriorities(st);
     });
     updateSelfVideo();
   }
