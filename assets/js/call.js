@@ -927,8 +927,15 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
   function tuneSendPriorities(st) {
     try {
       const senders = st.pc.getSenders ? st.pc.getSenders() : [];
+      const transceivers = st.pc.getTransceivers ? st.pc.getTransceivers() : [];
       senders.forEach((s) => {
-        const kind = s.track && s.track.kind;
+        // a video sender may exist before its track is captured; the transceiver still
+        // tells us its media kind, so video does not get skipped and stays at 'low'.
+        let kind = s.track && s.track.kind;
+        if (!kind) {
+          const tr = transceivers.find((x) => x.sender === s);
+          kind = (tr && tr.receiver && tr.receiver.track && tr.receiver.track.kind) || '';
+        }
         if (kind !== 'audio' && kind !== 'video') return;
         const params = s.getParameters();
         if (!params || !params.encodings || !params.encodings.length) return;
