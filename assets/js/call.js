@@ -920,6 +920,34 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
     return st.videoSender;
   }
 
+  // Chrome ships every RTP encoding with networkPriority:'low'. On the relay path that
+  // means audio packets sit in the same queue as video behind a congested link, and the
+  // measured jitter buffer grew to 280-380ms even with playoutDelayHint/jitterBufferTarget
+  // at 0. Give voice the highest network priority and keep video latency-oriented.
+  function tuneSendPriorities(st) {
+    try {
+      const senders = st.pc.getSenders ? st.pc.getSenders() : [];
+      senders.forEach((s) => {
+        const kind = s.track && s.track.kind;
+        if (kind !== 'audio' && kind !== 'video') return;
+        const params = s.getParameters();
+        if (!params || !params.encodings || !params.encodings.length) return;
+        params.encodings.forEach((enc) => {
+          try { enc.networkPriority = kind === 'audio' ? 'high' : 'medium'; } catch (e) {}
+          if (kind === 'audio') {
+            // shorter audio packets when the link is tight (supported codecs only)
+            try { if ('adaptivePtime' in enc) enc.adaptivePtime = true; } catch (e) {}
+          }
+        });
+        if (kind === 'video') {
+          try { params.degradationPreference = 'maintain-latency'; } catch (e) {}
+        }
+        const p = s.setParameters(params);
+        if (p && p.catch) p.catch(() => {});
+      });
+    } catch (e) { /* unsupported browser: the defaults still work */ }
+  }
+
   function addLocalTracks(st) {
     // audio AND video senders are managed on their own: the audio one may be the
     // filtered track (or the silence keepalive), never the raw microphone
@@ -934,6 +962,7 @@ registerProcessor('bm-noise-gate', BmNoiseGate);
         if (p && p.catch) p.catch(() => {});
       }
     }
+    tuneSendPriorities(st);
   }
 
   // ------------------------------------------------------------------
