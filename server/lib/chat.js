@@ -123,9 +123,10 @@ function find(kind, id) {
 // cannot rewrite somebody else's words; he can still delete abuse via remove().
 function edit(kind, id, actor, rawBody) {
   const table = kind === 'public' ? 'announcements' : 'pv_messages';
-  const row = dbm.get('SELECT id, body, sender_id, user_id, from_manager FROM ' + table + ' WHERE id=? AND deleted=0', [Number(id || 0)]);
+  // announcements has no user_id/from_manager columns — select only the shared fields
+  const row = dbm.get('SELECT id, body, sender_id FROM ' + table + ' WHERE id=? AND deleted=0', [Number(id || 0)]);
   if (!row) return { ok: false, error: 'NOT_FOUND' };
-  if (Number(row.sender_id || row.user_id || 0) !== Number(actor.id)) return { ok: false, error: 'NOT_AUTHORIZED' };
+  if (Number(row.sender_id || 0) !== Number(actor.id)) return { ok: false, error: 'NOT_AUTHORIZED' };
   const body = String(rawBody || '').trim().slice(0, 4000);
   if (!body) return { ok: false, error: 'EMPTY' };
   if (body === String(row.body || '')) return { ok: true, id: Number(row.id), body, unchanged: true, kind };
