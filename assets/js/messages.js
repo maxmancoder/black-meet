@@ -5,6 +5,9 @@
   const EV = window.BMEv;
   let convs = [];
   let view = null; // {type:'user', user_id, ...} | {type:'public'}
+  let replyTo = null;   // {id, body, username} of the message being replied to
+  let forwarding = null; // {kind, id} of the message being forwarded
+  let searchRows = [];  // username-only results from the search box (no profile data shown)
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -132,11 +135,11 @@
     }).catch(() => {});
   }
 
-  function sendViaHttp(userId, body) {
+  function sendViaHttp(userId, body, replyId) {
     return fetch('api/messages/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrf: CSRF, user_id: String(userId), body }),
+      body: new URLSearchParams({ csrf: CSRF, user_id: String(userId), body, reply_to: String(replyId || '') }),
     }).then(r => r.json());
   }
 
@@ -178,9 +181,35 @@
   }
 
   function renderConvs() {
-    const q = (document.getElementById('conv-search').value || '').trim().toLowerCase();
+    const inp = document.getElementById('conv-search');
+    const q = ((inp && inp.value) || '').trim().toLowerCase();
     const box = document.getElementById('conv-list');
+    if (!box) return;
     box.innerHTML = '';
+
+    if (q) {
+      // SEARCH MODE: only the username is rendered — never email, phone, avatar, rank
+      // or any other account detail. Clicking a result simply opens the DM with that user.
+      if (!searchRows.length) {
+        const hint = document.createElement('p');
+        hint.className = 'lim-empty dash-hint';
+        hint.textContent = 'کاربری با این نام کاربری یافت نشد.';
+        box.appendChild(hint);
+      }
+      searchRows.forEach((u) => {
+        const el = document.createElement('div');
+        el.className = 'dash-conv dash-conv-search';
+        el.innerHTML = '<div class="dash-conv-av dash-conv-av-pub">' + bmIcon('person') + '</div>' +
+          '<div class="dash-conv-meta"><p class="dash-conv-sub" dir="ltr">@' + esc(u.username || '') + '</p></div>';
+        el.onclick = () => openUser({
+          user_id: u.user_id, username: u.username, display_name: u.display_name,
+          avatar: null, rank: '', is_manager: 0,
+        });
+        box.appendChild(el);
+      });
+      return;
+    }
+
     if (window.__CAN_SEE_PUBLIC !== false) {
       const pub = document.createElement('div');
       pub.className = 'dash-conv' + (view && view.type === 'public' ? ' is-active' : '');
@@ -190,7 +219,7 @@
       box.appendChild(pub);
     }
 
-    convs.filter(c => !q || ((c.display_name || '') + ' ' + (c.username || '') + ' ' + roleOf(c).label).toLowerCase().includes(q)).forEach(c => {
+    convs.forEach(c => {
       const el = document.createElement('div');
       el.dataset.uid = c.user_id;
       el.className = 'dash-conv' + (view && view.type === 'user' && view.user_id === c.user_id ? ' is-active' : '');
@@ -203,7 +232,18 @@
     });
   }
 
-  window.filterConvs = renderConvs;
+  let searchTimer = null;
+  window.filterConvs = function () {
+    const q = ((document.getElementById('conv-search') || {}).value || '').trim();
+    if (!q) { searchRows = []; renderConvs(); return; }
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      fetch('api/messages/search?username=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(d => { searchRows = (d && d.ok && d.users) || []; renderConvs(); })
+        .catch(() => {});
+    }, 220);
+  };
 
   // the list is re-rendered from `view` on every loadConvs(), but the public row is
   // built once per render and openPublic() never reloads the list — so the "selected"
@@ -246,13 +286,31 @@
     return !!flagFromManager !== !!window.__IS_MANAGER;
   }
 
-  function appendMessage(m, incoming) {
+  function appendMessage(m, incoming, kind) {
     const box = document.getElementById('chat-area');
+    if (!box) return null;
     const el = document.createElement('div');
-    el.className = 'dash-bubble-row ' + (incoming ? 'is-them' : 'is-me');
-    const label = senderName(m, incoming);
-    el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' +
-      '<div class="dash-bubble">' + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>';
+    const side = typeof m.incoming === 'boolean' ? m.incoming : incoming;
+    el.className = 'dash-bubble-row bm-msg-row ' + (side ? 'is-them' : 'is-me');
+    if (m.id) { el.dataset.msgId = Number(m.id); el.dataset.kind = kind || 'pv'; }
+    const label = senderName(m, side);
+    let quote = '';
+    if (m.reply) {
+      quote = '<div class="bm-msg-quote"><span class="bm-msg-quote-name" dir="ltr">' +
+        esc(m.reply.username ? '@' + m.reply.username : (m.reply.display_name || '')) + '</span>' +
+        '<span class="bm-msg-quote-body">' + esc(m.reply.body || '') + '</span></div>';
+    }
+    const fwd = m.forwarded_from
+      ? '<span class="bm-msg-fwd">' + bmIcon('arrow_forward') + ' از @' + esc(m.forwarded_from) + '</span>' : '';
+    const acts = m.id
+      ? '<div class="bm-msg-actions">' +
+          '<button type="button" data-no-soft onclick="replyMessage(this)" aria-label="پاسخ">' + bmIcon('arrow_back') + '<span>پاسخ</span></button>' +
+          '<button type="button" data-no-soft onclick="openForward(this)" aria-label="هدایت">' + bmIcon('arrow_forward') + '<span>هدایت</span></button>' +
+          '<button type="button" data-no-soft onclick="deleteMessage(this)" aria-label="حذف">' + bmIcon('delete_sweep') + '<span>حذف</span></button>' +
+        '</div>'
+      : '';
+    el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' + quote +
+      '<div class="dash-bubble">' + fwd + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>' + acts;
     box.appendChild(el);
     box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
@@ -264,11 +322,102 @@
     box.innerHTML = '';
     (messages || []).forEach(m => {
       // the public channel is a broadcast feed: every bubble is incoming + labelled
-      appendMessage(m, type === 'public' ? true : isIncoming(m.from_manager));
+      appendMessage(m, type === 'public' ? true : (typeof m.incoming === 'boolean' ? m.incoming : isIncoming(m.from_manager)), type);
     });
   }
 
+  function focusInput() {
+    const inp = document.getElementById('msg-input');
+    if (inp) { try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); } }
+  }
+
+  // ---- message actions --------------------------------------------------------------
+  function rowData(btn) {
+    const row = btn && btn.closest ? btn.closest('.bm-msg-row') : null;
+    if (!row || !row.dataset.msgId) return null;
+    const bubble = row.querySelector('.dash-bubble');
+    const sender = row.querySelector('.bm-msg-sender');
+    return {
+      id: Number(row.dataset.msgId),
+      kind: row.dataset.kind || 'pv',
+      body: bubble ? bubble.textContent : '',
+      sender: sender ? sender.textContent.replace(/^@/, '') : '',
+    };
+  }
+  window.replyMessage = function (btn) {
+    const d = rowData(btn);
+    if (!d) return;
+    replyTo = d;
+    const bar = document.getElementById('reply-bar');
+    if (bar) bar.classList.remove('hidden');
+    const n = document.getElementById('reply-name');
+    const b = document.getElementById('reply-body');
+    if (n) n.textContent = d.sender || '';
+    if (b) b.textContent = d.body;
+    focusInput();
+  };
+  window.clearReply = function () {
+    replyTo = null;
+    const bar = document.getElementById('reply-bar');
+    if (bar) bar.classList.add('hidden');
+  };
+  window.openForward = function (btn) {
+    const d = rowData(btn);
+    if (!d) return;
+    forwarding = d;
+    const list = document.getElementById('fw-list');
+    if (list) list.innerHTML = '<p class="dash-hint">در حال بارگذاری…</p>';
+    const modal = document.getElementById('forward-modal');
+    if (modal) modal.classList.remove('hidden');
+    fetch('api/messages/targets').then(r => r.json()).then(d2 => {
+      if (!d2 || !d2.ok) return;
+      if (list) {
+        list.innerHTML = '';
+        (d2.targets || []).forEach(t => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'fw-target';
+          b.dataset.noSoft = '';
+          b.textContent = '@' + t.username;
+          b.onclick = () => confirmForward(t.user_id);
+          list.appendChild(b);
+        });
+        if (!(d2.targets || []).length) list.innerHTML = '<p class="dash-hint">کاربری برای هدایت یافت نشد.</p>';
+      }
+    }).catch(() => { if (list) list.innerHTML = '<p class="dash-hint">خطا در بارگذاری لیست کاربران.</p>'; });
+  };
+  window.closeForward = function () {
+    forwarding = null;
+    const modal = document.getElementById('forward-modal');
+    if (modal) modal.classList.add('hidden');
+  };
+  window.confirmForward = function (toId) {
+    if (!forwarding) return;
+    fetch('api/messages/forward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: CSRF, kind: forwarding.kind, id: String(forwarding.id), to_user_id: String(toId) }),
+    }).then(r => r.json()).then(d => {
+      if (!d.ok) showToast(d.msg || 'هدایت پیام ناموفق بود');
+      else showToast('پیام هدایت شد');
+    }).catch(() => showToast('خطای شبکه')).finally(closeForward);
+  };
+  window.deleteMessage = function (btn) {
+    const d = rowData(btn);
+    if (!d) return;
+    const row = btn.closest('.bm-msg-row');
+    fetch('api/messages/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: CSRF, kind: d.kind, id: String(d.id) }),
+    }).then(r => r.json()).then(d2 => {
+      if (!d2.ok) showToast(d2.msg || 'حذف پیام ناموفق بود');
+      else if (row) row.remove();
+    }).catch(() => showToast('خطای شبکه'));
+  };
+
   function openUser(c) {
+    clearReply();
     view = { type: 'user', user_id: Number(c.user_id), name: c.display_name, username: c.username, avatar: c.avatar, email: c.email, rank: c.rank, is_manager: c.is_manager };
     setHeader(view);
     refreshHeaderStatus();
@@ -281,6 +430,7 @@
     } else if (box) {
       box.innerHTML = '';
     }
+    focusInput();
     fetch('api/messages/conversations?user_id=' + c.user_id)
       .then(r => r.json())
       .then(d => {
@@ -288,12 +438,14 @@
         renderChat(d.messages, 'user');
         cacheSet(CACHE_THREAD, { uid: Number(c.user_id), mgr: !!window.__IS_MANAGER, messages: trim(d.messages) });
         clearUnreadLocal(c.user_id);
+        focusInput();
       })
       .catch(() => {});
   }
 
   function openPublic() {
     if (window.__CAN_SEE_PUBLIC === false) return;
+    clearReply();
     view = { type: 'public', name: 'اعلان عمومی' };
     setHeader(view);
     setMobileChat(true);
@@ -303,6 +455,7 @@
     } else {
       document.getElementById('chat-area').innerHTML = '';
     }
+    focusInput();
     fetch('api/announcements')
       .then(r => r.json())
       .then(d => {
@@ -310,6 +463,7 @@
         const rows = (d.announcements || []).map(a => ({ id: a.id, body: a.body, from_manager: 1, username: a.username, display_name: a.display_name }));
         renderChat(rows, 'public');
         cacheSet(CACHE_PUB, { messages: trim(rows) });
+        focusInput();
       })
       .catch(() => {});
   }
@@ -334,7 +488,12 @@
         });
       }
       if (open) {
-        appendMessage({ id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName, username: fromMgr ? null : ((view && view.username) || null) }, isIncoming(fromMgr));
+        appendMessage({
+          id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName,
+          username: m.username || (fromMgr ? null : ((view && view.username) || null)),
+          reply: m.reply || null,
+          incoming: Number(m.fromUserId) !== Number(window.MS_ID),
+        }, isIncoming(fromMgr), 'pv');
         updateConvRow(fromId, { unread: 0 });
         // just acknowledge the thread as read — re-downloading the whole conversation for
         // that doubled the traffic of every single incoming message
@@ -360,8 +519,17 @@
     BMLive.on(EV.NOTIF_NEW, a => {
       if (a && Number(a.fromUserId) === Number(window.MS_ID)) return; // my own send — already appended optimistically
       if (view && view.type === 'public' && a && a.body) {
-        appendMessage({ id: a.id, body: a.body, from_manager: 1, fromName: a.fromName }, true);
+        appendMessage({ id: a.id, body: a.body, from_manager: 1, fromName: a.fromName }, true, 'public');
       }
+    });
+
+    // soft delete on any screen: drop the bubble everywhere, no reload needed
+    BMLive.on(EV.MSG_DELETED, d => {
+      if (!d || !d.id) return;
+      const box = document.getElementById('chat-area');
+      if (!box) return;
+      const row = box.querySelector('.bm-msg-row[data-msg-id="' + Number(d.id) + '"]');
+      if (row) row.remove();
     });
 
     BMLive.on(EV.PRESENCE_ONLINE, d => { onlineUsers.add(Number(d.userId)); refreshHeaderStatus(); });
@@ -398,8 +566,11 @@
     if (view.type === 'public') {
       if (window.__CAN_SEE_PUBLIC === false) return showToast('دسترسی ندارید');
       // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
-      const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME }, true);
-      fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body }) })
+      const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME,
+        reply: replyTo ? { username: replyTo.sender, body: replyTo.body } : null }, true, 'public');
+      const replyId = replyTo ? replyTo.id : null;
+      clearReply();
+      fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body, reply_to: String(replyId || '') }) })
         .then(r => r.json()).then(d => {
           if (!d.ok) { el.remove(); showToast(d.msg || 'خطا'); }
         }).catch(() => { el.remove(); showToast('خطا'); });
@@ -408,23 +579,29 @@
 
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
     const ownMgr = !!window.__IS_MANAGER;
-    const el = appendMessage({ id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME }, isIncoming(ownMgr));
+    const el = appendMessage({
+      id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME,
+      incoming: false, reply: replyTo ? { username: replyTo.sender, body: replyTo.body } : null,
+      forwarded_from: null,
+    }, isIncoming(ownMgr), 'pv');
     const target = view;
-    const failed = (msg) => { el.remove(); inp.value = body; showToast(msg || 'ارسال پیام ناموفق بود'); };
+    const replyId = replyTo ? replyTo.id : null;
+    clearReply();
+    const failed = (msg) => { if (el) el.remove(); inp.value = body; showToast(msg || 'ارسال پیام ناموفق بود'); };
 
     // ONE round trip: the page already holds a live socket, so both sides send over it.
     // (A premium used to POST over HTTP while the socket sat idle on the same page.)
     const s = window.BMLive && BMLive.socket();
     if (s && s.connected) {
       const clientMsgId = 'c' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
-      s.emit(EV.PV_SEND, { toUserId: target.user_id, body, clientMsgId }, resp => {
+      s.emit(EV.PV_SEND, { toUserId: target.user_id, body, clientMsgId, replyTo: replyId }, resp => {
         if (!resp || !resp.ok) failed('ارسال پیام ناموفق بود');
       });
       return;
     }
 
     // socket down: HTTP still persists the row and pushes it live to the other side
-    sendViaHttp(target.user_id, body)
+    sendViaHttp(target.user_id, body, replyId)
       .then(d => { if (!d.ok) failed(d.msg); })
       .catch(() => failed('خطای شبکه'));
   };

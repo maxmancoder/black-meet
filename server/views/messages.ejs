@@ -98,6 +98,14 @@
             </div>
 
             <div class="msg-inputbar">
+                <div id="reply-bar" class="msg-reply-bar hidden">
+                    <div class="min-w-0">
+                        <span class="msg-reply-title">پاسخ به <span id="reply-name"></span></span>
+                        <p id="reply-body" class="msg-reply-body truncate"></p>
+                    </div>
+                    <button type="button" class="dash-iconbtn dash-iconbtn-sm" data-no-soft
+                            onclick="clearReply()" aria-label="لغو پاسخ"><%- icon('close') %></button>
+                </div>
                 <div class="msg-inputrow">
                     <input id="msg-input" class="dash-input" type="text" autocomplete="off"
                            placeholder="پیام خود را بنویسید..." aria-label="متن پیام"
@@ -120,6 +128,19 @@
         <h3 id="pm-name" class="dash-modal-title"></h3>
         <p id="pm-username" class="dash-hint" dir="ltr"></p>
         <p id="pm-email" class="dash-hint" dir="ltr"></p>
+    </div>
+</div>
+
+<!-- Forward picker: usernames ONLY, no profile details are ever rendered here -->
+<div id="forward-modal" class="dash-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fw-title"
+     onclick="if(event.target===this)closeForward()">
+    <div class="dash-modal-backdrop" onclick="closeForward()"></div>
+    <div class="dash-modal-box" role="document">
+        <button type="button" class="dash-iconbtn dash-iconbtn-sm dash-modal-x" data-no-soft
+                onclick="closeForward()" aria-label="بستن"><%- icon('close') %></button>
+        <h3 class="dash-modal-title" id="fw-title">هدایت پیام</h3>
+        <p class="dash-hint">انتخاب کنید پیام برای چه کسی ارسال شود.</p>
+        <div id="fw-list" class="fw-list custom-scrollbar"></div>
     </div>
 </div>
 

@@ -410,11 +410,11 @@
     m.style.bottom = 'auto';
     const r = b.getBoundingClientRect();
     m.style.right = Math.max(8, Math.min(r.right, window.innerWidth - m.offsetWidth - 8)) + 'px';
-    if (window.innerHeight - r.bottom > m.offsetHeight + 16) {
-      m.style.top = (r.bottom + 8) + 'px';
-    } else {
-      m.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-    }
+    // always open BELOW the trigger itself — never flip above the box. If the viewport is
+    // short, the menu scrolls internally instead of covering the field it belongs to.
+    m.style.top = (r.bottom + 8) + 'px';
+    m.style.maxHeight = Math.max(120, window.innerHeight - r.bottom - 18) + 'px';
+    m.style.overflowY = 'auto';
   }
   window.toggleEditRankMenu = function (e) {
     if (e) e.stopPropagation();
@@ -743,6 +743,146 @@
       .finally(() => { if (btn) btn.disabled = false; });
   };
 
+  // ------------------------------------------------------------------
+  // per-MEMBER restrictions: the «محدود کردن» key opens a soft panel under that one
+  // card. Every value saved here overrides the rank rule for THIS user only.
+  // ------------------------------------------------------------------
+  let userLimitState = {};
+  (window.USER_LIMITS || []).forEach((x) => {
+    try { userLimitState[Number(x.user_id)] = JSON.parse(x.data) || {}; } catch (e) {}
+  });
+  let expandedUserId = null;
+
+  function userRestrictionRows(uid, u) {
+    const defs = window.LIMIT_DEFS || [];
+    const rank = u.is_manager ? 'manager' : (u.rank || 'user');
+    const base = (window.LIMITS || {})[rank] || {};
+    const over = userLimitState[Number(uid)] || {};
+    return defs.map((d) => {
+      const cell = over[d.key] || base[d.key] || { on: false, value: 0 };
+      const isNum = d.type === 'number';
+      const locked = !!u.is_manager && !isNum;
+      return '<div class="lim-row' + (cell.on ? '' : ' is-off') + '" data-lim-row="' + d.key + '">' +
+        '<div class="lim-row-main"><span class="lim-row-label">' + esc(d.label) + '</span>' +
+        (d.hint ? '<span class="lim-row-hint">' + esc(d.hint) + '</span>' : '') + '</div>' +
+        (isNum ? '<input class="lim-num" type="number" inputmode="numeric" min="' + d.min + '" max="' + d.max + '"' +
+          ' data-ulim-key="' + d.key + '" data-ulim-uid="' + uid + '" value="' + Number(cell.value || 0) + '"' +
+          (cell.on ? '' : ' disabled') + ' aria-label="' + esc(d.label) + '"/>' : '') +
+        '<label class="bm-switch lim-switch"><input type="checkbox" data-ulim-key="' + d.key + '"' +
+        ' data-ulim-uid="' + uid + '"' + (cell.on ? ' checked' : '') + (locked ? ' disabled' : '') +
+        '/><span class="bm-switch-slider"></span></label></div>';
+    }).join('');
+  }
+
+  function userPanelHtml(u) {
+    return '<div class="lim-user-expand-inner">' +
+      '<div class="lim-user-expand-head"><strong>محدودیت مخصوص «' + esc(u.display_name || u.username || 'کاربر') + '»</strong>' +
+      '<span class="lim-row-hint">فقط روی همین کاربر اعمال می‌شود</span></div>' +
+      '<div class="lim-user-expand-rows">' +
+      (u.is_manager ? '' : '<div class="lim-row"><div class="lim-row-main"><span class="lim-row-label">حساب محدود شود</span>' +
+        '<span class="lim-row-hint">قفل کلی حساب</span></div><button type="button" class="mem-act ' +
+        (u.is_limited ? 'mem-act-ok' : 'mem-act-danger') + '" onclick="toggleLimit(' + u.id + ')">' +
+        (u.is_limited ? 'رفع محدودیت' : 'محدود کردن') + '</button></div>') +
+      userRestrictionRows(u.id, u) + '</div>' +
+      '<div class="lim-user-expand-actions">' +
+      '<button type="button" class="dash-btn dash-btn-ghost" data-ulim-clear="' + u.id + '">حذف سفارشی‌ها</button>' +
+      '<button type="button" class="dash-btn dash-btn-solid" data-ulim-save="' + u.id + '">ذخیره محدودیت</button>' +
+      '</div></div>';
+  }
+
+  function closeUserPanels() {
+    const host = $('limit-users');
+    if (!host) return;
+    host.querySelectorAll('.lim-user-card.is-expanded').forEach((c) => {
+      c.classList.remove('is-expanded');
+      const t = c.querySelector('[data-ulim-toggle]');
+      if (t) t.setAttribute('aria-expanded', 'false');
+    });
+    expandedUserId = null;
+  }
+
+  window.toggleUserRestrictions = function (uid) {
+    const host = $('limit-users');
+    if (!host) return;
+    const card = host.querySelector('.lim-user-card[data-uid="' + Number(uid) + '"]');
+    if (!card) return;
+    const opening = !card.classList.contains('is-expanded');
+    closeUserPanels();
+    if (!opening) return;
+    const u = allUsers.find(x => Number(x.id) === Number(uid));
+    if (!u) return;
+    const panel = card.querySelector('.lim-user-expand');
+    if (panel) panel.innerHTML = userPanelHtml(u);
+    card.classList.add('is-expanded');
+    expandedUserId = Number(uid);
+    const trigger = card.querySelector('[data-ulim-toggle]');
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+  };
+
+  function saveUserRestrictions(uid) {
+    const over = userLimitState[Number(uid)] || {};
+    const btn = document.querySelector('[data-ulim-save="' + Number(uid) + '"]');
+    if (btn) btn.disabled = true;
+    post('api/admin/members', { action: 'save_user_restrictions', target_id: String(uid), limits: JSON.stringify(over) })
+      .then(d => {
+        if (!d.ok) return showToast((d && d.msg) || 'ذخیره محدودیت ناموفق بود');
+        (d.userLimits || []).forEach(x => { try { userLimitState[Number(x.user_id)] = JSON.parse(x.data) || {}; } catch (e) {} });
+        showToast('محدودیت کاربر ذخیره شد');
+      })
+      .catch(() => showToast('ارتباط برقرار نشد'))
+      .finally(() => { if (btn) btn.disabled = false; });
+  }
+
+  function bindUserLimitEvents() {
+    const host = $('limit-users');
+    if (!host || host.dataset.ulimBound === '1') return;
+    host.dataset.ulimBound = '1';
+    host.addEventListener('click', (ev) => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      const tog = t.closest('[data-ulim-toggle]');
+      if (tog) { window.toggleUserRestrictions(Number(tog.dataset.ulimToggle)); return; }
+      const sav = t.closest('[data-ulim-save]');
+      if (sav) { saveUserRestrictions(Number(sav.dataset.ulimSave)); return; }
+      const clr = t.closest('[data-ulim-clear]');
+      if (clr) {
+        const uid = Number(clr.dataset.ulimClear);
+        post('api/admin/members', { action: 'clear_user_restrictions', target_id: String(uid) })
+          .then(d => {
+            if (!d.ok) return showToast((d && d.msg) || 'خطا');
+            delete userLimitState[uid];
+            const card = host.querySelector('.lim-user-card[data-uid="' + uid + '"]');
+            const panel = card && card.querySelector('.lim-user-expand');
+            const u = allUsers.find(x => Number(x.id) === uid);
+            if (panel && u) panel.innerHTML = userPanelHtml(u);
+            showToast('محدودیت سفارسی حذف شد');
+          });
+      }
+    });
+    host.addEventListener('change', (ev) => {
+      const t = ev.target;
+      if (!t || !t.dataset || !t.dataset.ulimKey) return;
+      const uid = Number(t.dataset.ulimUid);
+      if (!userLimitState[uid]) userLimitState[uid] = {};
+      const key = t.dataset.ulimKey;
+      const def = (window.LIMIT_DEFS || []).find(d => d.key === key);
+      if (!def) return;
+      const cell = userLimitState[uid][key] = userLimitState[uid][key] || { on: false, value: 0 };
+      if (t.type === 'checkbox') {
+        cell.on = !!t.checked;
+        const num = host.querySelector('[data-ulim-key="' + key + '"][data-ulim-uid="' + uid + '"][type="number"]');
+        if (num) num.disabled = !cell.on;
+        const row = t.closest('.lim-row');
+        if (row) row.classList.toggle('is-off', !cell.on);
+      } else {
+        cell.on = true;
+        cell.value = Number(t.value) || 0;
+        const box = host.querySelector('[data-ulim-key="' + key + '"][data-ulim-uid="' + uid + '"][type="checkbox"]');
+        if (box && !box.checked) { box.checked = true; const row = box.closest('.lim-row'); if (row) row.classList.remove('is-off'); }
+      }
+    });
+  }
+
   function renderLimitUsers() {
     const host = $('limit-users');
     if (!host || !PERM.limits) return;
@@ -751,15 +891,17 @@
     const rows = allUsers.filter((u) => !q || [u.display_name, u.username, u.email, u.phone]
       .some((v) => String(v || '').toLowerCase().indexOf(q) !== -1));
     host.innerHTML = rows.length ? rows.map((u) =>
-      '<article class="lim-user-card">' + avatarHtml(u) +
+      '<article class="lim-user-card" data-uid="' + u.id + '">' + avatarHtml(u) +
       '<div class="lim-user-main"><strong>' + esc(u.display_name || u.username || 'کاربر') + '</strong>' +
       '<span class="lim-user-sub" dir="ltr">@' + esc(u.username || '') + '</span>' +
       '<div class="lim-user-badges">' + rankBadge(u) + limitedBadge(u) + '</div></div>' +
-      (u.is_manager ? '' : '<button type="button" data-no-soft onclick="toggleLimit(' + u.id + ')" class="' +
-        (u.is_limited ? 'mem-act mem-act-ok' : 'mem-act mem-act-danger') + '">' +
-        (u.is_limited ? 'رفع محدودیت' : 'محدود کردن') + '</button>') +
+      (u.is_manager ? '' : '<button type="button" data-no-soft data-ulim-toggle="' + u.id + '"' +
+        ' class="mem-act lim-user-toggle" aria-expanded="false">' +
+        (Object.keys(userLimitState[Number(u.id)] || {}).length ? 'ویرایش محدودیت' : 'محدود کردن') + '</button>') +
+      '<div class="lim-user-expand"><div></div></div>' +
       '</article>').join('')
       : '<p class="lim-empty">کاربری با این مشخصات پیدا نشد.</p>';
+    bindUserLimitEvents();
   }
 
   // ------------------------------------------------------------------

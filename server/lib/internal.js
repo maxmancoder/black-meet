@@ -104,45 +104,13 @@ function chatPersist(roomId, userId, body, clientMsgId) {
 }
 
 function pvPersist(toUserId, fromManager, fromUserId, body, clientMsgId) {
-  clientMsgId = String(clientMsgId || '').slice(0, 64);
-  body = String(body || '').trim();
-  if (!toUserId || body === '' || clientMsgId === '') return { ok: false, error: 'BAD_REQUEST' };
-  let sender = null;
-  if (!fromManager) {
-    const u = userById(fromUserId);
-    if (!u || !u.is_manager) return { ok: false, error: 'NOT_AUTHORIZED' };
-    sender = u;
-  } else {
-    sender = userById(fromUserId);
-  }
-  const f = fromManager ? 1 : 0;
-  const existing = dbm.get(
-    'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=? AND client_msg_id=?',
-    [toUserId, f, clientMsgId]
-  );
-  if (existing) return { ok: true, id: Number(existing.id), dedup: true };
-  let id = null;
-  const ts = sqlNow();
-  try {
-    const r = dbm.run(
-      'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, sender_username, sender_email, created_at) VALUES (?,?,?,?,?,?,?)',
-      [toUserId, f, body, clientMsgId, sender ? (sender.username || '') : '', sender ? (sender.email || '') : '', ts]
-    );
-    id = r.lastInsertRowid;
-  } catch (e) {
-    const again = dbm.get(
-      'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=? AND client_msg_id=?',
-      [toUserId, f, clientMsgId]
-    );
-    if (again) id = Number(again.id);
-    else return { ok: false, error: 'DB_ERROR' };
-  }
-  const from = sender;
-  return {
-    ok: true, id,
-    from_name: from ? from.display_name : 'مدیر',
-    ts,
-  };
+  // kept as a compatibility wrapper: all writes now go through lib/chat, which stores
+  // both ends of the conversation and schedules the durable Neon mirror.
+  const chat = require('./chat');
+  return chat.insertPv({
+    userId: toUserId, senderId: fromUserId, recipientId: toUserId,
+    fromManager: !!fromManager, body, clientMsgId,
+  });
 }
 function pvUnread(userId) {
   const r = dbm.get(

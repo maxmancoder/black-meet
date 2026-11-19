@@ -104,6 +104,10 @@ async function main() {
   // (that dead path is why a profile picture showed up broken after a deploy)
   await require('./lib/avatars').init();
 
+  // Chat (private + public) is durable in SQLite and, when configured, mirrored to Neon.
+  // On a fresh instance restore the conversations BEFORE any page can serve an empty thread.
+  await require('./lib/chat').boot();
+
   // ICE relays for the call page. The free public fallback (Jami, no account and no
   // card) ships by default; the optional credential providers mint short-lived creds,
   // so warm them at boot too. Then probe every relay with a real TURN Allocate so a

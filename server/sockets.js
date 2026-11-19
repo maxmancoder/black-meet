@@ -13,6 +13,7 @@ const { verifySocketToken } = require('./lib/helpers');
 const { sqlNow } = require('./lib/helpers');
 const ranks = require('./lib/ranks');
 const restrictions = require('./lib/restrictions');
+const chat = require('./lib/chat');
 const bus = require('./lib/bus');
 const callfiles = require('./lib/callfiles');
 const { appConfig } = require('./lib/config');
@@ -1047,73 +1048,49 @@ r.sockets.forEach((s, sid) => {
       const toId = parseInt(msg.toUserId, 10);
       const body = String(msg.body || '').trim().slice(0, 2000);
       const clientMsgId = String(msg.clientMsgId || '').slice(0, 64);
-      if (!Number.isInteger(toId) || body === '' || clientMsgId === '') { if (typeof cb === 'function') cb({ ok: false, error: 'BAD_REQUEST' }); return; }
-      const pvCap = restrictions.checkDaily(socket.data.userRow, 'daily_pv_messages');
-      if (!pvCap.ok) { if (typeof cb === 'function') cb({ ok: false, error: 'LIMIT', msg: pvCap.msg }); return; }
-      // A non-manager (premium / regular admin) chats with the manager console: the row is
-      // stored under THEIR user_id with from_manager=0 (exactly what POST /messages/conversations
-      // did), but over the socket they already have — one round trip less per message.
-      if (!socket.data.isManager) {
-        if (!socket.data.canMessages) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
-        const me = dbm.get('SELECT id, username, email, display_name FROM users WHERE id=?', [uid]);
-        if (!me) { if (typeof cb === 'function') cb({ ok: false, error: 'NOT_AUTHORIZED' }); return; }
-        const ts = sqlNow();
-        let id = null;
-        const existing = dbm.get(
-          'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=0 AND client_msg_id=?',
-          [uid, clientMsgId]
-        );
-        if (existing) {
-          id = Number(existing.id);
-        } else {
-          try {
-            const r = dbm.run(
-              'INSERT INTO pv_messages (user_id, from_manager, body, client_msg_id, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?,?)',
-              [uid, body, clientMsgId, me.username || '', me.email || '', ts]
-            );
-            id = Number(r.lastInsertRowid);
-          } catch (e) {
-            const again = dbm.get(
-              'SELECT id FROM pv_messages WHERE user_id=? AND from_manager=0 AND client_msg_id=?',
-              [uid, clientMsgId]
-            );
-            if (!again) {
-              const err = { ok: false, error: 'SAVE_FAILED', clientMsgId };
-              socket.emit(EV.ERR, err);
-              if (typeof cb === 'function') cb(err);
-              return;
-            }
-            id = Number(again.id);
-          }
-        }
-        const payload = {
-          id, fromUserId: uid, fromName: me.display_name || '', body, clientMsgId,
-          fromManager: 0, ts, username: me.username || '', email: me.email || '',
-        };
-        socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id });
-        bus.pvToManagers(payload);
-        bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 0, ts });
-        if (typeof cb === 'function') cb({ ok: true, id });
-        return;
+      const replyTo = Number(msg.replyTo || 0) || null;
+      const fail = (error, extra) => {
+        const e = Object.assign({ ok: false, error, clientMsgId }, extra || {});
+        socket.emit(EV.ERR, e);
+        if (typeof cb === 'function') cb(e);
+      };
+      if (!Number.isInteger(toId) || body === '' || clientMsgId === '' || toId === uid) return fail('BAD_REQUEST');
+      const actor = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
+      const target = dbm.get('SELECT id, is_manager, rank FROM users WHERE id=?', [toId]);
+      if (!actor || !target) return fail('NOT_AUTHORIZED');
+      const isMgr = !!socket.data.isManager;
+      // regular users / plain admins may only DM the main manager and premium admins
+      if (!isMgr && (!socket.data.canMessages || !(Number(target.is_manager) || target.rank === 'premium'))) {
+        return fail('NOT_AUTHORIZED');
       }
-      internal.pvPersist(toId, true, uid, body, clientMsgId).then((res) => {
-        if (!res.ok) {
-          const e = { ok: false, error: res.error || 'SAVE_FAILED', clientMsgId };
-          socket.emit(EV.ERR, e);
-          if (typeof cb === 'function') cb(e);
-          return;
-        }
-        const payload = { id: res.id, fromUserId: uid, fromName: res.from_name || '', body, clientMsgId, fromManager: 1, ts: res.ts };
-        socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id: res.id });
-        (userSockets.get(uid) || new Set()).forEach((sid) => io.to(sid).emit(EV.PV_NEW_MESSAGE, payload));
-        callReqTargets(toId).forEach((sid) => io.to(sid).emit(EV.PV_NEW_MESSAGE, payload));
-        io.of('/').sockets.forEach((s) => {
-          if (s.data.isManager && s.data.userId !== uid) {
-            s.emit(EV.PV_CONVERSATION_UPDATED, { userId: toId, lastBody: body, fromManager: 1, ts: res.ts });
-          }
-        });
-        if (typeof cb === 'function') cb({ ok: true, id: res.id });
+      const pvCap = restrictions.checkDaily(socket.data.userRow, 'daily_pv_messages');
+      if (!pvCap.ok) return fail('LIMIT', { msg: pvCap.msg });
+
+      const mgrRow = dbm.get('SELECT id FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+      const MGR_ID = Number((mgrRow && mgrRow.id) || 0);
+      // One durable write for every sender: the thread owner is the non-manager side,
+      // peer_id is the privileged side, and BOTH usernames are stored on the row.
+      const ins = chat.insertPv({
+        userId: isMgr ? toId : uid,
+        peerId: isMgr ? MGR_ID : toId,
+        senderId: uid,
+        recipientId: toId,
+        fromManager: isMgr,
+        body, clientMsgId, replyTo,
       });
+      if (!ins.ok) return fail('SAVE_FAILED');
+      const payload = {
+        id: ins.id, fromUserId: uid, fromName: actor.display_name || '', body, clientMsgId,
+        fromManager: isMgr ? 1 : 0, ts: ins.ts, replyTo,
+        peerId: isMgr ? MGR_ID : toId, username: actor.username || '',
+      };
+      socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id: ins.id });
+      // the named recipient gets the bubble; a manager console also sees every incoming DM
+      bus.pvNew(toId, payload);
+      if (!isMgr) bus.pvToManagers(payload);
+      callReqTargets(toId).forEach((sid) => io.to(sid).emit(EV.PV_NEW_MESSAGE, payload));
+      bus.pvConversationUpdated({ userId: isMgr ? toId : uid, lastBody: body, fromManager: isMgr ? 1 : 0, ts: ins.ts });
+      if (typeof cb === 'function') cb({ ok: true, id: ins.id });
     });
 
     socket.on('disconnect', () => {

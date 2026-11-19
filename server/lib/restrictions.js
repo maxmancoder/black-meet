@@ -36,7 +36,7 @@ const DEFINITIONS = [
   { key: 'can_open_join', label: 'ورود بدون تأیید ادمین', type: 'bool',
     defaults: { user: true, admin: true, premium: true, manager: true } },
   { key: 'can_use_messages', label: 'بخش پیام‌ها', type: 'bool',
-    defaults: { user: false, admin: true, premium: true, manager: true } },
+    defaults: { user: true, admin: true, premium: true, manager: true } },
   { key: 'can_view_members', label: 'مشاهده اعضا', type: 'bool',
     defaults: { user: false, admin: false, premium: true, manager: true } },
   { key: 'can_view_requests', label: 'مشاهده درخواست‌های حساب', type: 'bool',
@@ -83,6 +83,66 @@ function fresh() {
 
 let _cache = null;
 let _cacheRaw = null;
+// Per-user overrides live in their own table so one member can be limited differently
+// from everyone else of the same rank. A tiny cache is invalidated on every write.
+let _userCache = null;
+let _userCacheRev = 0;
+
+function userOverride(userId) {
+  const id = Number(userId || 0);
+  if (!id) return null;
+  if (_userCache && _userCache.rev === _userCacheRev && Object.prototype.hasOwnProperty.call(_userCache.map, id)) {
+    return _userCache.map[id];
+  }
+  let raw = '';
+  try {
+    const row = dbm.get('SELECT data FROM user_restrictions WHERE user_id=?', [id]);
+    raw = row && row.data || '';
+  } catch (e) { raw = ''; }
+  let data = null;
+  try { if (raw) data = JSON.parse(raw) || null; } catch (e) { data = null; }
+  if (!_userCache || _userCache.rev !== _userCacheRev) _userCache = { rev: _userCacheRev, map: {} };
+  _userCache.map[id] = data;
+  return data;
+}
+
+function saveUser(userId, payload) {
+  const id = Number(userId || 0);
+  if (!id || !payload || typeof payload !== 'object') return false;
+  // keep only known keys/types, exactly like the rank-level save
+  const clean = {};
+  DEFINITIONS.forEach((d) => {
+    const v = payload[d.key];
+    if (!v || typeof v !== 'object') return;
+    if (d.type === 'number') {
+      const n = Number(v.value);
+      clean[d.key] = { on: v.on !== false, value: Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, Math.round(n))) : 0 };
+    } else {
+      clean[d.key] = { on: !!v.on };
+    }
+  });
+  try {
+    dbm.run(
+      'INSERT INTO user_restrictions (user_id, data, updated_at) VALUES (?,?,?) ' +
+      'ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at',
+      [id, JSON.stringify(clean), sqlNow()]
+    );
+  } catch (e) { return false; }
+  _userCacheRev++;
+  return true;
+}
+
+function clearUser(userId) {
+  try { dbm.run('DELETE FROM user_restrictions WHERE user_id=?', [Number(userId || 0)]); } catch (e) { return false; }
+  _userCacheRev++;
+  return true;
+}
+
+function userOverridesList() {
+  try {
+    return dbm.all('SELECT user_id, data, updated_at FROM user_restrictions ORDER BY user_id');
+  } catch (e) { return []; }
+}
 
 function all() {
   let raw = '';
@@ -150,6 +210,13 @@ function of(u, key) {
   const row = all()[rankOf(u)][key];
   // The main manager can never be locked out of the admin UI / restricted by a flag.
   if (u && u.is_manager) return d.type === 'number' ? { on: row.on, value: row.value } : { on: true };
+  // a per-user override wins over the rank default for THAT member only
+  const overrides = userOverride(u && u.id) || {};
+  const over = overrides[key];
+  if (over && typeof over === 'object') {
+    if (d.type === 'number') return { on: over.on !== false, value: Number(over.value) || 0 };
+    return { on: !!over.on };
+  }
   return row;
 }
 
@@ -203,12 +270,17 @@ function checkDaily(u, key) {
 function forUser(u) {
   const r = rankOf(u);
   const data = all()[r];
+  const over = userOverride(u && u.id) || {};
   const out = {};
-  DEFINITIONS.forEach((d) => { out[d.key] = data[d.key]; });
-  return { rank: r, label: RANK_LABELS[r], rows: out, isManager: !!(u && u.is_manager) };
+  DEFINITIONS.forEach((d) => { out[d.key] = over[d.key] || data[d.key]; });
+  return {
+    rank: r, label: RANK_LABELS[r], rows: out,
+    isManager: !!(u && u.is_manager), hasOverride: Object.keys(over).length > 0,
+  };
 }
 
 module.exports = {
   KEY, RANKS, RANK_LABELS, DEFINITIONS, BY_KEY,
   all, save, rankOf, of, limit, allowed, dailyUsed, checkDaily, forUser,
+  userOverride, saveUser, clearUser, userOverridesList,
 };

@@ -218,6 +218,7 @@ router.get('/profile', (req, res) => {
     title: 'پروفایل - Black Meet',
     av: avatarUrl(me.avatar, req),
     rankLabel: ranks.rankLabel(me),
+    rank: ranks.rankOf(me),
     isManager: !!me.is_manager,
     canMessages: ranks.canUseMessages(me),
     canMembers: ranks.canViewMembers(me),
@@ -413,6 +414,7 @@ router.get('/members', (req, res) => {
     canLimits: !!me.is_manager,
     limits: restrictions.all(),
     limitDefs: restrictions.DEFINITIONS,
+    userLimits: restrictions.userOverridesList(),
     rankLabel: ranks.rankLabel(me),
     initials: initials(me.display_name),
   }));

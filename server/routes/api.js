@@ -25,6 +25,7 @@ const siteicon = require('./../lib/siteicon');
 const avatars = require('./../lib/avatars');
 const turnLib = require('./../lib/turn');
 const restrictions = require('./../lib/restrictions');
+const chat = require('./../lib/chat');
 
 const PHONE_RE = /^[0-9]{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -913,6 +914,7 @@ router.all('/admin/members', (req, res) => {
       users: usersForViewer(me),
       limits: restrictions.all(),
       limitDefs: restrictions.DEFINITIONS,
+      userLimits: restrictions.userOverridesList(),
       canEditLimits: !!me.is_manager,
     });
   }
@@ -927,6 +929,24 @@ router.all('/admin/members', (req, res) => {
     try { payload = JSON.parse(String(req.body.limits || '')); } catch (e) { return bad(res, { ok: false, msg: 'داده نامعتبر است' }); }
     if (!restrictions.save(payload)) return bad(res, { ok: false, msg: 'داده نامعتبر است' });
     return ok(res, { ok: true, limits: restrictions.all() });
+  }
+
+  // Per-member overrides: a restriction chosen here applies ONLY to this one account.
+  if (String(req.body.action || '') === 'save_user_restrictions' ||
+      String(req.body.action || '') === 'clear_user_restrictions') {
+    if (!me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+    const targetId = Number(req.body.target_id || req.body.user_id || 0);
+    if (!targetId || !dbm.get('SELECT id FROM users WHERE id=?', [targetId])) {
+      return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
+    }
+    if (String(req.body.action) === 'clear_user_restrictions') {
+      restrictions.clearUser(targetId);
+    } else {
+      let payload = {};
+      try { payload = JSON.parse(String(req.body.limits || '')); } catch (e) { return bad(res, { ok: false, msg: 'داده نامعتبر است' }); }
+      if (!restrictions.saveUser(targetId, payload)) return bad(res, { ok: false, msg: 'داده نامعتبر است' });
+    }
+    return ok(res, { ok: true, userLimits: restrictions.userOverridesList() });
   }
 
   const action = String(req.body.action || '');
@@ -1161,7 +1181,17 @@ router.all('/announcements', (req, res) => {
   if (!requireLoginApi(req, res)) return;
 
   if (req.method === 'GET') {
-    const rows = dbm.all('SELECT id, body, sender_username, sender_email, sender_display_name, created_at FROM announcements ORDER BY id DESC');
+    const rows = dbm.all(
+      `SELECT id, body, sender_id, sender_username, sender_email, sender_display_name,
+              reply_to, forwarded_from, created_at
+         FROM announcements WHERE deleted=0 ORDER BY id DESC`
+    );
+    rows.forEach(r => {
+      if (r.reply_to) {
+        const q = dbm.get('SELECT body, sender_username, sender_display_name FROM announcements WHERE id=?', [r.reply_to]);
+        r.reply = q ? { id: Number(r.reply_to), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' } : null;
+      }
+    });
     const fallback = dbm.get('SELECT username, email, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
     rows.forEach(r => {
       if (!r.sender_username && !r.sender_display_name) {
@@ -1181,17 +1211,16 @@ router.all('/announcements', (req, res) => {
     if (!me.is_manager && ranks.rankOf(me) !== 'premium') return bad(res, { ok: false, msg: 'فقط مدیر یا ادمین پریمیوم' }, 403);
     if (!checkCsrf(req, res)) return;
     const body = String(req.body.body || '').trim();
+    const replyTo = Number(req.body.reply_to || 0) || null;
     if (body === '') return bad(res, { ok: false, msg: 'متن خالی است' });
     const capCheck = restrictions.checkDaily(me, 'daily_announcements');
     if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
 
-    const ts = sqlNow();
-    const r = dbm.run(
-      'INSERT INTO announcements (body, sender_id, sender_username, sender_email, sender_display_name, created_at) VALUES (?,?,?,?,?,?)',
-      [body, Number(me.id), me.username || '', me.email || '', me.display_name || '', ts]
-    );
+    const ins = chat.insertAnnouncement({ body, senderId: me.id, replyTo });
+    if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
+    const ts = ins.ts;
     // fromUserId lets the sender's own tabs skip the echo (no double bubble)
-    const notif = { id: r.lastInsertRowid, body, created_at: ts, fromUserId: Number(me.id), username: me.username || '', display_name: me.display_name || '' };
+    const notif = { id: ins.id, body, created_at: ts, fromUserId: Number(me.id), username: me.username || '', display_name: me.display_name || '' };
     bus.notifyNew(notif);
     return ok(res, { ok: true });
   }
@@ -1209,6 +1238,9 @@ function findUserByIdentifier(identifier) {
   if (EMAIL_RE.test(identifier)) {
     return dbm.get('SELECT id, username, email, display_name, avatar FROM users WHERE email=?', [identifier]);
   }
+  // an exact username is how the messages search box opens a 1:1 chat
+  const byName = dbm.get('SELECT id, username, email, display_name, avatar FROM users WHERE username=?', [identifier]);
+  if (byName) return byName;
   return dbm.get('SELECT id, username, email, display_name, avatar FROM users WHERE phone=?', [identifier]);
 }
 
@@ -1261,8 +1293,10 @@ router.all('/messages/user', (req, res) => {
     return ok(res, { ok: true, pending: true });
   }
 
-  dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?)',
-    [u.id, body, u.username || '', u.email || '', sqlNow()]);
+  // applicant -> manager: from_manager=0, the main manager is the recipient
+  const mgr = dbm.get('SELECT id FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+  chat.insertPv({ userId: u.id, fromManager: false, senderId: u.id, recipientId: mgr && mgr.id,
+    peerId: mgr && mgr.id, body });
   dbm.run('UPDATE users SET last_activity=? WHERE id=?', [sqlNow(), u.id]);
   bus.pvConversationUpdated({ userId: Number(u.id), lastBody: body, fromManager: 0, ts: sqlNow() });
   bus.pvToManagers({ id: null, fromUserId: Number(u.id), fromName: u.display_name, body, fromManager: 0, ts: sqlNow() });
@@ -1278,96 +1312,189 @@ router.all('/messages/conversations', (req, res) => {
   // A thread only ever needs the tail: an unbounded history made the payload grow forever
   // (slow open on a phone link) while the UI only scrolls the recent part anyway.
   const THREAD_LIMIT = 400;
-  function threadMessages(userId) {
+  const mgr = dbm.get('SELECT id, username, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+  const MGR_ID = Number((mgr && mgr.id) || 0);
+  const MSG_COLS = `id, from_manager, body, sender_id, sender_username, sender_email,
+    sender_display_name, recipient_id, recipient_username, recipient_display_name,
+    reply_to, forwarded_from, created_at`;
+
+  // regular users and plain admins may DM the site manager AND every premium admin
+  function privilegedTargets() {
+    const rows = dbm.all(
+      `SELECT id, username, display_name, avatar, avatar_color, email, last_activity, rank, is_manager
+         FROM users WHERE is_manager=1 OR rank='premium' ORDER BY is_manager DESC, id`
+    );
+    return rows.map((t) => Object.assign({}, t, {
+      user_id: Number(t.id),
+      unread: Number((dbm.get(
+        'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND sender_id=? AND seen=0 AND deleted=0',
+        [me.id, t.id]
+      ) || {}).c || 0),
+      admin_chat: Number(t.is_manager) ? 1 : 0,
+    }));
+  }
+  function isPrivilegedTarget(id) {
+    return !!dbm.get('SELECT id FROM users WHERE id=? AND (is_manager=1 OR rank=?)', [Number(id), 'premium']);
+  }
+  // legacy rows have peer_id=0 and always mean the main manager
+  function peerClause(peerId) { return Number(peerId) === MGR_ID ? '(peer_id=? OR peer_id=0)' : 'peer_id=?'; }
+
+  function threadMessages(ownerId, peerId) {
+    const where = `WHERE user_id=? ${peerId ? 'AND ' + peerClause(peerId) : ''} AND deleted=0`;
     return dbm.all(
-      `SELECT id, from_manager, body, sender_username, sender_email, created_at FROM (
-         SELECT id, from_manager, body, sender_username, sender_email, created_at FROM pv_messages
-          WHERE user_id=? ORDER BY id DESC LIMIT ${THREAD_LIMIT}
+      `SELECT ${MSG_COLS} FROM (
+         SELECT ${MSG_COLS} FROM pv_messages ${where} ORDER BY id DESC LIMIT ${THREAD_LIMIT}
        ) ORDER BY id ASC`,
-      [userId]
+      peerId ? [ownerId, peerId] : [ownerId]
     );
   }
 
-  // every bubble shows who wrote it: prefer the sender identity stored on the row
-  // (username/email persisted so messages survive restarts), fall back to resolved users
-  function withSender(rows, mgrUser, otherUser) {
-    return (rows || []).map(m => {
-      const u = m.from_manager ? mgrUser : otherUser;
+  // both ends of the message are stored with the row; `incoming` is derived from sender_id
+  // so a premium admin's reply shows on the correct side for a regular user (and vice versa).
+  function withSender(rows, viewer) {
+    return (rows || []).map((m) => {
+      let reply = null;
+      if (m.reply_to) {
+        const q = dbm.get('SELECT body, sender_username, sender_display_name FROM pv_messages WHERE id=?', [m.reply_to]);
+        if (q) reply = { id: Number(m.reply_to), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' };
+      }
+      const fromMe = Number(m.sender_id) && Number(m.sender_id) === Number(viewer.id);
       return Object.assign({}, m, {
-        username: (m.sender_username || (u ? u.username : '') || ''),
-        display_name: (u ? u.display_name : '') || m.sender_username || '',
-        sender_email: (m.sender_email || (u ? u.email : '') || ''),
+        username: m.sender_username || '',
+        display_name: m.sender_display_name || m.sender_username || '',
+        incoming: m.sender_id ? !fromMe : (viewer.is_manager ? !m.from_manager : !!m.from_manager),
+        reply,
       });
     });
-  }
-  function managerUser() {
-    return dbm.get('SELECT id, username, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
   }
 
   if (req.method === 'GET') {
     const uid = Number(req.query.user_id || 0);
-
     if (!isMgr) {
-      // premium: exactly one thread — the chat with the main manager
-      const mgr = dbm.get(
-        'SELECT id, username, display_name, avatar, avatar_color, email, last_activity, rank, is_manager FROM users WHERE is_manager=1 ORDER BY id LIMIT 1'
-      );
-      if (uid === 0) {
-        const unread = dbm.get(
-          'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=1 AND seen=0',
-          [me.id]
-        );
-        const conversations = mgr ? [{
-          user_id: Number(mgr.id), username: mgr.username, display_name: mgr.display_name,
-          avatar: mgr.avatar, avatar_color: mgr.avatar_color, email: mgr.email,
-          last_activity: mgr.last_activity, unread: Number(unread && unread.c || 0), admin_chat: 1,
-          rank: mgr.rank || 'user', is_manager: Number(mgr.is_manager) || 0,
-        }] : [];
-        return ok(res, { ok: true, conversations, admin_chat: true });
-      }
-      const messages = threadMessages(me.id);
-      dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
-      // the "other side" of a premium's single thread is himself when he replies
-      return ok(res, { ok: true, messages: withSender(messages, managerUser(), me), admin_chat: true });
+      // regular / admin / premium: conversations are manager + premium admins only
+      if (uid === 0) return ok(res, { ok: true, conversations: privilegedTargets(), admin_chat: true });
+      if (!isPrivilegedTarget(uid)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+      const messages = threadMessages(me.id, uid);
+      dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND ' + peerClause(uid), [me.id, uid]);
+      return ok(res, { ok: true, messages: withSender(messages, me), admin_chat: true });
     }
 
     if (uid === 0) {
       const conversations = dbm.all(
         `SELECT DISTINCT m.user_id AS user_id, u.username, u.display_name, u.avatar, u.email, u.last_activity,
                 u.rank, u.is_manager,
-                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.seen=0) AS unread
+                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.seen=0 AND p.deleted=0) AS unread
          FROM pv_messages m JOIN users u ON u.id=m.user_id ORDER BY m.user_id`
       );
       return ok(res, { ok: true, conversations });
     }
-    const messages = threadMessages(uid);
-    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
-    const other = dbm.get('SELECT id, username, display_name FROM users WHERE id=?', [uid]);
-    return ok(res, { ok: true, messages: withSender(messages, me, other) });
+    const messages = threadMessages(uid, 0);
+    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [uid]);
+    return ok(res, { ok: true, messages: withSender(messages, me) });
   }
 
   if (!checkCsrf(req, res)) return;
   const uid = Number(req.body.user_id || 0);
   const body = String(req.body.body || '').trim();
+  const replyTo = Number(req.body.reply_to || 0) || null;
   if (uid === 0 || body === '') return bad(res, { ok: false, msg: 'داده ناقص' });
 
   if (!isMgr) {
-    // premium replies inside his own thread (stored under his user_id)
-    const r = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,0,?,?,?,?)',
-      [me.id, body, me.username || '', me.email || '', sqlNow()]);
-    const payload = { id: r.lastInsertRowid, fromUserId: Number(me.id), fromName: me.display_name, body, fromManager: 0, ts: sqlNow() };
+    if (!isPrivilegedTarget(uid)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+    const capCheck = restrictions.checkDaily(me, 'daily_pv_messages');
+    if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
+    const ins = chat.insertPv({ userId: me.id, peerId: uid, senderId: me.id, recipientId: uid,
+      fromManager: false, body, replyTo });
+    if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
+    const payload = { id: ins.id, fromUserId: Number(me.id), fromName: me.display_name, body,
+      fromManager: 0, ts: ins.ts, peerId: uid, username: me.username || '' };
+    // the target's own sockets (premium admin) + the manager's console
+    bus.pvNew(uid, payload);
     bus.pvToManagers(payload);
-    bus.pvConversationUpdated({ userId: Number(me.id), lastBody: body, fromManager: 0, ts: payload.ts });
-    return ok(res, { ok: true, id: payload.id });
+    bus.pvConversationUpdated({ userId: Number(me.id), lastBody: body, fromManager: 0, ts: ins.ts });
+    return ok(res, { ok: true, id: ins.id });
   }
 
-  const ts = sqlNow();
-  const r2 = dbm.run('INSERT INTO pv_messages (user_id, from_manager, body, sender_username, sender_email, created_at) VALUES (?,1,?,?,?,?)',
-    [uid, body, me.username || '', me.email || '', ts]);
-  // push live to the recipient (HTTP fallback path; socket PV_SEND does the same)
-  bus.pvNew(uid, { id: r2.lastInsertRowid, fromUserId: Number(me.id), fromName: me.display_name, body, fromManager: 1, ts });
-  bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts });
+  if (!dbm.get('SELECT id FROM users WHERE id=?', [uid])) return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
+  const ins = chat.insertPv({ userId: uid, peerId: MGR_ID, senderId: me.id, recipientId: uid,
+    fromManager: true, body, replyTo });
+  if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
+  const payload = { id: ins.id, fromUserId: Number(me.id), fromName: me.display_name, body,
+    fromManager: 1, ts: ins.ts, peerId: MGR_ID, username: me.username || '' };
+  bus.pvNew(uid, payload);
+  bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts: ins.ts });
+  return ok(res, { ok: true, id: ins.id });
+});
+
+// minimal user lookup for the messages search box: only the username is ever rendered —
+// no email, phone, avatar or rank is sent to (or shown by) the client.
+router.get('/messages/search', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  const q = String(req.query.username || '').trim();
+  if (q.length < 2) return ok(res, { ok: true, users: [] });
+  const rows = dbm.all(
+    'SELECT id, username, display_name FROM users WHERE username LIKE ? ORDER BY id LIMIT 10',
+    ['%' + q.replace(/[%_]/g, '\\$&') + '%']
+  );
+  return ok(res, { ok: true, users: rows.map(r => ({ user_id: Number(r.id), username: r.username, display_name: r.display_name })) });
+});
+
+// who a message can be forwarded to. Even this list carries usernames only.
+router.get('/messages/targets', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  const rows = me.is_manager
+    ? dbm.all("SELECT id, username FROM users WHERE is_manager=0 ORDER BY id LIMIT 500")
+    : dbm.all("SELECT id, username FROM users WHERE is_manager=1 OR rank='premium' ORDER BY id LIMIT 500");
+  return ok(res, { ok: true, targets: rows.map(r => ({ user_id: Number(r.id), username: r.username })) });
+});
+
+router.post('/messages/delete', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!checkCsrf(req, res)) return;
+  const r = chat.remove(String(req.body.kind || ''), req.body.id, me);
+  if (!r.ok) return bad(res, { ok: false, msg: r.error === 'NOT_AUTHORIZED' ? 'دسترسی ندارید' : 'پیام یافت نشد' }, 403);
+  bus.msgDeleted({ kind: r.kind, id: r.id });
   return ok(res, { ok: true });
+});
+
+// Forward copies an existing message into another conversation, remembering who wrote the
+// original. Works for private and public messages and respects the DM audience per rank.
+router.post('/messages/forward', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!ranks.canUseMessages(me) && !me.is_manager) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  if (!checkCsrf(req, res)) return;
+  const kind = String(req.body.kind || '');
+  const toId = Number(req.body.to_user_id || 0);
+  const from = chat.find(kind, req.body.id);
+  if (!from) return bad(res, { ok: false, msg: 'پیام یافت نشد' });
+  const target = dbm.get('SELECT id, username, is_manager, rank FROM users WHERE id=?', [toId]);
+  if (!target) return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
+  const allowed = me.is_manager || Number(target.is_manager) || target.rank === 'premium';
+  if (!allowed) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  const capCheck = restrictions.checkDaily(me, 'daily_pv_messages');
+  if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
+  const mgr = dbm.get('SELECT id FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+  const author = from.sender_username || from.sender_display_name || '';
+  const body = (author ? '↪ از @' + author + '\n' : '') + String(from.body || '');
+  const peerId = me.is_manager ? (mgr && mgr.id) : toId;
+  const ins = chat.insertPv({
+    userId: me.is_manager ? toId : me.id,
+    peerId, senderId: me.id, recipientId: toId,
+    fromManager: !!me.is_manager, body, forwardedFrom: author,
+  });
+  if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
+  const payload = { id: ins.id, fromUserId: Number(me.id), fromName: me.display_name, body,
+    fromManager: !!me.is_manager, ts: ins.ts, peerId, username: me.username || '' };
+  bus.pvNew(toId, payload);
+  if (!me.is_manager) bus.pvToManagers(payload);
+  bus.pvConversationUpdated({ userId: me.is_manager ? toId : me.id, lastBody: body, fromManager: !!me.is_manager, ts: ins.ts });
+  return ok(res, { ok: true, id: ins.id });
 });
 
 // ------------------------------------------------------------------
@@ -1378,7 +1505,7 @@ function unreadCountFor(me) {
     const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE from_manager=0 AND seen=0');
     return Number((row && row.c) || 0);
   }
-  const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=1 AND seen=0', [me.id]);
+  const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND sender_id<>? AND seen=0 AND deleted=0', [me.id, me.id]);
   return Number((row && row.c) || 0);
 }
 
@@ -1395,7 +1522,7 @@ router.post('/messages/read-all', (req, res) => {
   if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
   if (!checkCsrf(req, res)) return;
   if (me.is_manager) dbm.run('UPDATE pv_messages SET seen=1 WHERE from_manager=0');
-  else dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
+  else dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [me.id]);
   return ok(res, { ok: true, count: 0 });
 });
 
@@ -1410,7 +1537,7 @@ router.post('/messages/seen', (req, res) => {
     const uid = Number(req.body.user_id || 0);
     if (uid) dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
   } else {
-    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=1', [me.id]);
+    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [me.id]);
   }
   return ok(res, { ok: true });
 });

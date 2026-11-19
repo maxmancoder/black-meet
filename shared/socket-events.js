@@ -96,6 +96,7 @@
     PV_NEW_MESSAGE: 'pv:new-message',
     PV_ACK: 'pv:ack',
     PV_CONVERSATION_UPDATED: 'pv:conversation-updated',
+    MSG_DELETED: 'msg:deleted',
 
     // ---- notifications ----
     NOTIF_NEW: 'notif:new',

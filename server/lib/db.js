@@ -92,7 +92,33 @@ function db() {
   if (pvcols.indexOf('sender_email') === -1) {
     _db.exec("ALTER TABLE pv_messages ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''");
   }
+  // Batch 31 — both ends of every message + reply/forward/soft-delete. Each column is
+  // added only when missing so an older database is upgraded in place, never rebuilt.
+  const PV_ADD = {
+    sender_id: 'INTEGER NOT NULL DEFAULT 0',
+    sender_display_name: "TEXT NOT NULL DEFAULT ''",
+    recipient_id: 'INTEGER NOT NULL DEFAULT 0',
+    recipient_username: "TEXT NOT NULL DEFAULT ''",
+    recipient_display_name: "TEXT NOT NULL DEFAULT ''",
+    peer_id: 'INTEGER NOT NULL DEFAULT 0',
+    reply_to: 'INTEGER',
+    forwarded_from: "TEXT NOT NULL DEFAULT ''",
+    deleted: 'INTEGER NOT NULL DEFAULT 0',
+    deleted_at: 'TEXT',
+  };
+  Object.keys(PV_ADD).forEach((k) => {
+    if (pvcols.indexOf(k) === -1) _db.exec('ALTER TABLE pv_messages ADD COLUMN ' + k + ' ' + PV_ADD[k]);
+  });
   const acols = _db.prepare('PRAGMA table_info(announcements)').all().map((r) => r.name);
+  const ANN_ADD = {
+    reply_to: 'INTEGER',
+    forwarded_from: "TEXT NOT NULL DEFAULT ''",
+    deleted: 'INTEGER NOT NULL DEFAULT 0',
+    deleted_at: 'TEXT',
+  };
+  Object.keys(ANN_ADD).forEach((k) => {
+    if (acols.indexOf(k) === -1) _db.exec('ALTER TABLE announcements ADD COLUMN ' + k + ' ' + ANN_ADD[k]);
+  });
   if (acols.indexOf('sender_id') === -1) {
     _db.exec('ALTER TABLE announcements ADD COLUMN sender_id INTEGER NOT NULL DEFAULT 0');
   }
@@ -105,6 +131,27 @@ function db() {
   if (acols.indexOf('sender_display_name') === -1) {
     _db.exec("ALTER TABLE announcements ADD COLUMN sender_display_name TEXT NOT NULL DEFAULT ''");
   }
+  // the new indexes can only be created now: on an older database the columns did not
+  // exist when schema.sql ran, so putting these there broke boot ("no such column").
+  _db.exec('CREATE INDEX IF NOT EXISTS idx_pv_thread ON pv_messages (user_id, peer_id, id)');
+  _db.exec('CREATE INDEX IF NOT EXISTS idx_pv_sender ON pv_messages (sender_id, created_at)');
+  // One-time product migration: regular users AND plain admins must be able to open
+  // «پیام‌ها» and DM the manager / premium admins. Older saved restriction rows had
+  // can_use_messages OFF for `user`, which silently redirected them away from the page.
+  try {
+    const marker = _db.prepare("SELECT value FROM bm_settings WHERE key='chat_access_migrated_v31'").get();
+    if (!marker) {
+      const row = _db.prepare("SELECT value FROM bm_settings WHERE key='rank_restrictions'").get();
+      if (row && row.value) {
+        const j = JSON.parse(row.value);
+        ['user', 'admin'].forEach((r) => {
+          if (j[r] && j[r].can_use_messages) j[r].can_use_messages.on = true;
+        });
+        _db.prepare("UPDATE bm_settings SET value=? WHERE key='rank_restrictions'").run(JSON.stringify(j));
+      }
+      _db.prepare("INSERT OR REPLACE INTO bm_settings (key, value) VALUES ('chat_access_migrated_v31','1')").run();
+    }
+  } catch (e) { /* best-effort migration */ }
   // backfill sender identity for rows created before these columns existed
   try {
     _db.exec(`
@@ -118,6 +165,27 @@ function db() {
         sender_username = COALESCE((SELECT u.username FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), ''),
         sender_email    = COALESCE((SELECT u.email    FROM users u WHERE u.is_manager = 1 ORDER BY u.id LIMIT 1), '')
       WHERE from_manager = 1 AND (sender_username = '' AND sender_email = '');
+    `);
+    // Batch 31 backfill: derive both ends of legacy rows. `user_id` is always the
+    // non-manager side of a thread; `peer_id` the privileged side (legacy = main manager).
+    _db.exec(`
+      UPDATE pv_messages SET
+        sender_id   = CASE WHEN from_manager=1
+                        THEN COALESCE((SELECT u.id FROM users u WHERE u.is_manager=1 ORDER BY u.id LIMIT 1),0)
+                        ELSE user_id END,
+        recipient_id = CASE WHEN from_manager=1 THEN user_id
+                        ELSE COALESCE((SELECT u.id FROM users u WHERE u.is_manager=1 ORDER BY u.id LIMIT 1),0) END,
+        peer_id     = CASE WHEN from_manager=0
+                        THEN COALESCE((SELECT u.id FROM users u WHERE u.is_manager=1 ORDER BY u.id LIMIT 1),0)
+                        ELSE user_id END
+      WHERE sender_id = 0 AND recipient_id = 0 AND peer_id = 0;
+    `);
+    _db.exec(`
+      UPDATE pv_messages SET
+        recipient_username     = COALESCE((SELECT u.username      FROM users u WHERE u.id = pv_messages.recipient_id), ''),
+        recipient_display_name = COALESCE((SELECT u.display_name  FROM users u WHERE u.id = pv_messages.recipient_id), ''),
+        sender_display_name    = COALESCE((SELECT u.display_name  FROM users u WHERE u.id = pv_messages.sender_id), '')
+      WHERE recipient_username = '' AND recipient_id > 0;
     `);
     _db.exec(`
       UPDATE announcements SET

@@ -106,6 +106,24 @@ async function ensureSchema() {
       updated_at     BIGINT DEFAULT 0,
       neon_synced_at TIMESTAMPTZ DEFAULT now()
     )`);
+    // durable chat: a second copy of every private + public message, so a redeploy cannot
+    // erase conversations. soft-deleted rows are mirrored too (deleted=1).
+    await c.query(`CREATE TABLE IF NOT EXISTS bm_pv_messages (
+      id BIGINT PRIMARY KEY, user_id BIGINT, from_manager INTEGER DEFAULT 0, body TEXT,
+      seen INTEGER DEFAULT 0, client_msg_id TEXT,
+      sender_username TEXT, sender_email TEXT, sender_id BIGINT DEFAULT 0, sender_display_name TEXT,
+      recipient_id BIGINT DEFAULT 0, recipient_username TEXT, recipient_display_name TEXT,
+      peer_id BIGINT DEFAULT 0, reply_to BIGINT, forwarded_from TEXT,
+      deleted INTEGER DEFAULT 0, deleted_at TEXT, created_at TEXT,
+      neon_synced_at TIMESTAMPTZ DEFAULT now()
+    )`);
+    await c.query('CREATE INDEX IF NOT EXISTS idx_bm_pv_thread ON bm_pv_messages(user_id, peer_id, id)');
+    await c.query(`CREATE TABLE IF NOT EXISTS bm_announcements (
+      id BIGINT PRIMARY KEY, body TEXT, sender_id BIGINT DEFAULT 0, sender_username TEXT,
+      sender_email TEXT, sender_display_name TEXT, reply_to BIGINT, forwarded_from TEXT,
+      deleted INTEGER DEFAULT 0, deleted_at TEXT, created_at TEXT,
+      neon_synced_at TIMESTAMPTZ DEFAULT now()
+    )`);
     return true;
   });
   return _schemaReady;
@@ -230,6 +248,88 @@ async function removeAvatar(id) {
   return !!res;
 }
 
+// ---- durable chat mirror ------------------------------------------------------------
+// The messages page already writes every PV/public message to SQLite; this optional mirror
+// keeps a second copy in Neon so a redeploy (which wipes Render's ephemeral disk) cannot
+// erase a conversation. Inert without NEON_DATABASE_URL, exactly like the account mirror.
+const PV_CHAT_COLS = [
+  'id', 'user_id', 'from_manager', 'body', 'seen', 'client_msg_id',
+  'sender_username', 'sender_email', 'sender_id', 'sender_display_name',
+  'recipient_id', 'recipient_username', 'recipient_display_name', 'peer_id',
+  'reply_to', 'forwarded_from', 'deleted', 'deleted_at', 'created_at',
+];
+const ANN_COLS = [
+  'id', 'body', 'sender_id', 'sender_username', 'sender_email', 'sender_display_name',
+  'reply_to', 'forwarded_from', 'deleted', 'deleted_at', 'created_at',
+];
+let _chatTimer = null;
+
+async function pushChat() {
+  if (!enabled()) return null;
+  const ok = await ensureSchema();
+  if (!ok) return null;
+  let pv, ann;
+  try {
+    const dbm = require('./db');
+    pv = dbm.all('SELECT ' + PV_CHAT_COLS.join(',') + ' FROM pv_messages ORDER BY id');
+    ann = dbm.all('SELECT ' + ANN_COLS.join(',') + ' FROM announcements ORDER BY id');
+  } catch (e) { return null; }
+  if (!pv.length && !ann.length) return { skipped: 'empty source' };
+  const res = await withClient(async (c) => {
+    await c.query('BEGIN');
+    try {
+      for (const table of [
+        { name: 'bm_pv_messages', cols: PV_CHAT_COLS, rows: pv },
+        { name: 'bm_announcements', cols: ANN_COLS, rows: ann },
+      ]) {
+        for (const r of table.rows) {
+          const vals = table.cols.map((k) => (r[k] === undefined ? null : r[k]));
+          const ph = table.cols.map((_, i) => '$' + (i + 1)).join(',');
+          await c.query(
+            'INSERT INTO ' + table.name + ' (' + table.cols.join(',') + ') VALUES (' + ph + ')' +
+            ' ON CONFLICT(id) DO UPDATE SET ' + table.cols.slice(1).map((k) => k + '=EXCLUDED.' + k).join(',') +
+            ', neon_synced_at = now()',
+            vals
+          );
+        }
+      }
+      await c.query('COMMIT');
+      return { pv: pv.length, announcements: ann.length };
+    } catch (e) {
+      try { await c.query('ROLLBACK'); } catch (e2) {}
+      throw e;
+    }
+  });
+  if (res) console.log('[neon] chat mirror pushed pv=' + res.pv + ' public=' + res.announcements);
+  return res;
+}
+
+// Debounced so a busy conversation does not open a connection per message. `.unref()` keeps
+// it from holding the process open; a failure is logged but never breaks the send path.
+function scheduleChat() {
+  if (!enabled()) return;
+  if (_chatTimer) clearTimeout(_chatTimer);
+  _chatTimer = setTimeout(() => {
+    _chatTimer = null;
+    pushChat().catch(() => {});
+  }, 1500);
+  if (_chatTimer.unref) _chatTimer.unref();
+}
+
+// Restore the mirror into an empty local chat. Returns null when Neon could not be read
+// (the caller must then leave the local database alone, never wipe it).
+async function pullChat() {
+  if (!enabled()) return null;
+  const ok = await ensureSchema();
+  if (!ok) return null;
+  const res = await withClient(async (c) => {
+    const pv = await c.query('SELECT ' + PV_CHAT_COLS.join(',') + ' FROM bm_pv_messages ORDER BY id');
+    const ann = await c.query('SELECT ' + ANN_COLS.join(',') + ' FROM bm_announcements ORDER BY id');
+    return { pv: pv.rows, announcements: ann.rows };
+  });
+  return res || null;
+}
+
 function colsJoin() { return COLUMNS.join(','); }
 
 function info() {
@@ -247,5 +347,6 @@ function info() {
 module.exports = {
   enabled, ensureSchema, pushAll, pullAll, removeUser,
   pushAvatar, pushAvatars, pullAvatars, removeAvatar,
+  pushChat, pullChat, scheduleChat,
   info, COLUMNS, DSN,
 };

@@ -323,6 +323,7 @@ window.SIGNUP_MODE = <%- json(signupMode) %>;
 window.PERM = { members: <%- json(canMembers) %>, requests: <%- json(canRequests) %>, decide: <%- json(canDecide) %>, changeMode: <%- json(canChangeMode) %>, limits: <%- json(canLimits) %> };
 window.LIMITS = <%- json(limits) %>;
 window.LIMIT_DEFS = <%- json(limitDefs) %>;
+window.USER_LIMITS = <%- json(userLimits || []) %>;
 window.CAN_EDIT_LIMITS = <%- json(canLimits) %>;
 </script>
 <script src="<%- asset('assets/js/dashboard.js') %>"></script>

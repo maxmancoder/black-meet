@@ -29,6 +29,11 @@ function pvConversationUpdated(data) {
   });
 }
 
+// a soft-deleted message disappears from every open thread at once
+function msgDeleted(data) {
+  allSockets().forEach((s) => s.emit(EV.MSG_DELETED, data || {}));
+}
+
 // push an incoming private message to every manager console (live append)
 function pvToManagers(data) {
   allSockets().forEach((s) => {
@@ -57,6 +62,6 @@ function meetingDeleted(data) {
 }
 
 module.exports = {
-  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, srToManagers, roomEvent,
+  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, msgDeleted, srToManagers, roomEvent,
   meetingCreated, meetingEnded, meetingDeleted,
 };

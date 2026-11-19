@@ -136,19 +136,37 @@ CREATE TABLE IF NOT EXISTS meeting_blocks (
 CREATE INDEX IF NOT EXISTS idx_blocks_user ON meeting_blocks (user_id);
 
 CREATE TABLE IF NOT EXISTS pv_messages (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id         INTEGER NOT NULL,
-  from_manager    INTEGER NOT NULL DEFAULT 0,
-  body            TEXT    NOT NULL,
-  seen            INTEGER NOT NULL DEFAULT 0,
-  client_msg_id   TEXT,
-  sender_username TEXT    NOT NULL DEFAULT '',
-  sender_email    TEXT    NOT NULL DEFAULT '',
-  created_at      TEXT    NOT NULL
+  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id                INTEGER NOT NULL,
+  from_manager           INTEGER NOT NULL DEFAULT 0,
+  body                   TEXT    NOT NULL,
+  seen                   INTEGER NOT NULL DEFAULT 0,
+  client_msg_id          TEXT,
+  sender_username        TEXT    NOT NULL DEFAULT '',
+  sender_email           TEXT    NOT NULL DEFAULT '',
+  -- durable attribution: BOTH ends of every private message are stored with the row, so
+  -- a restart / redeploy (or a renamed account) can never lose who wrote to whom.
+  sender_id              INTEGER NOT NULL DEFAULT 0,
+  sender_display_name    TEXT    NOT NULL DEFAULT '',
+  recipient_id           INTEGER NOT NULL DEFAULT 0,
+  recipient_username     TEXT    NOT NULL DEFAULT '',
+  recipient_display_name TEXT    NOT NULL DEFAULT '',
+  -- the privileged peer of a non-manager thread (manager or premium admin). 0 = legacy
+  -- row from before this column existed, which always means the main manager.
+  peer_id                INTEGER NOT NULL DEFAULT 0,
+  -- message actions: reply quotes an older row, forward remembers the original author,
+  -- deleted is a soft delete so the row can be restored/mirrored consistently.
+  reply_to               INTEGER,
+  forwarded_from         TEXT    NOT NULL DEFAULT '',
+  deleted                INTEGER NOT NULL DEFAULT 0,
+  deleted_at             TEXT,
+  created_at             TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pv_user ON pv_messages (user_id);
 CREATE INDEX IF NOT EXISTS idx_pv_user_seen ON pv_messages (user_id, from_manager, seen);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pv_client ON pv_messages (user_id, from_manager, client_msg_id);
+-- NB: indexes on the Batch 31 columns are created in db.js AFTER the in-place migrations,
+-- otherwise an older database fails to boot with "no such column: peer_id".
 
 CREATE TABLE IF NOT EXISTS announcements (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +175,20 @@ CREATE TABLE IF NOT EXISTS announcements (
   sender_username     TEXT    NOT NULL DEFAULT '',
   sender_email        TEXT    NOT NULL DEFAULT '',
   sender_display_name TEXT    NOT NULL DEFAULT '',
+  -- public messages are durable too; these power reply / forward / soft-delete
+  reply_to            INTEGER,
+  forwarded_from      TEXT    NOT NULL DEFAULT '',
+  deleted             INTEGER NOT NULL DEFAULT 0,
+  deleted_at          TEXT,
   created_at          TEXT    NOT NULL
+);
+
+-- per-user restrictions: a manager can override ANY rank restriction for ONE member.
+-- The overrides are just a sparse JSON object keyed by the same keys as `rank_restrictions`.
+CREATE TABLE IF NOT EXISTS user_restrictions (
+  user_id    INTEGER PRIMARY KEY,
+  data       TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS migrations (

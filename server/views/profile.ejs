@@ -154,10 +154,12 @@
                 <div class="bm-infobox"><span class="bm-infobox-title">نقش</span><span class="bm-infobox-val"><%- rankLabel %></span></div>
             </div>
 
+            <% if (!isManager && rank !== 'premium') { %>
             <div class="dash-note">
                 <%- icon('lock') %>
                 <span>برای تغییر رمز عبور به ادمین پیام دهید!</span>
             </div>
+            <% } %>
         </section>
 
         <% if (me.is_manager) { %>
