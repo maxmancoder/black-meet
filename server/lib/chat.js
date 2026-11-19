@@ -119,6 +119,21 @@ function find(kind, id) {
   return row || null;
 }
 
+// Only the author may edit his own message (including public announcements). A manager
+// cannot rewrite somebody else's words; he can still delete abuse via remove().
+function edit(kind, id, actor, rawBody) {
+  const table = kind === 'public' ? 'announcements' : 'pv_messages';
+  const row = dbm.get('SELECT id, body, sender_id, user_id, from_manager FROM ' + table + ' WHERE id=? AND deleted=0', [Number(id || 0)]);
+  if (!row) return { ok: false, error: 'NOT_FOUND' };
+  if (Number(row.sender_id || row.user_id || 0) !== Number(actor.id)) return { ok: false, error: 'NOT_AUTHORIZED' };
+  const body = String(rawBody || '').trim().slice(0, 4000);
+  if (!body) return { ok: false, error: 'EMPTY' };
+  if (body === String(row.body || '')) return { ok: true, id: Number(row.id), body, unchanged: true, kind };
+  dbm.run('UPDATE ' + table + ' SET body=? WHERE id=?', [body, row.id]);
+  neon.scheduleChat();
+  return { ok: true, id: Number(row.id), body, kind };
+}
+
 // Restore the durable mirror into an empty local chat (fresh Render instance).
 async function boot() {
   if (!neon.enabled()) return { enabled: false, restored: 0 };
@@ -157,4 +172,4 @@ async function boot() {
   return { enabled: true, restored: n };
 }
 
-module.exports = { insertPv, insertAnnouncement, remove, find, boot, PV_CHAT_COLS, ANN_COLS };
+module.exports = { insertPv, insertAnnouncement, remove, edit, find, boot, PV_CHAT_COLS, ANN_COLS };

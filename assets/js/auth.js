@@ -5,6 +5,16 @@
   let currentPurpose = '';
   let lastOtp = '';
   let timerInterval = null;
+  let phoneSending = false;
+  function setPhoneBusy(on) {
+    phoneSending = on;
+    const btn = document.getElementById('btn-send-code');
+    if (btn) { btn.disabled = on; btn.classList.toggle('bm-btn-busy', on); }
+    const inp = document.getElementById('lp-phone');
+    if (inp) inp.disabled = on;
+  }
+  // view switches (back / OTP) always release the one-shot key
+  window.__BMResetAuthBtn = function () { setPhoneBusy(false); };
 
   const VIEWS = ['view-login-options', 'view-login-email', 'view-login-phone', 'view-signup', 'view-signup-pending', 'view-otp'];
   let pendingPhone = '';
@@ -28,6 +38,7 @@
     // retrigger animation
     void t.offsetWidth;
     t.classList.add('view');
+    window.__BMResetAuthBtn && window.__BMResetAuthBtn();
     if (id === 'view-otp') {
       window.__BMResetBtn && window.__BMResetBtn();
       const disp = document.getElementById('otp-display');
@@ -111,15 +122,18 @@
   }
 
   window.loginPhone = function () {
+    if (phoneSending) return; // one press only — the spinner replaces the label until the OTP view
     const phone = document.getElementById('lp-phone').value.trim();
     if (!phone) return showToast('شماره تلفن را وارد کنید');
+    setPhoneBusy(true);
     postJSON('api/login/phone', { csrf, phone })
       .then(d => {
         if (d.ok) {
           currentPhone = d.phone; currentPurpose = d.purpose; lastOtp = d.otp;
-          switchView('view-otp');
-        } else showToast(d.msg || 'خطا');
-      });
+          switchView('view-otp'); // resets the key through __BMResetAuthBtn
+        } else { setPhoneBusy(false); showToast(d.msg || 'خطا'); }
+      })
+      .catch(() => { setPhoneBusy(false); showToast('خطای شبکه'); });
   };
 
   window.signup = function () {

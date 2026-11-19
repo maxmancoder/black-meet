@@ -1079,16 +1079,25 @@ r.sockets.forEach((s, sid) => {
         body, clientMsgId, replyTo,
       });
       if (!ins.ok) return fail('SAVE_FAILED');
+      // carry the quoted message itself, not just its id — the receiver must see WHICH
+      // message was answered (the old payload sent only replyTo, so live replies had no quote)
+      let reply = null;
+      if (replyTo) {
+        const q = dbm.get('SELECT body, sender_username, sender_display_name FROM pv_messages WHERE id=?', [replyTo]);
+        if (q) reply = { id: replyTo, body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' };
+      }
       const payload = {
         id: ins.id, fromUserId: uid, fromName: actor.display_name || '', body, clientMsgId,
-        fromManager: isMgr ? 1 : 0, ts: ins.ts, replyTo,
+        fromManager: isMgr ? 1 : 0, ts: ins.ts, replyTo, reply,
+        senderId: uid, mine: false,
         peerId: isMgr ? MGR_ID : toId, username: actor.username || '',
       };
       socket.emit(EV.PV_ACK, { ok: true, clientMsgId, id: ins.id });
-      // the named recipient gets the bubble; a manager console also sees every incoming DM
+      // bus.pvNew already emits to EVERY socket of the recipient. The old extra
+      // callReqTargets() loop sent the same bubble a second time (and pvToManagers a
+      // third when the recipient was the manager) — that was the "send repeats" bug.
       bus.pvNew(toId, payload);
-      if (!isMgr) bus.pvToManagers(payload);
-      callReqTargets(toId).forEach((sid) => io.to(sid).emit(EV.PV_NEW_MESSAGE, payload));
+      if (!isMgr) bus.pvToManagers(payload, toId);
       bus.pvConversationUpdated({ userId: isMgr ? toId : uid, lastBody: body, fromManager: isMgr ? 1 : 0, ts: ins.ts });
       if (typeof cb === 'function') cb({ ok: true, id: ins.id });
     });

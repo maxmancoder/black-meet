@@ -8,6 +8,12 @@
   let replyTo = null;   // {id, body, username} of the message being replied to
   let forwarding = null; // {kind, id} of the message being forwarded
   let searchRows = [];  // username-only results from the search box (no profile data shown)
+  let sending = false;  // one shot per click/Enter — no duplicate bubbles or rows
+  function setSending(on) {
+    sending = on;
+    const btn = document.querySelector('.msg-send');
+    if (btn) { btn.disabled = on; btn.classList.toggle('bm-btn-busy', on); }
+  }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -135,11 +141,13 @@
     }).catch(() => {});
   }
 
-  function sendViaHttp(userId, body, replyId) {
+  function sendViaHttp(userId, body, replyId, clientMsgId) {
+    const data = { csrf: CSRF, user_id: String(userId), body, reply_to: String(replyId || '') };
+    if (clientMsgId) data.client_msg_id = clientMsgId;
     return fetch('api/messages/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrf: CSRF, user_id: String(userId), body, reply_to: String(replyId || '') }),
+      body: new URLSearchParams(data),
     }).then(r => r.json());
   }
 
@@ -286,6 +294,23 @@
     return !!flagFromManager !== !!window.__IS_MANAGER;
   }
 
+  function msgButtonsHtml(kind, mine) {
+    const canDelete = mine || (kind === 'public' && !!window.__IS_MANAGER);
+    return '<button type="button" data-no-soft onclick="replyMessage(this)" aria-label="پاسخ">' + bmIcon('arrow_back') + '<span>پاسخ</span></button>' +
+      '<button type="button" data-no-soft onclick="copyMessage(this)" aria-label="کپی">' + bmIcon('description') + '<span>کپی</span></button>' +
+      (mine ? '<button type="button" data-no-soft onclick="editMessage(this)" aria-label="ویرایش">' + bmIcon('edit') + '<span>ویرایش</span></button>' : '') +
+      '<button type="button" data-no-soft onclick="openForward(this)" aria-label="هدایت">' + bmIcon('arrow_forward') + '<span>هدایت</span></button>' +
+      (canDelete ? '<button type="button" data-no-soft onclick="deleteMessage(this)" aria-label="حذف">' + bmIcon('delete_sweep') + '<span>حذف</span></button>' : '');
+  }
+  // optimistic bubbles have no server id yet — fill their actions once the ACK arrives
+  function fillMsgActions(row) {
+    if (!row) return;
+    const box = row.querySelector('.bm-msg-actions');
+    if (!box || !box.dataset.pending) return;
+    box.innerHTML = msgButtonsHtml(row.dataset.kind || 'pv', row.dataset.mine === '1');
+    delete box.dataset.pending;
+  }
+
   function appendMessage(m, incoming, kind) {
     const box = document.getElementById('chat-area');
     if (!box) return null;
@@ -293,22 +318,25 @@
     const side = typeof m.incoming === 'boolean' ? m.incoming : incoming;
     el.className = 'dash-bubble-row bm-msg-row ' + (side ? 'is-them' : 'is-me');
     if (m.id) { el.dataset.msgId = Number(m.id); el.dataset.kind = kind || 'pv'; }
+    if (m.clientMsgId) el.dataset.clientId = m.clientMsgId;
+    if (typeof m.body === 'string') el.dataset.body = m.body;
+    // only the author may EDIT; the main manager may also delete a public announcement
+    const mine = !!(m.mine || (m.senderId && Number(m.senderId) === Number(window.MS_ID)));
+    el.dataset.mine = mine ? '1' : '0';
     const label = senderName(m, side);
     let quote = '';
-    if (m.reply) {
-      quote = '<div class="bm-msg-quote"><span class="bm-msg-quote-name" dir="ltr">' +
+    if (m.reply && m.reply.id) {
+      // clickable on BOTH sides: tapping it flashes the original bubble for 2 seconds
+      quote = '<div class="bm-msg-quote bm-msg-quote-link" data-reply-id="' + Number(m.reply.id) + '"' +
+        ' onclick="bmJumpToReply(this)" role="button" tabindex="0" title="نمایش پیام مورد پاسخ">' +
+        '<span class="bm-msg-quote-name" dir="ltr">' +
         esc(m.reply.username ? '@' + m.reply.username : (m.reply.display_name || '')) + '</span>' +
         '<span class="bm-msg-quote-body">' + esc(m.reply.body || '') + '</span></div>';
     }
     const fwd = m.forwarded_from
       ? '<span class="bm-msg-fwd">' + bmIcon('arrow_forward') + ' از @' + esc(m.forwarded_from) + '</span>' : '';
-    const acts = m.id
-      ? '<div class="bm-msg-actions">' +
-          '<button type="button" data-no-soft onclick="replyMessage(this)" aria-label="پاسخ">' + bmIcon('arrow_back') + '<span>پاسخ</span></button>' +
-          '<button type="button" data-no-soft onclick="openForward(this)" aria-label="هدایت">' + bmIcon('arrow_forward') + '<span>هدایت</span></button>' +
-          '<button type="button" data-no-soft onclick="deleteMessage(this)" aria-label="حذف">' + bmIcon('delete_sweep') + '<span>حذف</span></button>' +
-        '</div>'
-      : '';
+    const acts = '<div class="bm-msg-actions"' + (m.id ? '' : ' data-pending="1"') + '>' +
+      (m.id ? msgButtonsHtml(kind || 'pv', mine) : '') + '</div>';
     el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' + quote +
       '<div class="dash-bubble">' + fwd + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>' + acts;
     box.appendChild(el);
@@ -340,7 +368,8 @@
     return {
       id: Number(row.dataset.msgId),
       kind: row.dataset.kind || 'pv',
-      body: bubble ? bubble.textContent : '',
+      body: row.dataset.body !== undefined ? row.dataset.body : (bubble ? bubble.textContent : ''),
+      rawBody: row.dataset.body !== undefined ? row.dataset.body : (bubble ? bubble.textContent : ''),
       sender: sender ? sender.textContent.replace(/^@/, '') : '',
     };
   }
@@ -414,6 +443,97 @@
       if (!d2.ok) showToast(d2.msg || 'حذف پیام ناموفق بود');
       else if (row) row.remove();
     }).catch(() => showToast('خطای شبکه'));
+  };
+
+  // ---- copy / edit / jump-to-quote ---------------------------------------------------
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { showToast('کپی ناموفق بود'); }
+    ta.remove();
+  }
+  window.copyMessage = function (btn) {
+    const d = rowData(btn);
+    if (!d) return;
+    const text = d.rawBody || '';
+    const done = () => showToast('پیام کپی شد');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else fallbackCopy(text, done);
+  };
+
+  window.bmJumpToReply = function (el) {
+    const id = el && el.dataset && el.dataset.replyId;
+    if (!id) return;
+    const box = document.getElementById('chat-area');
+    const target = box && box.querySelector('.bm-msg-row[data-msg-id="' + Number(id) + '"]');
+    if (!target) { showToast('پیام مورد پاسخ در این گفتگو موجود نیست'); return; }
+    try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { target.scrollIntoView(); }
+    target.classList.remove('bm-reply-flash');
+    void target.offsetWidth; // restart the animation even on repeated taps
+    target.classList.add('bm-reply-flash');
+    setTimeout(() => target.classList.remove('bm-reply-flash'), 2000);
+  };
+
+  window.bmApplyEdited = function (d) {
+    if (!d || !d.id) return;
+    const row = document.querySelector('#chat-area .bm-msg-row[data-msg-id="' + Number(d.id) + '"]');
+    if (!row) return;
+    const bubble = row.querySelector('.dash-bubble');
+    if (bubble) bubble.innerHTML = (window.bmLinkify ? window.bmLinkify(d.body) : esc(d.body));
+    row.dataset.body = d.body;
+    row.classList.add('bm-msg-edited');
+    setTimeout(() => row.classList.remove('bm-msg-edited'), 900);
+  };
+
+  // inline editor: only shown on rows the server marked as mine (server re-checks anyway)
+  window.editMessage = function (btn) {
+    const d = rowData(btn);
+    if (!d) return;
+    const row = btn.closest('.bm-msg-row');
+    const bubble = row && row.querySelector('.dash-bubble');
+    if (!bubble || row.querySelector('.bm-msg-edit')) return;
+    const acts = row.querySelector('.bm-msg-actions');
+    const wrap = document.createElement('div');
+    wrap.className = 'bm-msg-edit';
+    wrap.innerHTML = '<textarea class="dash-input bm-msg-edit-input" maxlength="4000" aria-label="ویرایش پیام"></textarea>' +
+      '<div class="bm-msg-edit-actions">' +
+        '<button type="button" class="dash-btn dash-btn-ghost bm-msg-edit-cancel">انصراف</button>' +
+        '<button type="button" class="dash-btn dash-btn-solid bm-msg-edit-save">ذخیره</button>' +
+      '</div>';
+    bubble.style.display = 'none';
+    if (acts) acts.style.display = 'none';
+    row.insertBefore(wrap, bubble.nextSibling);
+    const ta = wrap.querySelector('textarea');
+    ta.value = d.rawBody || '';
+    ta.focus();
+    const cleanup = () => {
+      if (wrap.parentNode) wrap.remove();
+      bubble.style.display = '';
+      if (acts) acts.style.display = '';
+    };
+    wrap.querySelector('.bm-msg-edit-cancel').onclick = cleanup;
+    wrap.querySelector('.bm-msg-edit-save').onclick = function () {
+      const body = ta.value.trim();
+      if (!body) return showToast('متن خالی است');
+      const save = this;
+      save.disabled = true;
+      fetch('api/messages/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ csrf: CSRF, kind: d.kind, id: String(d.id), body }),
+      }).then(r => r.json()).then(res => {
+        if (!res.ok) { showToast(res.msg || 'ویرایش ناموفق بود'); save.disabled = false; return; }
+        bubble.innerHTML = (window.bmLinkify ? window.bmLinkify(res.body) : esc(res.body));
+        row.dataset.body = res.body;
+        cleanup();
+        showToast('پیام ویرایش شد');
+      }).catch(() => { showToast('خطای شبکه'); save.disabled = false; });
+    };
   };
 
   function openUser(c) {
@@ -491,7 +611,7 @@
         appendMessage({
           id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName,
           username: m.username || (fromMgr ? null : ((view && view.username) || null)),
-          reply: m.reply || null,
+          reply: m.reply || null, senderId: m.senderId || m.fromUserId, mine: false,
           incoming: Number(m.fromUserId) !== Number(window.MS_ID),
         }, isIncoming(fromMgr), 'pv');
         updateConvRow(fromId, { unread: 0 });
@@ -519,7 +639,9 @@
     BMLive.on(EV.NOTIF_NEW, a => {
       if (a && Number(a.fromUserId) === Number(window.MS_ID)) return; // my own send — already appended optimistically
       if (view && view.type === 'public' && a && a.body) {
-        appendMessage({ id: a.id, body: a.body, from_manager: 1, fromName: a.fromName }, true, 'public');
+        appendMessage({ id: a.id, body: a.body, from_manager: 1, fromName: a.fromName,
+          username: a.username || a.display_name || '', reply: a.reply || null,
+          senderId: a.senderId }, true, 'public');
       }
     });
 
@@ -530,6 +652,17 @@
       if (!box) return;
       const row = box.querySelector('.bm-msg-row[data-msg-id="' + Number(d.id) + '"]');
       if (row) row.remove();
+    });
+
+    // an edit is repainted on the other side at once (REST is the only write path)
+    BMLive.on(EV.MSG_EDITED, d => { if (window.bmApplyEdited) window.bmApplyEdited(d); });
+
+    // turn an optimistic bubble into a real one as soon as the server acknowledges it,
+    // so reply/copy/edit/delete work immediately instead of only after a page reload
+    BMLive.on(EV.PV_ACK, d => {
+      if (!d || !d.ok || !d.clientMsgId || !d.id) return;
+      const row = document.querySelector('#chat-area .bm-msg-row[data-client-id="' + d.clientMsgId + '"]');
+      if (row && !row.dataset.msgId) { row.dataset.msgId = Number(d.id); row.dataset.kind = 'pv'; fillMsgActions(row); }
     });
 
     BMLive.on(EV.PRESENCE_ONLINE, d => { onlineUsers.add(Number(d.userId)); refreshHeaderStatus(); });
@@ -558,52 +691,63 @@
   }
 
   window.sendMessage = function () {
+    if (sending) return;                       // double click / Enter+click = ONE message
     if (!view) return showToast('ابتدا یک گفتگو انتخاب کنید');
     const inp = document.getElementById('msg-input');
     const body = inp.value.trim();
     if (!body) return;
     inp.value = '';
+    setSending(true);
+    const clientMsgId = 'c' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
     if (view.type === 'public') {
-      if (window.__CAN_SEE_PUBLIC === false) return showToast('دسترسی ندارید');
+      if (window.__CAN_SEE_PUBLIC === false) { setSending(false); return showToast('دسترسی ندارید'); }
       // optimistic bubble; rolled back if the POST fails (self echo is skipped anyway)
-      const el = appendMessage({ id: null, body, from_manager: 1, username: window.MS_USERNAME,
-        reply: replyTo ? { username: replyTo.sender, body: replyTo.body } : null }, true, 'public');
+      const el = appendMessage({ id: null, clientMsgId, body, from_manager: 1, username: window.MS_USERNAME,
+        mine: true, senderId: window.MS_ID,
+        reply: replyTo ? { id: replyTo.id, username: replyTo.sender, body: replyTo.body } : null }, true, 'public');
       const replyId = replyTo ? replyTo.id : null;
       clearReply();
       fetch('api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: CSRF, body, reply_to: String(replyId || '') }) })
         .then(r => r.json()).then(d => {
-          if (!d.ok) { el.remove(); showToast(d.msg || 'خطا'); }
-        }).catch(() => { el.remove(); showToast('خطا'); });
+          if (!d.ok) { if (el) el.remove(); showToast(d.msg || 'خطا'); }
+          else if (el && d.id) { el.dataset.msgId = Number(d.id); el.dataset.kind = 'public'; fillMsgActions(el); }
+        }).catch(() => { if (el) el.remove(); showToast('خطا'); })
+        .finally(() => setSending(false));
       return;
     }
 
     // optimistic bubble; side depends on who I am (manager's messages right, user's left)
     const ownMgr = !!window.__IS_MANAGER;
     const el = appendMessage({
-      id: null, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME,
-      incoming: false, reply: replyTo ? { username: replyTo.sender, body: replyTo.body } : null,
+      id: null, clientMsgId, body, from_manager: ownMgr ? 1 : 0, username: window.MS_USERNAME,
+      mine: true, senderId: window.MS_ID,
+      incoming: false, reply: replyTo ? { id: replyTo.id, username: replyTo.sender, body: replyTo.body } : null,
       forwarded_from: null,
     }, isIncoming(ownMgr), 'pv');
     const target = view;
     const replyId = replyTo ? replyTo.id : null;
     clearReply();
     const failed = (msg) => { if (el) el.remove(); inp.value = body; showToast(msg || 'ارسال پیام ناموفق بود'); };
+    const acked = (id) => {
+      setSending(false);
+      if (el && id) { el.dataset.msgId = Number(id); el.dataset.kind = 'pv'; fillMsgActions(el); }
+    };
 
     // ONE round trip: the page already holds a live socket, so both sides send over it.
     // (A premium used to POST over HTTP while the socket sat idle on the same page.)
     const s = window.BMLive && BMLive.socket();
     if (s && s.connected) {
-      const clientMsgId = 'c' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
       s.emit(EV.PV_SEND, { toUserId: target.user_id, body, clientMsgId, replyTo: replyId }, resp => {
-        if (!resp || !resp.ok) failed('ارسال پیام ناموفق بود');
+        if (!resp || !resp.ok) { setSending(false); failed('ارسال پیام ناموفق بود'); }
+        else acked(resp.id);
       });
       return;
     }
 
     // socket down: HTTP still persists the row and pushes it live to the other side
-    sendViaHttp(target.user_id, body, replyId)
-      .then(d => { if (!d.ok) failed(d.msg); })
-      .catch(() => failed('خطای شبکه'));
+    sendViaHttp(target.user_id, body, replyId, clientMsgId)
+      .then(d => { if (!d.ok) { setSending(false); failed(d.msg); } else acked(d.id); })
+      .catch(() => { setSending(false); failed('خطای شبکه'); });
   };
 
   window.openProfileModal = function () {
@@ -626,14 +770,10 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ csrf: CSRF }),
     }).then(() => markAllReadLocal()).catch(() => {});
-    loadConvs(function () {
-      markAllReadLocal();
-      // /messages?chat=admin — jump straight into the admin chat
-      if (new URLSearchParams(location.search).get('chat') === 'admin') {
-        const row = convs.find(c => c.admin_chat);
-        if (row) openUser(row);
-      }
-    });
+    // Landing on /messages shows ONLY the conversation list. Opening a chat is always an
+    // explicit tap (even when an old ?chat=admin link is used), so the first thread never
+    // auto-opens and the empty "select a conversation" state stays visible.
+    loadConvs(() => markAllReadLocal());
   }
   bootstrap();
 })();

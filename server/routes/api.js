@@ -1179,6 +1179,7 @@ router.post('/admin/block', (req, res) => {
 
 router.all('/announcements', (req, res) => {
   if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
 
   if (req.method === 'GET') {
     const rows = dbm.all(
@@ -1186,14 +1187,20 @@ router.all('/announcements', (req, res) => {
               reply_to, forwarded_from, created_at
          FROM announcements WHERE deleted=0 ORDER BY id DESC`
     );
-    rows.forEach(r => {
-      if (r.reply_to) {
-        const q = dbm.get('SELECT body, sender_username, sender_display_name FROM announcements WHERE id=?', [r.reply_to]);
-        r.reply = q ? { id: Number(r.reply_to), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' } : null;
-      }
-    });
+    // one query for every quoted row instead of one query PER bubble (that N+1 made
+    // opening the public thread crawl as the announcement list grew)
+    const qids = [...new Set(rows.filter(r => r.reply_to).map(r => Number(r.reply_to)))];
+    const replyMap = new Map();
+    if (qids.length) {
+      dbm.all('SELECT id, body, sender_username, sender_display_name FROM announcements WHERE id IN (' +
+        qids.map(() => '?').join(',') + ')', qids).forEach(q => {
+        replyMap.set(Number(q.id), { id: Number(q.id), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' });
+      });
+    }
     const fallback = dbm.get('SELECT username, email, display_name FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
+    const viewerId = Number(me && me.id || 0);
     rows.forEach(r => {
+      r.reply = r.reply_to ? (replyMap.get(Number(r.reply_to)) || null) : null;
       if (!r.sender_username && !r.sender_display_name) {
         r.sender_username = fallback ? (fallback.username || '') : '';
         r.sender_email = fallback ? (fallback.email || '') : '';
@@ -1202,12 +1209,12 @@ router.all('/announcements', (req, res) => {
       r.username = r.sender_username || '';
       r.display_name = r.sender_display_name || r.sender_username || '';
       r.email = r.sender_email || '';
+      r.mine = Number(r.sender_id || 0) === viewerId;
     });
     return ok(res, { ok: true, announcements: rows });
   }
 
   if (req.method === 'POST') {
-    const me = sessions.currentUser(req);
     if (!me.is_manager && ranks.rankOf(me) !== 'premium') return bad(res, { ok: false, msg: 'فقط مدیر یا ادمین پریمیوم' }, 403);
     if (!checkCsrf(req, res)) return;
     const body = String(req.body.body || '').trim();
@@ -1219,10 +1226,15 @@ router.all('/announcements', (req, res) => {
     const ins = chat.insertAnnouncement({ body, senderId: me.id, replyTo });
     if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
     const ts = ins.ts;
+    let reply = null;
+    if (replyTo) {
+      const q = dbm.get('SELECT body, sender_username, sender_display_name FROM announcements WHERE id=?', [replyTo]);
+      if (q) reply = { id: replyTo, body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' };
+    }
     // fromUserId lets the sender's own tabs skip the echo (no double bubble)
-    const notif = { id: ins.id, body, created_at: ts, fromUserId: Number(me.id), username: me.username || '', display_name: me.display_name || '' };
+    const notif = { id: ins.id, body, created_at: ts, fromUserId: Number(me.id), username: me.username || '', display_name: me.display_name || '', reply, senderId: Number(me.id) };
     bus.notifyNew(notif);
-    return ok(res, { ok: true });
+    return ok(res, { ok: true, id: ins.id });
   }
 
   return bad(res, { ok: false, msg: 'متد نامعتبر' }, 405);
@@ -1351,19 +1363,26 @@ router.all('/messages/conversations', (req, res) => {
 
   // both ends of the message are stored with the row; `incoming` is derived from sender_id
   // so a premium admin's reply shows on the correct side for a regular user (and vice versa).
+  // Reply rows are fetched in ONE query (not one per bubble) — this was the main reason
+  // opening somebody else's thread felt slow once a conversation had history.
   function withSender(rows, viewer) {
-    return (rows || []).map((m) => {
-      let reply = null;
-      if (m.reply_to) {
-        const q = dbm.get('SELECT body, sender_username, sender_display_name FROM pv_messages WHERE id=?', [m.reply_to]);
-        if (q) reply = { id: Number(m.reply_to), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' };
-      }
+    const list = rows || [];
+    const qids = [...new Set(list.filter(m => m.reply_to).map(m => Number(m.reply_to)))];
+    const replyMap = new Map();
+    if (qids.length) {
+      dbm.all('SELECT id, body, sender_username, sender_display_name FROM pv_messages WHERE id IN (' +
+        qids.map(() => '?').join(',') + ')', qids).forEach(q => {
+        replyMap.set(Number(q.id), { id: Number(q.id), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' });
+      });
+    }
+    return list.map((m) => {
       const fromMe = Number(m.sender_id) && Number(m.sender_id) === Number(viewer.id);
       return Object.assign({}, m, {
         username: m.sender_username || '',
         display_name: m.sender_display_name || m.sender_username || '',
         incoming: m.sender_id ? !fromMe : (viewer.is_manager ? !m.from_manager : !!m.from_manager),
-        reply,
+        reply: m.reply_to ? (replyMap.get(Number(m.reply_to)) || null) : null,
+        mine: !!fromMe,
       });
     });
   }
@@ -1398,29 +1417,37 @@ router.all('/messages/conversations', (req, res) => {
   const body = String(req.body.body || '').trim();
   const replyTo = Number(req.body.reply_to || 0) || null;
   if (uid === 0 || body === '') return bad(res, { ok: false, msg: 'داده ناقص' });
+  const replyInfo = (id) => {
+    if (!id) return null;
+    const q = dbm.get('SELECT id, body, sender_username, sender_display_name FROM pv_messages WHERE id=?', [id]);
+    return q ? { id: Number(q.id), body: q.body, username: q.sender_username || '', display_name: q.sender_display_name || '' } : null;
+  };
 
   if (!isMgr) {
     if (!isPrivilegedTarget(uid)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
     const capCheck = restrictions.checkDaily(me, 'daily_pv_messages');
     if (!capCheck.ok) return bad(res, { ok: false, msg: capCheck.msg }, 403);
     const ins = chat.insertPv({ userId: me.id, peerId: uid, senderId: me.id, recipientId: uid,
-      fromManager: false, body, replyTo });
+      fromManager: false, body, replyTo, clientMsgId: String(req.body.client_msg_id || '') });
     if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
     const payload = { id: ins.id, fromUserId: Number(me.id), fromName: me.display_name, body,
-      fromManager: 0, ts: ins.ts, peerId: uid, username: me.username || '' };
-    // the target's own sockets (premium admin) + the manager's console
+      fromManager: 0, ts: ins.ts, peerId: uid, username: me.username || '',
+      senderId: Number(me.id), replyTo, reply: replyInfo(replyTo), mine: false };
+    // the target's own sockets (premium admin) + the manager's console.
+    // exclude uid so a manager recipient never gets the same bubble twice.
     bus.pvNew(uid, payload);
-    bus.pvToManagers(payload);
+    bus.pvToManagers(payload, uid);
     bus.pvConversationUpdated({ userId: Number(me.id), lastBody: body, fromManager: 0, ts: ins.ts });
     return ok(res, { ok: true, id: ins.id });
   }
 
   if (!dbm.get('SELECT id FROM users WHERE id=?', [uid])) return bad(res, { ok: false, msg: 'کاربر یافت نشد' });
   const ins = chat.insertPv({ userId: uid, peerId: MGR_ID, senderId: me.id, recipientId: uid,
-    fromManager: true, body, replyTo });
+    fromManager: true, body, replyTo, clientMsgId: String(req.body.client_msg_id || '') });
   if (!ins.ok) return bad(res, { ok: false, msg: 'خطا در ذخیره پیام' });
   const payload = { id: ins.id, fromUserId: Number(me.id), fromName: me.display_name, body,
-    fromManager: 1, ts: ins.ts, peerId: MGR_ID, username: me.username || '' };
+    fromManager: 1, ts: ins.ts, peerId: MGR_ID, username: me.username || '',
+    senderId: Number(me.id), replyTo, reply: replyInfo(replyTo), mine: false };
   bus.pvNew(uid, payload);
   bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts: ins.ts });
   return ok(res, { ok: true, id: ins.id });
@@ -1460,6 +1487,22 @@ router.post('/messages/delete', (req, res) => {
   if (!r.ok) return bad(res, { ok: false, msg: r.error === 'NOT_AUTHORIZED' ? 'دسترسی ندارید' : 'پیام یافت نشد' }, 403);
   bus.msgDeleted({ kind: r.kind, id: r.id });
   return ok(res, { ok: true });
+});
+
+// Edit your OWN message (private or public). chat.edit() enforces authorship on the
+// server, so hiding a UI button is never the only thing standing between users and edits.
+router.post('/messages/edit', (req, res) => {
+  if (!requireLoginApi(req, res)) return;
+  const me = sessions.currentUser(req);
+  if (!checkCsrf(req, res)) return;
+  const r = chat.edit(String(req.body.kind || ''), req.body.id, me, req.body.body);
+  if (!r.ok) {
+    const msg = r.error === 'NOT_AUTHORIZED' ? 'فقط فرستنده می‌تواند پیام را ویرایش کند'
+      : (r.error === 'EMPTY' ? 'متن خالی است' : 'پیام یافت نشد');
+    return bad(res, { ok: false, msg }, 403);
+  }
+  if (!r.unchanged) bus.msgEdited({ kind: r.kind, id: r.id, body: r.body });
+  return ok(res, { ok: true, id: r.id, body: r.body });
 });
 
 // Forward copies an existing message into another conversation, remembering who wrote the

@@ -34,11 +34,19 @@ function msgDeleted(data) {
   allSockets().forEach((s) => s.emit(EV.MSG_DELETED, data || {}));
 }
 
-// push an incoming private message to every manager console (live append)
-function pvToManagers(data) {
+// push an incoming private message to every manager console (live append).
+// `excludeUserId` avoids a duplicate bubble when the named recipient IS a manager:
+// bus.pvNew() already delivers that socket's copy.
+function pvToManagers(data, excludeUserId) {
+  const skip = Number(excludeUserId || 0);
   allSockets().forEach((s) => {
-    if (s.data.isManager) s.emit(EV.PV_NEW_MESSAGE, data);
+    if (s.data.isManager && Number(s.data.userId) !== skip) s.emit(EV.PV_NEW_MESSAGE, data);
   });
+}
+
+// an edited message is repainted in every open thread at once
+function msgEdited(data) {
+  allSockets().forEach((s) => s.emit(EV.MSG_EDITED, data || {}));
 }
 
 function roomEvent(room, event, data) {
@@ -62,6 +70,6 @@ function meetingDeleted(data) {
 }
 
 module.exports = {
-  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, msgDeleted, srToManagers, roomEvent,
+  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, msgDeleted, msgEdited, srToManagers, roomEvent,
   meetingCreated, meetingEnded, meetingDeleted,
 };

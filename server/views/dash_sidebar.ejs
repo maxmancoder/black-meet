@@ -11,7 +11,7 @@
   var _current = function (key) {
     return _active === key ? ' aria-current="page"' : '';
   };
-  var _messagesHref = isManager ? url('messages') : url('messages') + '?chat=admin';
+  var _messagesHref = url('messages');
   var _messagesLabel = 'پیام‌ها';
   var _badgeAttr = drawer ? 'data-msg-badge' : 'id="msg-unread-badge"';
 %>

@@ -188,18 +188,28 @@
     return '<span class="mem-badge mem-badge-danger">' + bmIcon('block') + ' محدود</span>';
   }
 
+  function roleLabel(u) {
+    if (u.is_manager) return 'مدیر اصلی';
+    if (u.rank === 'premium') return RANK_LABELS.premium || 'ادمین پریمیوم';
+    if (u.rank === 'admin') return RANK_LABELS.admin || 'ادمین';
+    return RANK_LABELS.user || 'کاربر عادی';
+  }
+
   function avatarHtml(u, size) {
+    const lg = size === 'lg';
+    const cls = lg ? 'mem-av mem-av-lg' : 'mem-av';
     const initial = esc((u.display_name || '?').slice(0, 2));
+    const bg = esc(u.avatar_color || '#4f46e5');
     if (u.avatar) {
       const src = (u.avatar.indexOf('http') === 0) ? u.avatar : (window.BASE + '/' + u.avatar.replace(/^\/+/, ''));
-      return '<div class="mem-av" style="background:' + esc(u.avatar_color) + '"><img src="' + esc(src) + '" alt=""/></div>';
+      return '<div class="' + cls + '" style="background:' + bg + '"><img src="' + esc(src) + '" alt=""/></div>';
     }
-    return '<div class="mem-av" style="background:' + esc(u.avatar_color) + '">' + initial + '</div>';
+    return '<div class="' + cls + '" style="background:' + bg + '">' + initial + '</div>';
   }
 
   function rankMenuHtml(u) {
     return '<div class="rank-anchor">' +
-      '<button type="button" class="rank-trigger mem-act mem-act-caret" data-no-loader onclick="event.stopPropagation();toggleRankMenu(' + u.id + ')" aria-haspopup="menu" aria-expanded="false">' +
+      '<button type="button" class="rank-trigger mem-act mem-act-rank mem-act-caret" data-no-loader onclick="event.stopPropagation();toggleRankMenu(' + u.id + ')" aria-haspopup="menu" aria-expanded="false">' +
       bmIcon('shield_person') + '<span>تغییر درجه</span>' +
       '<span class="bm-caret" aria-hidden="true"></span></button>' +
       '<div id="rank-menu-' + u.id + '" class="rank-menu hidden" role="menu">' +
@@ -212,17 +222,52 @@
       '</div></div>';
   }
 
+  function infoCell(icon, label, value, tone, ltr) {
+    const v = (value == null || value === '') ? '—' : String(value);
+    return '<div class="mem-info-cell mem-info-cell-' + esc(tone || 'default') + '">' +
+      '<span class="mem-info-ico" aria-hidden="true">' + bmIcon(icon) + '</span>' +
+      '<span class="mem-info-meta">' +
+        '<span class="mem-info-label">' + esc(label) + '</span>' +
+        '<span class="mem-info-value"' + (ltr ? ' dir="ltr"' : '') + '>' + esc(v) + '</span>' +
+      '</span>' +
+    '</div>';
+  }
+
+  function memberInfoPanel(u) {
+    if (u.info_hidden) {
+      return '<div class="mem-info-panel mem-info-panel-hidden">' +
+        '<span class="mem-info-hidden-ico">' + bmIcon('lock') + '</span>' +
+        '<span class="mem-note">اطلاعات مدیر اصلی فقط توسط خودش قابل مشاهده و ویرایش است</span>' +
+      '</div>';
+    }
+    const dn = u.display_name || '';
+    const un = u.username ? ('@' + u.username) : '';
+    return '<div class="mem-info-panel">' +
+      '<div class="mem-info-grid">' +
+        infoCell('person', 'نام نمایشی', dn, 'violet', false) +
+        infoCell('badge', 'نام کاربری', un, 'blue', true) +
+        infoCell('shield_person', 'نقش', roleLabel(u), 'amber', false) +
+        infoCell('mail', 'ایمیل', u.email || '', 'cyan', true) +
+        infoCell('lock', 'رمز عبور', '********', 'rose', true) +
+        infoCell('phone', 'شماره تلفن', u.phone || '', 'green', true) +
+      '</div>' +
+    '</div>';
+  }
+
   function actionCell(u) {
-    if (u.info_hidden) return '<span class="mem-note">اطلاعات مدیر اصلی فقط توسط خودش قابل مشاهده و ویرایش است</span>';
+    if (u.info_hidden) return '';
+    // order: محدود کردن, ویرایش, تغییر درجه — preserving current conditions/behavior
     let html = '';
-    if (!u.is_manager) html += rankMenuHtml(u);
-    html += '<button type="button" onclick="openEditModal(' + u.id + ')" class="mem-act mem-act-primary">' + bmIcon('edit') + ' ویرایش</button>';
     if (!u.is_manager) {
       const limited = !!u.is_limited;
       const cls = limited ? 'mem-act mem-act-ok' : 'mem-act mem-act-danger';
       const label = limited ? 'رفع محدودیت' : 'محدود کردن';
-      html += '<button type="button" id="btn-lim-' + u.id + '" onclick="toggleLimit(' + u.id + ')" class="' + cls + '">' + label + '</button>';
+      html += '<button type="button" id="btn-lim-' + u.id + '" onclick="toggleLimit(' + u.id + ')" class="' + cls + '">' +
+        bmIcon('block') + '<span>' + esc(label) + '</span></button>';
     }
+    html += '<button type="button" onclick="openEditModal(' + u.id + ')" class="mem-act mem-act-primary">' +
+      bmIcon('edit') + '<span>ویرایش</span></button>';
+    if (!u.is_manager) html += rankMenuHtml(u);
     return html;
   }
 
@@ -230,34 +275,22 @@
     const card = document.createElement('div');
     card.id = 'user-row-' + u.id;
     // no `bm-soft`: member cards must not shrink/grow on hover (nor their keys)
-    card.className = 'mem-card';
+    card.className = 'mem-card mem-card-member';
 
-    let info;
-    if (u.info_hidden) {
-      info = '<div class="mem-row">' + bmIcon('lock') +
-        '<span>اطلاعات مدیر اصلی مخفی است</span></div>';
-    } else {
-      const pw = u.is_manager ? '••••••' : esc(u.password_hash);
-      info =
-        '<div class="mem-row">' + bmIcon('badge') + '<span>' + esc(u.full_name) + '</span></div>' +
-        '<div class="mem-row mem-row-ltr">' + bmIcon('email') + '<span dir="ltr">' + esc(u.email) + '</span></div>' +
-        '<div class="mem-row mem-row-ltr">' + bmIcon('key') + '<span class="mem-pass" dir="ltr">' + pw + '</span></div>' +
-        '<div class="mem-row mem-row-ltr">' + bmIcon('phone') + '<span dir="ltr">' + esc(u.phone) + '</span></div>' +
-        '<div class="mem-row">' + bmIcon('shield_person') +
-        '<span>' + esc(RANK_LABELS[u.rank === 'premium' ? 'premium' : (u.rank === 'admin' ? 'admin' : (u.is_manager ? 'manager' : 'user'))]) + '</span></div>';
-    }
+    const dn = esc(u.display_name || '');
+    const un = u.info_hidden ? '' : esc(u.username || '');
 
     card.innerHTML =
-      '<div class="mem-card-top">' +
-      avatarHtml(u) +
-      '<div class="mem-id">' +
-      '<h3 class="mem-name">' + esc(u.display_name) + '</h3>' +
-      '<p class="mem-handle" dir="ltr">' + (u.info_hidden ? '' : '@' + esc(u.username)) + '</p>' +
+      '<div class="mem-neon-head">' +
+        '<div class="mem-avatar-ring">' + avatarHtml(u, 'lg') + '</div>' +
+        '<div class="mem-neon-id">' +
+          '<p class="mem-name mem-neon-name">' + dn + '</p>' +
+          '<p class="mem-handle mem-neon-handle" dir="ltr">' + (un ? '@' + un : '') + '</p>' +
+        '</div>' +
+        '<div id="lim-' + u.id + '" class="mem-flags mem-neon-badges">' + rankBadge(u) + limitedBadge(u) + '</div>' +
       '</div>' +
-      '<div id="lim-' + u.id + '" class="mem-flags">' + rankBadge(u) + limitedBadge(u) + '</div>' +
-      '</div>' +
-      '<div class="mem-rows">' + info + '</div>' +
-      '<div id="act-' + u.id + '" class="mem-actions">' + actionCell(u) + '</div>';
+      memberInfoPanel(u) +
+      '<div id="act-' + u.id + '" class="mem-actions mem-actions-neon">' + actionCell(u) + '</div>';
     return card;
   }
 
@@ -315,13 +348,13 @@
 
   window.toggleLimit = function (userId) {
     const btn = $('btn-lim-' + userId);
-    const u0 = allUsers.find(x => x.id === userId);
     // put the real label back on failure — "تلاش مجدد" used to stick to the card
     const restore = () => {
       if (!btn) return;
       btn.disabled = false;
       const u = allUsers.find(x => x.id === userId);
-      btn.textContent = (u && u.is_limited) ? 'رفع محدودیت' : 'محدود کردن';
+      const label = (u && u.is_limited) ? 'رفع محدودیت' : 'محدود کردن';
+      btn.innerHTML = bmIcon('block') + '<span>' + esc(label) + '</span>';
     };
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     post('api/admin/members', { user_id: String(userId) })
@@ -778,7 +811,7 @@
     return '<div class="lim-user-expand-inner">' +
       '<div class="lim-user-expand-head"><strong>محدودیت مخصوص «' + esc(u.display_name || u.username || 'کاربر') + '»</strong>' +
       '<span class="lim-row-hint">فقط روی همین کاربر اعمال می‌شود</span></div>' +
-      '<div class="lim-user-expand-rows">' +
+      '<div class="lim-user-expand-rows bm-chat-scroll">' +
       (u.is_manager ? '' : '<div class="lim-row"><div class="lim-row-main"><span class="lim-row-label">حساب محدود شود</span>' +
         '<span class="lim-row-hint">قفل کلی حساب</span></div><button type="button" class="mem-act ' +
         (u.is_limited ? 'mem-act-ok' : 'mem-act-danger') + '" onclick="toggleLimit(' + u.id + ')">' +
