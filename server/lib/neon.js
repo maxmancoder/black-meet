@@ -110,13 +110,16 @@ async function ensureSchema() {
     // erase conversations. soft-deleted rows are mirrored too (deleted=1).
     await c.query(`CREATE TABLE IF NOT EXISTS bm_pv_messages (
       id BIGINT PRIMARY KEY, user_id BIGINT, from_manager INTEGER DEFAULT 0, body TEXT,
-      seen INTEGER DEFAULT 0, client_msg_id TEXT,
+      seen INTEGER DEFAULT 0, read_at TIMESTAMP, client_msg_id TEXT,
       sender_username TEXT, sender_email TEXT, sender_id BIGINT DEFAULT 0, sender_display_name TEXT,
       recipient_id BIGINT DEFAULT 0, recipient_username TEXT, recipient_display_name TEXT,
       peer_id BIGINT DEFAULT 0, reply_to BIGINT, forwarded_from TEXT,
       deleted INTEGER DEFAULT 0, deleted_at TEXT, created_at TEXT,
       neon_synced_at TIMESTAMPTZ DEFAULT now()
     )`);
+    // an older mirror table predates read_at — add it without touching any existing rows
+    await c.query('ALTER TABLE bm_pv_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMP');
+    await c.query('CREATE INDEX IF NOT EXISTS idx_bm_pv_unread ON bm_pv_messages(user_id, from_manager, read_at)');
     await c.query('CREATE INDEX IF NOT EXISTS idx_bm_pv_thread ON bm_pv_messages(user_id, peer_id, id)');
     await c.query(`CREATE TABLE IF NOT EXISTS bm_announcements (
       id BIGINT PRIMARY KEY, body TEXT, sender_id BIGINT DEFAULT 0, sender_username TEXT,
@@ -253,7 +256,7 @@ async function removeAvatar(id) {
 // keeps a second copy in Neon so a redeploy (which wipes Render's ephemeral disk) cannot
 // erase a conversation. Inert without NEON_DATABASE_URL, exactly like the account mirror.
 const PV_CHAT_COLS = [
-  'id', 'user_id', 'from_manager', 'body', 'seen', 'client_msg_id',
+  'id', 'user_id', 'from_manager', 'body', 'seen', 'read_at', 'client_msg_id',
   'sender_username', 'sender_email', 'sender_id', 'sender_display_name',
   'recipient_id', 'recipient_username', 'recipient_display_name', 'peer_id',
   'reply_to', 'forwarded_from', 'deleted', 'deleted_at', 'created_at',

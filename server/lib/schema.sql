@@ -141,6 +141,8 @@ CREATE TABLE IF NOT EXISTS pv_messages (
   from_manager           INTEGER NOT NULL DEFAULT 0,
   body                   TEXT    NOT NULL,
   seen                   INTEGER NOT NULL DEFAULT 0,
+  -- read receipt: NULL = still unread. Only received messages are ever stamped.
+  read_at                TIMESTAMP,
   client_msg_id          TEXT,
   sender_username        TEXT    NOT NULL DEFAULT '',
   sender_email           TEXT    NOT NULL DEFAULT '',

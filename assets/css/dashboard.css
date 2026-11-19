@@ -1558,7 +1558,9 @@
   width: 38px;
   height: 38px;
   border-radius: 11px;
-  overflow: hidden;
+  /* visible so the unread count badge can overlap the corner; the picture itself stays
+     rounded through border-radius: inherit on its children below */
+  overflow: visible;
   flex-shrink: 0;
   background: rgba(255, 255, 255, .06);
   border: 1px solid var(--d-line);
@@ -1566,7 +1568,8 @@
   font-size: 12px;
   font-weight: 700;
 }
-.dash-conv-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dash-conv-av img,
+.dash-conv-av > div { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
 .dash-conv-av-pub { background: var(--d-mint-soft); border-color: rgba(78, 222, 163, .25); color: var(--d-mint); overflow: visible; }
 .dash-conv-av-pub .bm-ico { font-size: 20px; }
 .dash-conv-meta { min-width: 0; flex: 1 1 auto; }
@@ -1599,16 +1602,32 @@
   filter: drop-shadow(0 0 4px rgba(251, 191, 36, .5));
 }
 #ph-name .dash-star-mgr { font-size: 14px; margin-inline-start: 5px; }
+/* Telegram-style unread count badge — sits on the avatar's inline-end/bottom corner */
 .dash-unread {
   position: absolute;
-  inset-block-start: 1px;
-  inset-inline-end: 1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--d-accent-2);
-  box-shadow: 0 0 0 2px var(--d-surface);
+  inset-block-end: -3px;
+  inset-inline-end: -4px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 2px solid var(--d-surface-2);
+  background: linear-gradient(135deg, var(--d-accent-2), var(--d-accent));
+  color: #fff;
+  box-shadow: 0 2px 8px -2px var(--d-accent);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
+/* unread conversations read as "new" in the list, just like Telegram */
+.dash-conv.is-unread .dash-conv-name { font-weight: 700; color: #fff; }
+.dash-conv.is-unread .dash-conv-sub { color: var(--d-text-dim); }
 
 .msg-chat {
   display: flex;

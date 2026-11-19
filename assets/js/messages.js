@@ -18,6 +18,8 @@
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+  const faNum = n => String(n).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+  const unreadText = n => (Number(n) > 99 ? '۹۹+' : faNum(Number(n) || 0));
   function aUrl(a) {
     if (!a) return '';
     if (/^https?:\/\//i.test(a)) return a;
@@ -112,9 +114,28 @@
     return true;
   }
 
-  function markAllReadLocal() {
-    convs.forEach(c => { c.unread = 0; });
-    document.querySelectorAll('#conv-list .unread-dot').forEach(d => d.remove());
+  // Telegram-style unread badge. The count comes from the server: a message is unread while
+  // its `read_at` timestamp is NULL, so it is durable and survives a refresh.
+  function unreadBadgeHtml(n) {
+    n = Number(n) || 0;
+    if (n <= 0) return '';
+    return '<span class="dash-unread" data-count="' + n + '" aria-label="' + faNum(n) + ' پیام خواندهنشده">' + unreadText(n) + '</span>';
+  }
+  function paintUnread(row, n) {
+    if (!row) return;
+    n = Number(n) || 0;
+    row.classList.toggle('is-unread', n > 0);
+    let badge = row.querySelector('.dash-unread');
+    if (n <= 0) { if (badge) badge.remove(); return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'dash-unread';
+      const av = row.querySelector('.dash-conv-av');
+      if (av) av.appendChild(badge); else row.appendChild(badge);
+    }
+    badge.dataset.count = String(n);
+    badge.setAttribute('aria-label', faNum(n) + ' پیام خواندهنشده');
+    badge.textContent = unreadText(n);
   }
 
   // the server clears the flag when a thread is fetched; mirror that in the list without
@@ -125,16 +146,14 @@
     const box = document.getElementById('conv-list');
     if (!box) return;
     box.querySelectorAll('[data-uid]').forEach(row => {
-      if (Number(row.dataset.uid) === Number(userId)) {
-        const dot = row.querySelector('.unread-dot');
-        if (dot) dot.remove();
-      }
+      if (Number(row.dataset.uid) === Number(userId)) paintUnread(row, 0);
     });
   }
 
-  // cheap seen-ack: no payload back, so it can fire on every incoming message
-  function markSeen(userId) {
-    fetch('api/messages/seen', {
+  // Read receipt, fired only once the messages are actually on screen. The server checks
+  // conversation ownership and stamps read_at on the received rows of this thread only.
+  function markRead(userId) {
+    fetch('api/messages/read', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ csrf: CSRF, user_id: String(userId || '') }),
@@ -173,19 +192,23 @@
     if (!c) { loadConvs(); return; }
     Object.assign(c, patch);
     const box = document.getElementById('conv-list');
-    const rows = box.querySelectorAll('[data-uid]');
-    rows.forEach(row => {
-      if (Number(row.dataset.uid) === Number(userId)) {
-        const unread = Number(c.unread || 0);
-        let dot = row.querySelector('.unread-dot');
-        if (unread > 0 && !dot) {
-          dot = document.createElement('span');
-          dot.className = 'unread-dot dash-unread';
-          const av = row.querySelector('.dash-conv-av');
-          if (av) av.appendChild(dot);
-        } else if (unread === 0 && dot) dot.remove();
-      }
+    if (!box) return;
+    box.querySelectorAll('[data-uid]').forEach(row => {
+      if (Number(row.dataset.uid) === Number(userId)) paintUnread(row, c.unread);
     });
+  }
+
+  // A single incoming DM produces TWO live events for a manager console (PV_NEW_MESSAGE to
+  // the recipient + PV_CONVERSATION_UPDATED to manager consoles). Claim by message id so the
+  // unread badge increments exactly once; the signature fallback covers older payloads.
+  const recentIncoming = new Set();
+  function claimIncoming(id, userId, ts, body) {
+    const key = id ? 'id:' + Number(id)
+      : 'sig:' + Number(userId) + '|' + String(ts || '') + '|' + String(body || '');
+    if (recentIncoming.has(key)) return false;
+    recentIncoming.add(key);
+    if (recentIncoming.size > 80) recentIncoming.delete(recentIncoming.values().next().value);
+    return true;
   }
 
   function renderConvs() {
@@ -230,9 +253,10 @@
     convs.forEach(c => {
       const el = document.createElement('div');
       el.dataset.uid = c.user_id;
-      el.className = 'dash-conv' + (view && view.type === 'user' && view.user_id === c.user_id ? ' is-active' : '');
+      el.className = 'dash-conv' + (Number(c.unread) > 0 ? ' is-unread' : '') +
+        (view && view.type === 'user' && view.user_id === c.user_id ? ' is-active' : '');
       el.innerHTML = '<div class="dash-conv-av">' + avatarInner(c.avatar, '#4f46e5', c.display_name) +
-        (Number(c.unread) > 0 ? '<span class="unread-dot dash-unread"></span>' : '') + '</div>' +
+        unreadBadgeHtml(c.unread) + '</div>' +
         '<div class="dash-conv-meta"><div class="dash-conv-nameline"><h4 class="dash-conv-name">' + esc(c.display_name || c.username || '') + '</h4>' + mgrStar(c) + roleChip(c) + '</div>' +
         '<p class="dash-conv-sub"><span class="dash-conv-user" dir="ltr">@' + esc(c.username || '') + '</span></p></div>';
       el.onclick = () => openUser(c);
@@ -567,6 +591,8 @@
         if (!d.ok) return;
         renderChat(d.messages, 'user');
         cacheSet(CACHE_THREAD, { uid: Number(c.user_id), mgr: !!window.__IS_MANAGER, messages: trim(d.messages) });
+        // only NOW stamp read_at — the messages have been loaded AND displayed
+        markRead(c.user_id);
         clearUnreadLocal(c.user_id);
         focusInput();
       })
@@ -618,6 +644,9 @@
         });
       }
       if (open) {
+        // claim it here too: navigating away in the milliseconds before the matching
+        // PV_CONVERSATION_UPDATED lands must not resurrect a badge for an already-read DM
+        claimIncoming(m.id, fromId, m.ts, m.body);
         appendMessage({
           id: m.id, body: m.body, from_manager: fromMgr ? 1 : 0, fromName: m.fromName,
           username: m.username || (fromMgr ? null : ((view && view.username) || null)),
@@ -625,10 +654,10 @@
           incoming: Number(m.fromUserId) !== Number(window.MS_ID),
         }, isIncoming(fromMgr), 'pv');
         updateConvRow(fromId, { unread: 0 });
-        // just acknowledge the thread as read — re-downloading the whole conversation for
-        // that doubled the traffic of every single incoming message
-        if (bumpsMe) markSeen(fromId);
-      } else if (bumpsMe) {
+        // the bubble is on screen while the user is watching this thread — stamp read_at
+        // immediately (a tiny POST, not a full conversation re-download)
+        if (bumpsMe) markRead(fromId);
+      } else if (bumpsMe && claimIncoming(m.id, fromId, m.ts, m.body)) {
         const c = convs.find(x => Number(x.user_id) === fromId);
         if (!c) loadConvs();
         else updateConvRow(fromId, { unread: Number(c.unread || 0) + 1, last: m.body });
@@ -640,6 +669,7 @@
       if (open) return; // live append is handled by PV_NEW_MESSAGE
       const bumpsMe = window.__IS_MANAGER ? !d.fromManager : !!d.fromManager;
       if (!bumpsMe) return;
+      if (!claimIncoming(d.id, d.userId, d.ts, d.lastBody)) return; // same DM as PV_NEW_MESSAGE
       const c = convs.find(x => Number(x.user_id) === Number(d.userId));
       if (!c) { loadConvs(); return; }
       updateConvRow(d.userId, { unread: Number(c.unread || 0) + 1, last: d.lastBody });
@@ -673,6 +703,12 @@
       if (!d || !d.ok || !d.clientMsgId || !d.id) return;
       const row = document.querySelector('#chat-area .bm-msg-row[data-client-id="' + d.clientMsgId + '"]');
       if (row && !row.dataset.msgId) { row.dataset.msgId = Number(d.id); row.dataset.kind = 'pv'; fillMsgActions(row); }
+    });
+
+    // a read receipt stamped in ANY tab of this user clears the badge in all of them
+    BMLive.on(EV.PV_READ, d => {
+      if (!d || Number(d.userId) !== Number(window.MS_ID)) return;
+      clearUnreadLocal(d.peerId);
     });
 
     BMLive.on(EV.PRESENCE_ONLINE, d => { onlineUsers.add(Number(d.userId)); refreshHeaderStatus(); });
@@ -770,20 +806,14 @@
   };
   window.closeProfileModal = function () { document.getElementById('profile-modal').classList.add('hidden'); };
 
-  // entering the messages page clears the home badge (server-side seen flags) and loads the
-  // conversation list. Both run in PARALLEL now: the badge clear used to serialize a whole
-  // round trip in front of the list on every visit.
+  // Landing on /messages shows ONLY the conversation list. Opening a chat is always an
+  // explicit tap (even when an old ?chat=admin link is used), so the first thread never
+  // auto-opens and the empty "select a conversation" state stays visible.
+  // Unread counts come from the DB and stay until THAT conversation is opened — the old
+  // read-all-on-visit wiped every badge on each refresh, which is why they never persisted.
   function bootstrap() {
     restoreCachedConvs();
-    fetch('api/messages/read-all', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrf: CSRF }),
-    }).then(() => markAllReadLocal()).catch(() => {});
-    // Landing on /messages shows ONLY the conversation list. Opening a chat is always an
-    // explicit tap (even when an old ?chat=admin link is used), so the first thread never
-    // auto-opens and the empty "select a conversation" state stays visible.
-    loadConvs(() => markAllReadLocal());
+    loadConvs();
   }
   bootstrap();
 })();

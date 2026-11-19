@@ -114,7 +114,7 @@ function pvPersist(toUserId, fromManager, fromUserId, body, clientMsgId) {
 }
 function pvUnread(userId) {
   const r = dbm.get(
-    'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=0 AND seen=0',
+    'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND from_manager=0 AND read_at IS NULL',
     [Number(userId)]
   );
   return { ok: true, unread: Number(r.c) };

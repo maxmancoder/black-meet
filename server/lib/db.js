@@ -105,6 +105,8 @@ function db() {
     forwarded_from: "TEXT NOT NULL DEFAULT ''",
     deleted: 'INTEGER NOT NULL DEFAULT 0',
     deleted_at: 'TEXT',
+    // Batch 34: a nullable timestamp is the authoritative read receipt (NULL = unread).
+    read_at: 'TIMESTAMP',
   };
   Object.keys(PV_ADD).forEach((k) => {
     if (pvcols.indexOf(k) === -1) _db.exec('ALTER TABLE pv_messages ADD COLUMN ' + k + ' ' + PV_ADD[k]);
@@ -135,6 +137,10 @@ function db() {
   // exist when schema.sql ran, so putting these there broke boot ("no such column").
   _db.exec('CREATE INDEX IF NOT EXISTS idx_pv_thread ON pv_messages (user_id, peer_id, id)');
   _db.exec('CREATE INDEX IF NOT EXISTS idx_pv_sender ON pv_messages (sender_id, created_at)');
+  // Batch 34: backfill the legacy boolean flag so `read_at` can be the single source of
+  // truth. Idempotent — once stamped, a row is never touched again.
+  _db.exec('CREATE INDEX IF NOT EXISTS idx_pv_unread ON pv_messages (user_id, from_manager, read_at, deleted)');
+  _db.exec("UPDATE pv_messages SET read_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE seen=1 AND read_at IS NULL");
   // One-time product migration: regular users AND plain admins must be able to open
   // «پیام‌ها» and DM the manager / premium admins. Older saved restriction rows had
   // can_use_messages OFF for `user`, which silently redirected them away from the page.

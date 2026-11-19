@@ -11,7 +11,7 @@ const { sqlNow } = require('./helpers');
 const neon = require('./neon');
 
 const PV_CHAT_COLS = [
-  'id', 'user_id', 'from_manager', 'body', 'seen', 'client_msg_id',
+  'id', 'user_id', 'from_manager', 'body', 'seen', 'read_at', 'client_msg_id',
   'sender_username', 'sender_email', 'sender_id', 'sender_display_name',
   'recipient_id', 'recipient_username', 'recipient_display_name', 'peer_id',
   'reply_to', 'forwarded_from', 'deleted', 'deleted_at', 'created_at',
@@ -145,11 +145,17 @@ async function boot() {
     (mirror.pv || []).forEach((r) => {
       dbm.run(
         `INSERT OR IGNORE INTO pv_messages
-          (id, user_id, from_manager, body, seen, client_msg_id, sender_username, sender_email,
+          (id, user_id, from_manager, body, seen, read_at, client_msg_id, sender_username, sender_email,
            sender_id, sender_display_name, recipient_id, recipient_username, recipient_display_name,
            peer_id, reply_to, forwarded_from, deleted, deleted_at, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        PV_CHAT_COLS.map((k) => (r[k] === undefined ? null : r[k]))
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        PV_CHAT_COLS.map((k) => {
+           if (k === 'read_at') {
+             // a mirror row from before read_at existed carried only the boolean seen flag
+             return r.read_at || (Number(r.seen) ? (r.created_at || sqlNow()) : null);
+           }
+           return r[k] === undefined ? null : r[k];
+         })
       );
       n++;
     });

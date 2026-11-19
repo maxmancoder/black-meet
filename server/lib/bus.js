@@ -49,6 +49,14 @@ function msgEdited(data) {
   allSockets().forEach((s) => s.emit(EV.MSG_EDITED, data || {}));
 }
 
+// a read receipt belongs to the reader: all of that user's tabs drop the badge at once.
+function pvRead(readerId, data) {
+  if (!ioRef) return;
+  const targets = state.userSockets.get(Number(readerId));
+  if (!targets) return;
+  targets.forEach((sid) => ioRef.to(sid).emit(EV.PV_READ, data || {}));
+}
+
 function roomEvent(room, event, data) {
   ioRef.to('bm:' + room).emit(EV.BM_EVENT, { room, event, data: data || {} });
 }
@@ -70,6 +78,6 @@ function meetingDeleted(data) {
 }
 
 module.exports = {
-  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, msgDeleted, msgEdited, srToManagers, roomEvent,
+  setIo, notifyNew, pvNew, pvConversationUpdated, pvToManagers, pvRead, msgDeleted, msgEdited, srToManagers, roomEvent,
   meetingCreated, meetingEnded, meetingDeleted,
 };

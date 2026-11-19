@@ -1098,7 +1098,7 @@ r.sockets.forEach((s, sid) => {
       // third when the recipient was the manager) — that was the "send repeats" bug.
       bus.pvNew(toId, payload);
       if (!isMgr) bus.pvToManagers(payload, toId);
-      bus.pvConversationUpdated({ userId: isMgr ? toId : uid, lastBody: body, fromManager: isMgr ? 1 : 0, ts: ins.ts });
+      bus.pvConversationUpdated({ id: ins.id, userId: isMgr ? toId : uid, lastBody: body, fromManager: isMgr ? 1 : 0, ts: ins.ts });
       if (typeof cb === 'function') cb({ ok: true, id: ins.id });
     });
 

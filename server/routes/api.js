@@ -1307,11 +1307,13 @@ router.all('/messages/user', (req, res) => {
 
   // applicant -> manager: from_manager=0, the main manager is the recipient
   const mgr = dbm.get('SELECT id FROM users WHERE is_manager=1 ORDER BY id LIMIT 1');
-  chat.insertPv({ userId: u.id, fromManager: false, senderId: u.id, recipientId: mgr && mgr.id,
+  const ins = chat.insertPv({ userId: u.id, fromManager: false, senderId: u.id, recipientId: mgr && mgr.id,
     peerId: mgr && mgr.id, body });
   dbm.run('UPDATE users SET last_activity=? WHERE id=?', [sqlNow(), u.id]);
-  bus.pvConversationUpdated({ userId: Number(u.id), lastBody: body, fromManager: 0, ts: sqlNow() });
-  bus.pvToManagers({ id: null, fromUserId: Number(u.id), fromName: u.display_name, body, fromManager: 0, ts: sqlNow() });
+  // `id` lets the client dedupe this preview event against the very same message's
+  // PV_NEW_MESSAGE, so an unread badge never increments twice for one incoming DM.
+  bus.pvConversationUpdated({ id: ins.id, userId: Number(u.id), lastBody: body, fromManager: 0, ts: ins.ts });
+  bus.pvToManagers({ id: ins.id, fromUserId: Number(u.id), fromName: u.display_name, body, fromManager: 0, ts: ins.ts });
   return ok(res, { ok: true });
 });
 
@@ -1334,12 +1336,16 @@ router.all('/messages/conversations', (req, res) => {
   function privilegedTargets() {
     const rows = dbm.all(
       `SELECT id, username, display_name, avatar, avatar_color, email, last_activity, rank, is_manager
-         FROM users WHERE is_manager=1 OR rank='premium' ORDER BY is_manager DESC, id`
+         FROM users WHERE (is_manager=1 OR rank='premium') AND id<>? ORDER BY is_manager DESC, id`,
+      [me.id]
     );
     return rows.map((t) => Object.assign({}, t, {
       user_id: Number(t.id),
+      // only messages RECEIVED from this peer count; a NULL read_at means unread.
+      // (legacy rows from before sender_id was stored are attributed by from_manager=1)
       unread: Number((dbm.get(
-        'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND sender_id=? AND seen=0 AND deleted=0',
+        'SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND ' +
+        '(sender_id=? OR (from_manager=1 AND sender_id=0)) AND read_at IS NULL AND deleted=0',
         [me.id, t.id]
       ) || {}).c || 0),
       admin_chat: Number(t.is_manager) ? 1 : 0,
@@ -1394,7 +1400,8 @@ router.all('/messages/conversations', (req, res) => {
       if (uid === 0) return ok(res, { ok: true, conversations: privilegedTargets(), admin_chat: true });
       if (!isPrivilegedTarget(uid)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
       const messages = threadMessages(me.id, uid);
-      dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND ' + peerClause(uid), [me.id, uid]);
+      // reading is a SEPARATE, ownership-checked write the client fires once the messages
+      // are actually on screen — a GET must never mark anything read as a side effect.
       return ok(res, { ok: true, messages: withSender(messages, me), admin_chat: true });
     }
 
@@ -1402,13 +1409,12 @@ router.all('/messages/conversations', (req, res) => {
       const conversations = dbm.all(
         `SELECT DISTINCT m.user_id AS user_id, u.username, u.display_name, u.avatar, u.email, u.last_activity,
                 u.rank, u.is_manager,
-                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.seen=0 AND p.deleted=0) AS unread
+                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.read_at IS NULL AND p.deleted=0) AS unread
          FROM pv_messages m JOIN users u ON u.id=m.user_id ORDER BY m.user_id`
       );
       return ok(res, { ok: true, conversations });
     }
     const messages = threadMessages(uid, 0);
-    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [uid]);
     return ok(res, { ok: true, messages: withSender(messages, me) });
   }
 
@@ -1437,7 +1443,7 @@ router.all('/messages/conversations', (req, res) => {
     // exclude uid so a manager recipient never gets the same bubble twice.
     bus.pvNew(uid, payload);
     bus.pvToManagers(payload, uid);
-    bus.pvConversationUpdated({ userId: Number(me.id), lastBody: body, fromManager: 0, ts: ins.ts });
+    bus.pvConversationUpdated({ id: ins.id, userId: Number(me.id), lastBody: body, fromManager: 0, ts: ins.ts });
     return ok(res, { ok: true, id: ins.id });
   }
 
@@ -1449,7 +1455,7 @@ router.all('/messages/conversations', (req, res) => {
     fromManager: 1, ts: ins.ts, peerId: MGR_ID, username: me.username || '',
     senderId: Number(me.id), replyTo, reply: replyInfo(replyTo), mine: false };
   bus.pvNew(uid, payload);
-  bus.pvConversationUpdated({ userId: uid, lastBody: body, fromManager: 1, ts: ins.ts });
+  bus.pvConversationUpdated({ id: ins.id, userId: uid, lastBody: body, fromManager: 1, ts: ins.ts });
   return ok(res, { ok: true, id: ins.id });
 });
 
@@ -1536,20 +1542,26 @@ router.post('/messages/forward', (req, res) => {
     fromManager: !!me.is_manager, ts: ins.ts, peerId, username: me.username || '' };
   bus.pvNew(toId, payload);
   if (!me.is_manager) bus.pvToManagers(payload);
-  bus.pvConversationUpdated({ userId: me.is_manager ? toId : me.id, lastBody: body, fromManager: !!me.is_manager, ts: ins.ts });
+  bus.pvConversationUpdated({ id: ins.id, userId: me.is_manager ? toId : me.id, lastBody: body, fromManager: !!me.is_manager, ts: ins.ts });
   return ok(res, { ok: true, id: ins.id });
 });
 
 // ------------------------------------------------------------------
-// home sidebar unread badge (seen flags live in pv_messages)
+// unread counts / read receipts — `read_at IS NULL` is the ONLY unread marker
 // ------------------------------------------------------------------
 function unreadCountFor(me) {
   if (me.is_manager) {
-    const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE from_manager=0 AND seen=0');
+    const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE from_manager=0 AND read_at IS NULL AND deleted=0');
     return Number((row && row.c) || 0);
   }
-  const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND sender_id<>? AND seen=0 AND deleted=0', [me.id, me.id]);
+  const row = dbm.get('SELECT COUNT(*) AS c FROM pv_messages WHERE user_id=? AND sender_id<>? AND read_at IS NULL AND deleted=0', [me.id, me.id]);
   return Number((row && row.c) || 0);
+}
+
+// a conversation belongs to a plain user only when the other side is a privileged peer.
+// The main manager is the privileged peer of every user, so he may read any thread.
+function privilegedTarget(id) {
+  return !!dbm.get('SELECT id FROM users WHERE id=? AND (is_manager=1 OR rank=?)', [Number(id), 'premium']);
 }
 
 router.get('/messages/unread', (req, res) => {
@@ -1559,31 +1571,57 @@ router.get('/messages/unread', (req, res) => {
   return ok(res, { ok: true, count: unreadCountFor(me) });
 });
 
+// kept for compatibility, but the messages page no longer marks everything on a visit
 router.post('/messages/read-all', (req, res) => {
   if (!requireLoginApi(req, res)) return;
   const me = sessions.currentUser(req);
   if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
   if (!checkCsrf(req, res)) return;
-  if (me.is_manager) dbm.run('UPDATE pv_messages SET seen=1 WHERE from_manager=0');
-  else dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [me.id]);
-  return ok(res, { ok: true, count: 0 });
+  const now = sqlNow();
+  const r = me.is_manager
+    ? dbm.run('UPDATE pv_messages SET read_at=? WHERE read_at IS NULL', [now])
+    : dbm.run('UPDATE pv_messages SET read_at=? WHERE user_id=? AND read_at IS NULL', [now, me.id]);
+  if (r.changes && me.is_manager) bus.pvRead(me.id, { userId: Number(me.id), peerId: 0 });
+  return ok(res, { ok: true, count: r.changes });
 });
 
-// tiny seen-ack used while a thread is open: loading the whole conversation again just to
-// clear its unread flag doubled the traffic of every incoming message
-router.post('/messages/seen', (req, res) => {
+// The one authoritative READ write. Called only AFTER the thread has been painted, and
+// guarded by conversation ownership: a user cannot stamp somebody else's thread.
+// Returns null when the target is not a conversation the viewer is allowed to read.
+function markConversationRead(me, peerId) {
+  const now = sqlNow();
+  if (me.is_manager) {
+    if (!peerId || !dbm.get('SELECT id FROM users WHERE id=?', [peerId])) return null;
+    return dbm.run(
+      'UPDATE pv_messages SET read_at=? WHERE user_id=? AND from_manager=0 AND read_at IS NULL',
+      [now, peerId]
+    ).changes;
+  }
+  // never let a viewer stamp his own thread — those rows are his OUTGOING messages,
+  // not received unread ones, and there is no "peer" to own
+  if (!peerId || Number(peerId) === Number(me.id) || !privilegedTarget(peerId)) return null;
+  return dbm.run(
+    'UPDATE pv_messages SET read_at=? WHERE user_id=? AND ' +
+    '(sender_id=? OR (from_manager=1 AND sender_id=0)) AND read_at IS NULL',
+    [now, me.id, peerId]
+  ).changes;
+}
+
+function markReadHandler(req, res) {
   if (!requireLoginApi(req, res)) return;
   const me = sessions.currentUser(req);
   if (!me.is_manager && !ranks.canUseMessages(me)) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
   if (!checkCsrf(req, res)) return;
-  if (me.is_manager) {
-    const uid = Number(req.body.user_id || 0);
-    if (uid) dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=? AND from_manager=0', [uid]);
-  } else {
-    dbm.run('UPDATE pv_messages SET seen=1 WHERE user_id=?', [me.id]);
-  }
-  return ok(res, { ok: true });
-});
+  const peerId = Number(req.body.user_id || 0);
+  const count = markConversationRead(me, peerId);
+  if (count === null) return bad(res, { ok: false, msg: 'دسترسی ندارید' }, 403);
+  // every tab of this reader drops the badge at once (read-state realtime)
+  if (count > 0) bus.pvRead(me.id, { userId: Number(me.id), peerId });
+  return ok(res, { ok: true, count });
+}
+// keep the old path alive for already-deployed clients; both run the same guarded write
+router.post('/messages/seen', markReadHandler);
+router.post('/messages/read', markReadHandler);
 
 // ------------------------------------------------------------------
 // compatibility endpoint: old signaling -> php-internal bridge (now in-process)
