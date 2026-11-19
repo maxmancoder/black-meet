@@ -99,15 +99,12 @@ function insertAnnouncement(o) {
 }
 
 // Soft delete keeps the durable copy (and the Neon mirror) consistent with what the user
-// sees. Only the author or the main manager may remove a row.
+// sees. Any signed-in member may delete any message (owner request), so there is no author
+// restriction here — only the EDIT path stays author-only.
 function remove(kind, id, actor) {
   const table = kind === 'public' ? 'announcements' : 'pv_messages';
   const row = dbm.get('SELECT * FROM ' + table + ' WHERE id=?', [Number(id || 0)]);
   if (!row) return { ok: false, error: 'NOT_FOUND' };
-  const mine = kind === 'public'
-    ? Number(row.sender_id) === Number(actor.id)
-    : Number(row.sender_id || row.user_id) === Number(actor.id);
-  if (!actor.is_manager && !mine) return { ok: false, error: 'NOT_AUTHORIZED' };
   dbm.run('UPDATE ' + table + ' SET deleted=1, deleted_at=? WHERE id=?', [sqlNow(), row.id]);
   neon.scheduleChat();
   return { ok: true, id: Number(row.id), kind };

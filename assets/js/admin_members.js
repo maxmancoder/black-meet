@@ -33,6 +33,34 @@
     showToast._t = setTimeout(() => t.classList.add('hidden'), dur || 4000);
   }
 
+  // copy a member info value from its card (used by the small copy keys in the info panel)
+  window.bmCopyInfoText = function (btn) {
+    const text = btn && btn.getAttribute ? (btn.getAttribute('data-copy') || '') : '';
+    if (!text || text === '—') return;
+    const done = () => {
+      showToast('کپی شد');
+      if (btn && btn.classList) {
+        btn.classList.add('is-copied');
+        setTimeout(() => btn.classList.remove('is-copied'), 1200);
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        ta.remove();
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      ta.remove();
+    }
+  };
+
   function post(url, data) {
     return fetch(url, {
       method: 'POST',
@@ -222,14 +250,17 @@
       '</div></div>';
   }
 
-  function infoCell(icon, label, value, tone, ltr) {
+  function infoCell(icon, label, value, tone, ltr, copyable) {
     const v = (value == null || value === '') ? '—' : String(value);
+    const copy = copyable
+      ? '<button type="button" class="mem-info-copy" data-no-soft aria-label="کپی ' + esc(label) + '" title="کپی ' + esc(label) + '" onclick="bmCopyInfoText(this)" data-copy="' + esc(v) + '">' + bmIcon('description') + '</button>'
+      : '';
     return '<div class="mem-info-cell mem-info-cell-' + esc(tone || 'default') + '">' +
       '<span class="mem-info-ico" aria-hidden="true">' + bmIcon(icon) + '</span>' +
       '<span class="mem-info-meta">' +
         '<span class="mem-info-label">' + esc(label) + '</span>' +
         '<span class="mem-info-value"' + (ltr ? ' dir="ltr"' : '') + '>' + esc(v) + '</span>' +
-      '</span>' +
+      '</span>' + copy +
     '</div>';
   }
 
@@ -244,12 +275,12 @@
     const un = u.username ? ('@' + u.username) : '';
     return '<div class="mem-info-panel">' +
       '<div class="mem-info-grid">' +
-        infoCell('person', 'نام نمایشی', dn, 'violet', false) +
-        infoCell('badge', 'نام کاربری', un, 'blue', true) +
-        infoCell('shield_person', 'نقش', roleLabel(u), 'amber', false) +
-        infoCell('mail', 'ایمیل', u.email || '', 'cyan', true) +
-        infoCell('lock', 'رمز عبور', '********', 'rose', true) +
-        infoCell('phone', 'شماره تلفن', u.phone || '', 'green', true) +
+        infoCell('person', 'نام نمایشی', dn, 'violet', false, true) +
+        infoCell('badge', 'نام کاربری', un, 'blue', true, true) +
+        infoCell('shield_person', 'نقش', roleLabel(u), 'amber', false, false) +
+        infoCell('mail', 'ایمیل', u.email || '', 'cyan', true, true) +
+        infoCell('lock', 'رمز عبور', '********', 'rose', true, false) +
+        infoCell('phone', 'شماره تلفن', u.phone || '', 'green', true, true) +
       '</div>' +
     '</div>';
   }
@@ -278,14 +309,12 @@
     card.className = 'mem-card mem-card-member';
 
     const dn = esc(u.display_name || '');
-    const un = u.info_hidden ? '' : esc(u.username || '');
 
     card.innerHTML =
       '<div class="mem-neon-head">' +
         '<div class="mem-avatar-ring">' + avatarHtml(u, 'lg') + '</div>' +
         '<div class="mem-neon-id">' +
           '<p class="mem-name mem-neon-name">' + dn + '</p>' +
-          '<p class="mem-handle mem-neon-handle" dir="ltr">' + (un ? '@' + un : '') + '</p>' +
         '</div>' +
         '<div id="lim-' + u.id + '" class="mem-flags mem-neon-badges">' + rankBadge(u) + limitedBadge(u) + '</div>' +
       '</div>' +

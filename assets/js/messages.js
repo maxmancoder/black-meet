@@ -294,13 +294,14 @@
     return !!flagFromManager !== !!window.__IS_MANAGER;
   }
 
+  // any signed-in member may copy AND delete any message (owner request); edit stays
+  // author-only. `mine` is only used to decide whether the edit button appears.
   function msgButtonsHtml(kind, mine) {
-    const canDelete = mine || (kind === 'public' && !!window.__IS_MANAGER);
     return '<button type="button" data-no-soft onclick="replyMessage(this)" aria-label="پاسخ">' + bmIcon('arrow_back') + '<span>پاسخ</span></button>' +
       '<button type="button" data-no-soft onclick="copyMessage(this)" aria-label="کپی">' + bmIcon('description') + '<span>کپی</span></button>' +
       (mine ? '<button type="button" data-no-soft onclick="editMessage(this)" aria-label="ویرایش">' + bmIcon('edit') + '<span>ویرایش</span></button>' : '') +
       '<button type="button" data-no-soft onclick="openForward(this)" aria-label="هدایت">' + bmIcon('arrow_forward') + '<span>هدایت</span></button>' +
-      (canDelete ? '<button type="button" data-no-soft onclick="deleteMessage(this)" aria-label="حذف">' + bmIcon('delete_sweep') + '<span>حذف</span></button>' : '');
+      '<button type="button" data-no-soft onclick="deleteMessage(this)" aria-label="حذف">' + bmIcon('delete_sweep') + '<span>حذف</span></button>';
   }
   // optimistic bubbles have no server id yet — fill their actions once the ACK arrives
   function fillMsgActions(row) {
@@ -311,8 +312,8 @@
     delete box.dataset.pending;
   }
 
-  function appendMessage(m, incoming, kind) {
-    const box = document.getElementById('chat-area');
+  function appendMessage(m, incoming, kind, targetBox) {
+    const box = targetBox || document.getElementById('chat-area');
     if (!box) return null;
     const el = document.createElement('div');
     const side = typeof m.incoming === 'boolean' ? m.incoming : incoming;
@@ -320,7 +321,7 @@
     if (m.id) { el.dataset.msgId = Number(m.id); el.dataset.kind = kind || 'pv'; }
     if (m.clientMsgId) el.dataset.clientId = m.clientMsgId;
     if (typeof m.body === 'string') el.dataset.body = m.body;
-    // only the author may EDIT; the main manager may also delete a public announcement
+    // only the author may EDIT; copy + delete are available to everyone
     const mine = !!(m.mine || (m.senderId && Number(m.senderId) === Number(window.MS_ID)));
     el.dataset.mine = mine ? '1' : '0';
     const label = senderName(m, side);
@@ -340,18 +341,27 @@
     el.innerHTML = '<span class="bm-msg-sender" dir="ltr">' + esc(label) + '</span>' + quote +
       '<div class="dash-bubble">' + fwd + (window.bmLinkify ? window.bmLinkify(m.body) : esc(m.body)) + '</div>' + acts;
     box.appendChild(el);
-    box.scrollTop = box.scrollHeight;
+    if (box.id === 'chat-area') box.scrollTop = box.scrollHeight;
     if (m.id) window._lastThreadId = Math.max(window._lastThreadId || 0, Number(m.id));
     return el;
   }
 
   function renderChat(messages, type) {
     const box = document.getElementById('chat-area');
-    box.innerHTML = '';
+    if (!box) return;
+    // Build in a fragment and append once: appending 400 bubbles one by one while reading
+    // scrollHeight after each one forced a layout on every message and made opening a
+    // conversation with history feel slow. One paint + one scroll is dramatically faster.
+    const frag = document.createDocumentFragment();
+    const holder = document.createElement('div');
     (messages || []).forEach(m => {
       // the public channel is a broadcast feed: every bubble is incoming + labelled
-      appendMessage(m, type === 'public' ? true : (typeof m.incoming === 'boolean' ? m.incoming : isIncoming(m.from_manager)), type);
+      appendMessage(m, type === 'public' ? true : (typeof m.incoming === 'boolean' ? m.incoming : isIncoming(m.from_manager)), type, holder);
     });
+    while (holder.firstChild) frag.appendChild(holder.firstChild);
+    box.innerHTML = '';
+    box.appendChild(frag);
+    box.scrollTop = box.scrollHeight;
   }
 
   function focusInput() {
