@@ -274,37 +274,11 @@
                maxlength="128" autocomplete="new-password"/>
         <p class="mem-modal-hint">برای تغییر رمز، مقدار جدید (حداقل ۶ کاراکتر) را وارد کنید.</p>
 
-        <label class="mem-field-label">درجه</label>
-        <!-- the native <select> stays the value store (openEditModal/submitEdit read & write
-             .value); this is the themed face the user clicks -->
-        <div style="position:relative">
-            <button type="button" id="ed-rank-btn" data-no-soft onclick="toggleEditRankMenu(event)"
-                    aria-haspopup="listbox" aria-expanded="false" class="mem-mode-btn">
-                <span id="ed-rank-label">کاربر عادی</span>
-                <span class="bm-caret" aria-hidden="true"></span>
-            </button>
-        </div>
-        <select id="ed-rank" class="hidden" aria-hidden="true" tabindex="-1">
-            <option value="user">کاربر عادی</option>
-            <option value="admin">ادمین</option>
-            <option value="premium">ادمین پریمیوم</option>
-        </select>
-        <p id="ed-rank-lock" class="mem-modal-hint hidden">درجه مدیر اصلی قابل تغییر نیست.</p>
-
         <div class="mem-modal-actions">
             <button type="button" onclick="submitEdit()" class="dash-btn dash-btn-solid">ذخیره</button>
             <button type="button" onclick="closeEditModal()" class="dash-btn dash-btn-soft">انصراف</button>
         </div>
     </div>
-</div>
-
-<!-- the rank menu lives OUTSIDE the edit modal: the modal panel is a scroll container
-     with a backdrop-filter, which makes it the containing block for fixed children and
-     clipped the menu away. Here it can never be cut off. -->
-<div id="ed-rank-menu" class="hidden glass-panel" role="listbox" aria-label="درجه کاربر" style="z-index:110">
-    <button type="button" class="mode-opt" data-rank="user" role="option" onclick="setEditRank('user')"><span class="mem-opt-title">کاربر عادی</span></button>
-    <button type="button" class="mode-opt" data-rank="admin" role="option" onclick="setEditRank('admin')"><span class="mem-opt-title">ادمین</span></button>
-    <button type="button" class="mode-opt" data-rank="premium" role="option" onclick="setEditRank('premium')"><span class="mem-opt-title">ادمین پریمیوم</span></button>
 </div>
 
 <%- include('dash_usermenu') %>

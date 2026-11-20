@@ -1747,6 +1747,59 @@
 .msg-inputrow .dash-input { flex: 1 1 auto; min-width: 0; }
 .msg-send { width: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 12px; }
 .msg-send .bm-ico { font-size: 20px; }
+/* emoji key sits to the LEFT of the input (RTL end), next to the send key */
+.msg-emoji-btn {
+  width: 44px; height: 44px; min-width: 44px;
+  border-radius: 12px; font-size: 21px;
+  color: var(--d-text-dim);
+}
+.msg-emoji-btn[aria-expanded="true"] {
+  color: rgb(var(--bm-secondary));
+  border-color: rgb(var(--bm-secondary) / .55);
+  background: rgb(var(--bm-secondary) / .14);
+}
+/* the tray is fixed and painted ABOVE both the chat and the conversation list */
+.msg-emoji-picker {
+  position: fixed;
+  z-index: 95;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(430px, 60vh);
+  display: flex; flex-direction: column;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid var(--d-line-strong);
+  background: #0c0d16;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .95);
+  -webkit-user-select: none; user-select: none;
+}
+.msg-emoji-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 2px 4px 9px;
+  border-bottom: 1px solid var(--d-line);
+  color: var(--d-text); font-size: 13px; font-weight: 700;
+}
+.msg-emoji-head > span { display: inline-flex; align-items: center; gap: 6px; }
+.msg-emoji-head .bm-ico { font-size: 17px; color: rgb(var(--bm-secondary)); }
+.msg-emoji-grid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px; margin-top: 8px; padding: 2px;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.msg-emoji-item {
+  display: grid; place-items: center;
+  width: 100%; aspect-ratio: 1; min-height: 42px;
+  border: 0; border-radius: 10px;
+  background: transparent; font-size: 23px; line-height: 1;
+  cursor: pointer; transition: background .14s ease, transform .14s ease;
+}
+.msg-emoji-item:hover { background: rgb(var(--bm-secondary) / .16); transform: scale(1.12); }
+.msg-emoji-item:active { transform: scale(.96); }
+.msg-emoji-hint { margin: 8px 2px 0; font-size: 10.5px; color: var(--d-text-mute); }
+@media (max-width: 520px) {
+  .msg-emoji-picker { width: calc(100vw - 16px); }
+  .msg-emoji-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .msg-emoji-item { min-height: 40px; font-size: 21px; }
+}
 
 .msg-profile-avatar {
   display: flex;
@@ -3055,6 +3108,7 @@
 .bm-dash .lim-ranks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start; /* opening one rank must NOT stretch the card beside it */
   gap: 16px;
   margin: 18px 0 4px;
 }

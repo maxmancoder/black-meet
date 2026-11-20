@@ -84,14 +84,12 @@
       const pb = $('page-size-btn');
       if (pb) pb.setAttribute('aria-expanded', 'false');
     }
-    if (window.bmCloseEditRankMenu) window.bmCloseEditRankMenu();
   }
 
   document.addEventListener('click', (e) => {
     if (!e.target.closest || (!e.target.closest('.rank-menu') && !e.target.closest('.rank-trigger') &&
       !e.target.closest('#mode-menu') && !e.target.closest('#mode-btn') &&
-      !e.target.closest('#page-size-menu') && !e.target.closest('#page-size-btn') &&
-      !e.target.closest('#ed-rank-menu') && !e.target.closest('#ed-rank-btn'))) closeMenus();
+      !e.target.closest('#page-size-menu') && !e.target.closest('#page-size-btn'))) closeMenus();
   });
 
   // ------------------------------------------------------------------
@@ -413,104 +411,12 @@
     $('ed-email').value = u.email || '';
     $('ed-phone').value = u.phone || '';
     $('ed-password').value = '';
-    const rankSel = $('ed-rank');
-    let mgrOpt = rankSel.querySelector('option[data-mgr]');
-    if (u.is_manager) {
-      if (!mgrOpt) {
-        mgrOpt = document.createElement('option');
-        mgrOpt.value = '';
-        mgrOpt.setAttribute('data-mgr', '1');
-        mgrOpt.textContent = 'مدیر اصلی';
-        rankSel.appendChild(mgrOpt);
-      }
-      rankSel.value = '';
-    } else {
-      if (mgrOpt) mgrOpt.remove();
-      rankSel.value = ['user', 'admin', 'premium'].indexOf(u.rank) !== -1 ? u.rank : 'user';
-    }
-    const locked = !!u.is_manager;
-    rankSel.disabled = locked;
-    $('ed-rank-lock').classList.toggle('hidden', !locked);
-    const btn = $('ed-rank-btn');
-    if (btn) {
-      btn.disabled = locked;
-      btn.classList.toggle('opacity-60', locked);
-      btn.classList.toggle('cursor-not-allowed', locked);
-    }
-    paintEditRank();
+    // rank is NOT editable here — it is changed from the card's «تغییر درجه» menu only
     $('edit-modal').classList.remove('hidden');
     $('ed-username').focus();
   };
 
-  // ---------- the rank dropdown inside the edit modal (themed face) ----------
-  const RANK_TEXT = { user: 'کاربر عادی', admin: 'ادمین', premium: 'ادمین پریمیوم', '': 'مدیر اصلی' };
-  function paintEditRank() {
-    const sel = $('ed-rank');
-    const lbl = $('ed-rank-label');
-    if (!sel || !lbl) return;
-    const v = String(sel.value);
-    const opt = sel.options[sel.selectedIndex];
-    lbl.textContent = (opt && opt.textContent) || RANK_TEXT[v] || 'کاربر عادی';
-    const m = $('ed-rank-menu');
-    if (m) {
-      m.querySelectorAll('[data-rank]').forEach(b => {
-        b.classList.toggle('bm-opt-active', b.getAttribute('data-rank') === v);
-      });
-    }
-  }
-  // the modal is a scroll container, so an absolutely positioned menu inside it gets
-  // clipped — pin the menu to the viewport instead (same trick as the call cam menu)
-  function positionEditRankMenu() {
-    const b = $('ed-rank-btn');
-    const m = $('ed-rank-menu');
-    if (!b || !m || m.classList.contains('hidden')) return;
-    m.style.position = 'fixed';
-    m.style.zIndex = '110';
-    m.style.left = 'auto';
-    m.style.right = 'auto';
-    m.style.top = 'auto';
-    m.style.bottom = 'auto';
-    const r = b.getBoundingClientRect();
-    m.style.right = Math.max(8, Math.min(r.right, window.innerWidth - m.offsetWidth - 8)) + 'px';
-    // always open BELOW the trigger itself — never flip above the box. If the viewport is
-    // short, the menu scrolls internally instead of covering the field it belongs to.
-    m.style.top = (r.bottom + 8) + 'px';
-    m.style.maxHeight = Math.max(120, window.innerHeight - r.bottom - 18) + 'px';
-    m.style.overflowY = 'auto';
-  }
-  window.toggleEditRankMenu = function (e) {
-    if (e) e.stopPropagation();
-    const m = $('ed-rank-menu');
-    const b = $('ed-rank-btn');
-    const sel = $('ed-rank');
-    if (!m || !sel || sel.disabled) return;
-    const show = m.classList.contains('hidden');
-    m.classList.toggle('hidden', !show);
-    if (b) b.setAttribute('aria-expanded', show ? 'true' : 'false');
-    if (show) positionEditRankMenu();
-  };
-  window.setEditRank = function (rank) {
-    const sel = $('ed-rank');
-    if (!sel || sel.disabled) return;
-    sel.value = rank;
-    paintEditRank();
-    const m = $('ed-rank-menu');
-    if (m) m.classList.add('hidden');
-    const b = $('ed-rank-btn');
-    if (b) b.setAttribute('aria-expanded', 'false');
-  };
-  window.bmCloseEditRankMenu = function () {
-    const m = $('ed-rank-menu');
-    if (m && !m.classList.contains('hidden')) {
-      m.classList.add('hidden');
-      const b = $('ed-rank-btn');
-      if (b) b.setAttribute('aria-expanded', 'false');
-    }
-  };
-  window.addEventListener('resize', function () {
-    const m = $('ed-rank-menu');
-    if (m && !m.classList.contains('hidden')) positionEditRankMenu();
-  });
+  // rank is changed ONLY from the card's «تغییر درجه» menu — never from this edit modal.
 
   window.closeEditModal = function () {
     $('edit-modal').classList.add('hidden');
@@ -528,7 +434,6 @@
       email: $('ed-email').value.trim(),
       phone: $('ed-phone').value.trim(),
       password: $('ed-password').value,
-      rank: $('ed-rank').value,
     })
       .then(d => {
         if (!d.ok) { showToast(d.msg || 'خطا'); return; }
@@ -1005,7 +910,6 @@
   const ps = $('page-size');
   if (ps) ps.addEventListener('change', () => { paintPageSize(); render(); });
   paintPageSize();
-  paintEditRank();
 
   setModeUi(signupMode);
   if (PERM.members) render();

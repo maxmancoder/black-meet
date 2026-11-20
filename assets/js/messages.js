@@ -736,6 +736,64 @@
     });
   }
 
+  // ---- emoji tray: tap an emoji and it is sent as a message (Telegram-style) ----
+  const MSG_EMOJIS = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😍',
+    '🥰', '😘', '😎', '🤩', '🥳', '😉', '😋', '😜', '🤪', '🤗',
+    '🤔', '🤨', '😏', '😴', '😭', '😢', '😡', '🤯', '😱', '🥺',
+    '😇', '🤠', '👋', '🤝', '👍', '👎', '👏', '🙌', '🙏', '💪',
+    '✌️', '🤞', '👌', '❤️', '🧡', '💛', '💚', '💙', '🔥', '✨',
+    '🎉', '🎁', '✅', '❌', '💡', '🌟', '☕', '🎂', '🚀', '🏆',
+  ];
+  function buildMsgEmoji() {
+    const grid = document.getElementById('msg-emoji-grid');
+    if (!grid || grid.childElementCount) return;
+    MSG_EMOJIS.forEach((em) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'msg-emoji-item';
+      b.textContent = em;
+      b.title = em;
+      b.setAttribute('aria-label', 'ارسال ' + em);
+      b.addEventListener('click', () => {
+        const inp = document.getElementById('msg-input');
+        if (inp) inp.value = em;
+        toggleMsgEmoji(null, true);
+        window.sendMessage();
+      });
+      grid.appendChild(b);
+    });
+  }
+  window.toggleMsgEmoji = function (ev, forceHide) {
+    const p = document.getElementById('msg-emoji-picker');
+    if (!p) return;
+    if (ev) ev.stopPropagation();
+    if (forceHide === true || !p.classList.contains('hidden')) {
+      p.classList.add('hidden');
+      const b = document.getElementById('btn-msg-emoji');
+      if (b) b.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    buildMsgEmoji();
+    p.classList.remove('hidden');
+    const btn = document.getElementById('btn-msg-emoji');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    const r = btn ? btn.getBoundingClientRect() : { right: window.innerWidth, top: window.innerHeight };
+    p.style.maxHeight = Math.max(180, Math.min(430, r.top - 18)) + 'px';
+    const w = p.offsetWidth;
+    p.style.right = Math.max(8, Math.min(window.innerWidth - r.right, window.innerWidth - w - 8)) + 'px';
+    p.style.bottom = Math.max(8, window.innerHeight - r.top + 10) + 'px';
+  };
+  document.addEventListener('click', (e) => {
+    const p = document.getElementById('msg-emoji-picker');
+    if (!p || p.classList.contains('hidden')) return;
+    if (e.target.closest && e.target.closest('#msg-emoji-picker, #btn-msg-emoji')) return;
+    toggleMsgEmoji(null, true);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleMsgEmoji(null, true);
+  });
+
   window.sendMessage = function () {
     if (sending) return;                       // double click / Enter+click = ONE message
     if (!view) return showToast('ابتدا یک گفتگو انتخاب کنید');

@@ -110,6 +110,10 @@
                     <input id="msg-input" class="dash-input" type="text" autocomplete="off"
                            placeholder="پیام خود را بنویسید..." aria-label="متن پیام"
                            onkeydown="if(event.key==='Enter')sendMessage()"/>
+                    <button type="button" id="btn-msg-emoji" class="dash-iconbtn msg-emoji-btn" data-no-soft
+                            onclick="toggleMsgEmoji(event)" aria-label="ایموجی" aria-expanded="false">
+                        <%- icon('mood') %>
+                    </button>
                     <button type="button" class="dash-btn dash-btn-solid msg-send" onclick="sendMessage()" aria-label="ارسال پیام">
                         <%- icon('send') %>
                     </button>
@@ -156,6 +160,16 @@
   #msg-main:not(.chat-open) .chat-panel { display: none; }
 }
 </style>
+
+<!-- Emoji tray: a popover anchored above the composer, painted over the chat/list panes -->
+<div id="msg-emoji-picker" class="msg-emoji-picker hidden" role="dialog" aria-label="ایموجی" data-no-soft>
+    <div class="msg-emoji-head">
+        <span><%- icon('mood') %> ایموجی</span>
+        <button type="button" class="dash-iconbtn dash-iconbtn-sm" onclick="toggleMsgEmoji(null, true)" aria-label="بستن"><%- icon('close') %></button>
+    </div>
+    <div id="msg-emoji-grid" class="msg-emoji-grid"></div>
+    <p class="msg-emoji-hint">با کلیک روی هر ایموجی، بهعنوان پیام ارسال میشود.</p>
+</div>
 
 <script>
 window.CSRF = <%- json(csrf) %>;
