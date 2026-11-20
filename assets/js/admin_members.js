@@ -750,10 +750,17 @@
           (cell.on ? ' checked' : '') + (locked ? ' disabled' : '') + '/><span class="bm-switch-slider"></span></label>' +
           '</div>';
       }).join('');
+      const bodyId = 'lim-body-' + rank;
+      // every rank starts closed; pressing the header slides its restrictions down
       return '<article class="lim-rank-card" data-rank="' + rank + '">' +
-        '<header class="lim-rank-head"><span class="lim-rank-ico">' + ico(rank === 'manager' ? 'shield_person' : 'group', true) + '</span>' +
-        '<div><h3>' + esc(RANK_LABELS[rank]) + '</h3><p>' + (rank === 'manager' ? 'دسترسی کامل همیشگی' : 'محدودیت‌های مخصوص همین نوع کاربر') + '</p></div></header>' +
-        '<div class="lim-rows">' + rows + '</div></article>';
+        '<header class="lim-rank-head" role="button" tabindex="0" aria-expanded="false" aria-controls="' + bodyId + '">' +
+          '<span class="lim-rank-ico">' + ico(rank === 'manager' ? 'shield_person' : 'group', true) + '</span>' +
+          '<div><h3>' + esc(RANK_LABELS[rank]) + '</h3><p>' + (rank === 'manager' ? 'دسترسی کامل همیشگی' : 'محدودیت‌های مخصوص همین نوع کاربر') + '</p></div>' +
+          '<span class="lim-rank-caret" aria-hidden="true"></span>' +
+        '</header>' +
+        '<div class="lim-rank-body" id="' + bodyId + '"><div class="lim-rank-body-inner">' +
+          '<div class="lim-rows">' + rows + '</div>' +
+        '</div></div></article>';
     }).join('');
   }
 
@@ -761,6 +768,23 @@
     const host = $('limit-ranks');
     if (!host || host.dataset.bound === '1') return;
     host.dataset.bound = '1';
+    // accordion: the header opens/closes only THIS rank's restrictions
+    host.addEventListener('click', (ev) => {
+      const head = ev.target && ev.target.closest ? ev.target.closest('.lim-rank-head') : null;
+      if (!head) return;
+      const card = head.closest('.lim-rank-card');
+      if (!card) return;
+      const open = !card.classList.contains('is-open');
+      card.classList.toggle('is-open', open);
+      head.setAttribute('aria-expanded', String(open));
+    });
+    host.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const head = ev.target && ev.target.closest ? ev.target.closest('.lim-rank-head') : null;
+      if (!head) return;
+      ev.preventDefault();
+      head.click();
+    });
     host.addEventListener('change', (ev) => {
       const t = ev.target;
       const rank = t && t.dataset && t.dataset.limRank;

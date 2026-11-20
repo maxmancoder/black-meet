@@ -1406,11 +1406,19 @@ router.all('/messages/conversations', (req, res) => {
     }
 
     if (uid === 0) {
+      // The manager's inbox shows every account he already has a thread with AND every
+      // premium/admin account, so a PV with his admins is always available — even before
+      // the first message. (Rows written by an admin to the manager have that admin's id
+      // in user_id and from_manager=0, so the unread count below covers them as well.)
       const conversations = dbm.all(
-        `SELECT DISTINCT m.user_id AS user_id, u.username, u.display_name, u.avatar, u.email, u.last_activity,
+        `SELECT u.id AS user_id, u.username, u.display_name, u.avatar, u.email, u.last_activity,
                 u.rank, u.is_manager,
-                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=m.user_id AND p.from_manager=0 AND p.read_at IS NULL AND p.deleted=0) AS unread
-         FROM pv_messages m JOIN users u ON u.id=m.user_id ORDER BY m.user_id`
+                (SELECT COUNT(*) FROM pv_messages p WHERE p.user_id=u.id AND p.from_manager=0 AND p.read_at IS NULL AND p.deleted=0) AS unread
+         FROM users u
+         WHERE u.id<>? AND (u.rank IN ('premium','admin')
+              OR EXISTS (SELECT 1 FROM pv_messages m WHERE m.user_id=u.id))
+         ORDER BY u.id`,
+        [me.id]
       );
       return ok(res, { ok: true, conversations });
     }
